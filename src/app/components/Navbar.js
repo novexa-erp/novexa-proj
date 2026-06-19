@@ -5,12 +5,12 @@ import Image from "next/image";
 import Link from "next/link";
 
 const navLinks = [
-  { label: "Home", href: "#" },
-  { label: "Features", href: "#features" },
-  { label: "Modules", href: "#modules" },
-  { label: "Pricing", href: "#pricing" },
-  { label: "About", href: "#about" },
-  { label: "Contact", href: "#contact" },
+  { label: "Home",     href: "/" },
+  { label: "Features", href: "/features" },
+  { label: "Modules",  href: "/modules" },
+  { label: "Pricing",  href: "#pricing" },
+  { label: "About",    href: "/about" },
+  { label: "Contact",  href: "/contact" },
 ];
 
 export default function Navbar() {
@@ -70,14 +70,10 @@ export default function Navbar() {
 
           {/* CTA Button */}
           <div className="hidden md:flex items-center gap-3">
-            <Link
-              href="#"
-              className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors duration-200"
-            >
+            <Link href="/login" className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors duration-200">
               Sign In
             </Link>
-            <Link
-              href="#"
+            <Link href="/register"
               className="group relative inline-flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white rounded-full overflow-hidden transition-all duration-300 hover:scale-105 hover:shadow-[0_0_20px_rgba(245,158,11,0.5)]"
               style={{
                 background: "linear-gradient(135deg, #F59E0B 0%, #D97706 50%, #B45309 100%)",
@@ -133,15 +129,10 @@ export default function Navbar() {
             </Link>
           ))}
           <div className="pt-3 mt-1 border-t border-white/10 flex flex-col gap-2">
-            <Link
-              href="#"
-              className="px-4 py-3 text-sm font-medium text-center text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all"
-            >
+            <Link href="/login" className="px-4 py-3 text-sm font-medium text-center text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all">
               Sign In
             </Link>
-            <Link
-              href="#"
-              className="px-4 py-3 text-sm font-semibold text-center text-white rounded-full"
+            <Link href="/register" className="px-4 py-3 text-sm font-semibold text-center text-white rounded-full"
               style={{
                 background: "linear-gradient(135deg, #F59E0B 0%, #D97706 50%, #B45309 100%)",
                 boxShadow: "0 4px 15px rgba(245,158,11,0.3)",

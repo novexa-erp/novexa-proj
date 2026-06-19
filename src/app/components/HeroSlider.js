@@ -190,41 +190,14 @@ export default function HeroSlider() {
             >
               {/* Primary Button */}
               <button
-                className="group relative inline-flex items-center gap-2 px-8 py-4 text-base font-semibold text-white rounded-full overflow-hidden transition-all duration-300 hover:scale-105"
-                style={{
-                  background: "linear-gradient(135deg, #F59E0B 0%, #D97706 50%, #B45309 100%)",
-                  boxShadow: "0 6px 25px rgba(245,158,11,0.35), inset 0 1px 0 rgba(255,255,255,0.15)",
-                }}
-                onMouseEnter={e => e.currentTarget.style.boxShadow = "0 8px 35px rgba(245,158,11,0.55), inset 0 1px 0 rgba(255,255,255,0.15)"}
-                onMouseLeave={e => e.currentTarget.style.boxShadow = "0 6px 25px rgba(245,158,11,0.35), inset 0 1px 0 rgba(255,255,255,0.15)"}
+                className="btn-primary group"
               >
                 <span className="relative z-10">{slide.cta}</span>
                 <span className="relative z-10 text-sm">→</span>
-                <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/15 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
               </button>
 
               {/* Secondary Button */}
-              <button
-                className="inline-flex items-center gap-2 px-8 py-4 text-base font-semibold rounded-full transition-all duration-300 hover:scale-105"
-                style={{
-                  color: "#93C5FD",
-                  background: "rgba(37,99,235,0.08)",
-                  border: "1.5px solid rgba(37,99,235,0.45)",
-                  boxShadow: "0 4px 15px rgba(37,99,235,0.1)",
-                }}
-                onMouseEnter={e => {
-                  e.currentTarget.style.background = "rgba(37,99,235,0.18)";
-                  e.currentTarget.style.borderColor = "rgba(96,165,250,0.7)";
-                  e.currentTarget.style.color = "#fff";
-                  e.currentTarget.style.boxShadow = "0 4px 20px rgba(37,99,235,0.3)";
-                }}
-                onMouseLeave={e => {
-                  e.currentTarget.style.background = "rgba(37,99,235,0.08)";
-                  e.currentTarget.style.borderColor = "rgba(37,99,235,0.45)";
-                  e.currentTarget.style.color = "#93C5FD";
-                  e.currentTarget.style.boxShadow = "0 4px 15px rgba(37,99,235,0.1)";
-                }}
-              >
+              <button className="btn-secondary">
                 {slide.ctaSecondary}
                 <span className="text-sm">→</span>
               </button>
@@ -312,22 +285,6 @@ export default function HeroSlider() {
 
       {/* Bottom gradient fade */}
       <div className="absolute bottom-0 left-0 right-0 h-32 bg-gradient-to-t from-[#0d1117] to-transparent pointer-events-none" />
-
-      <style jsx>{`
-        @keyframes float {
-          0%, 100% { transform: translateY(0px) scale(1); opacity: 0.4; }
-          50% { transform: translateY(-12px) scale(1.2); opacity: 0.8; }
-        }
-        @keyframes progress {
-          from { width: 0%; }
-          to { width: 100%; }
-        }
-        .animate-float {
-          animation: float 3s ease-in-out infinite;
-        }
-        .delay-1000 { animation-delay: 1s; }
-        .delay-500 { animation-delay: 0.5s; }
-      `}</style>
     </section>
   );
 }

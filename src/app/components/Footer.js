@@ -41,11 +41,11 @@ const footerLinks = {
     { label: "Community", href: "#" },
   ],
   Legal: [
-    { label: "Privacy Policy", href: "#" },
-    { label: "Terms of Service", href: "#" },
-    { label: "Cookie Policy", href: "#" },
-    { label: "Refund Policy", href: "#" },
-    { label: "Security", href: "#" },
+    { label: "Privacy Policy",  href: "/pages/privacy-policy" },
+    { label: "Terms of Service", href: "/pages/terms" },
+    { label: "Cookie Policy",   href: "/pages/privacy-policy" },
+    { label: "Refund Policy",   href: "/pages/terms" },
+    { label: "Security",        href: "/pages/security" },
   ],
 };
 
@@ -213,7 +213,7 @@ export default function Footer() {
 
             {/* Tagline */}
             <p className="text-gray-500 text-sm leading-relaxed max-w-xs">
-              Invorex — the all-in-one ERP platform that helps small and medium businesses manage
+              Novexa — the all-in-one ERP platform that helps small and medium businesses manage
               invoices, customers, inventory, and payments from one place.
             </p>
 
@@ -362,18 +362,19 @@ export default function Footer() {
           style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
         >
           <p className="text-gray-600 text-xs text-center md:text-left">
-            © {new Date().getFullYear()} Novexa ERP (Invorex). All rights reserved.
+            © {new Date().getFullYear()} Novexa ERP (Novexa). All rights reserved.
           </p>
 
           {/* Bottom quick links */}
           <div className="flex items-center gap-4 flex-wrap justify-center">
-            {["Privacy Policy", "Terms of Service", "Cookie Policy"].map((item) => (
-              <Link
-                key={item}
-                href="#"
-                className="text-gray-600 hover:text-gray-400 text-xs transition-colors duration-200"
-              >
-                {item}
+            {[
+              { label: "Privacy Policy",   href: "/privacy-policy" },
+              { label: "Terms of Service", href: "/terms" },
+              { label: "Security",         href: "/security" },
+            ].map((item) => (
+              <Link key={item.label} href={item.href}
+                className="text-gray-600 hover:text-gray-400 text-xs transition-colors duration-200">
+                {item.label}
               </Link>
             ))}
           </div>

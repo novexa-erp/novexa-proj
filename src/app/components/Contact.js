@@ -20,13 +20,13 @@ const contactInfo = [
   {
     icon: "📧",
     label: "Email Us",
-    value: "support@invorex.com",
+    value: "support@Novexa.com",
     sub: "We reply within 24 hours",
     color: "#2563EB",
     bg: "rgba(37,99,235,0.08)",
     border: "rgba(37,99,235,0.25)",
     glow: "rgba(37,99,235,0.2)",
-    href: "mailto:support@invorex.com",
+    href: "mailto:support@Novexa.com",
   },
   {
     icon: "💬",
@@ -42,7 +42,7 @@ const contactInfo = [
   {
     icon: "🌐",
     label: "Social Media",
-    value: "@invorex",
+    value: "@Novexa",
     sub: "Follow for updates",
     color: "#A855F7",
     bg: "rgba(168,85,247,0.08)",
@@ -214,7 +214,7 @@ export default function Contact() {
             We Would Love to{" "}
             <span
               className="bg-clip-text text-transparent"
-              style={{ backgroundImage: "linear-gradient(135deg, #2563EB, #10B981 50%, #F59E0B)" }}
+              style={{ backgroundImage: "linear-gradient(135deg, #2563EB, #60A5FA 50%, #F59E0B)" }}
             >
               Hear From You
             </span>
@@ -342,7 +342,15 @@ export default function Contact() {
                     />
                   </div>
 
-                  <button
+                  <div className="text-center">
+                  <button className="btn-primary"
+                  style={{width: '40%'}}
+                  >
+                    Send Message →
+                  </button>
+                  </div>
+
+                  {/* <button
                     type="submit"
                     disabled={loading}
                     className="group relative w-full py-4 text-base font-semibold text-white rounded-xl overflow-hidden transition-all duration-300 hover:scale-[1.02] disabled:opacity-70 disabled:cursor-not-allowed"
@@ -368,7 +376,7 @@ export default function Contact() {
                       </span>
                     )}
                     <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-                  </button>
+                  </button> */}
 
                   <p className="text-center text-gray-600 text-xs">
                     🔒 Your information is safe. We never share your data.

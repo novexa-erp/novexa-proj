@@ -198,7 +198,7 @@ function FeatureCard({ feature, index }) {
         </p>
 
         {/* Bottom arrow link */}
-        <div
+        {/* <div
           className="flex items-center gap-1.5 mt-4 text-xs font-semibold transition-all duration-300"
           style={{
             color: feature.color,
@@ -213,7 +213,7 @@ function FeatureCard({ feature, index }) {
           >
             →
           </span>
-        </div>
+        </div> */}
 
         {/* Bottom glow line */}
         <div

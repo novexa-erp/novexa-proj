@@ -18,8 +18,8 @@ function useInView(threshold = 0.15) {
 
 const faqs = [
   {
-    q: "Is Invorex free to use?",
-    a: "Yes! Invorex offers a free plan that includes core features like invoice creation, customer management, and PDF export. You can upgrade to a paid plan anytime for advanced features and higher limits.",
+    q: "Is Novexa free to use?",
+    a: "Yes! Novexa offers a free plan that includes core features like invoice creation, customer management, and PDF export. You can upgrade to a paid plan anytime for advanced features and higher limits.",
     icon: "💰",
     color: "#10B981",
     border: "rgba(16,185,129,0.3)",
@@ -34,8 +34,8 @@ const faqs = [
     bg: "rgba(37,99,235,0.07)",
   },
   {
-    q: "Is Invorex cloud-based?",
-    a: "Yes. Invorex is fully cloud-based. Your data is securely stored online and accessible from any device — desktop, tablet, or mobile — anytime, anywhere. No installation needed.",
+    q: "Is Novexa cloud-based?",
+    a: "Yes. Novexa is fully cloud-based. Your data is securely stored online and accessible from any device — desktop, tablet, or mobile — anytime, anywhere. No installation needed.",
     icon: "☁️",
     color: "#06B6D4",
     border: "rgba(6,182,212,0.3)",
@@ -201,13 +201,13 @@ export default function FAQ() {
             Questions?{" "}
             <span
               className="bg-clip-text text-transparent"
-              style={{ backgroundImage: "linear-gradient(135deg, #06B6D4, #2563EB 50%, #A855F7)" }}
+              style={{ backgroundImage: "linear-gradient(135deg, #2563EB, #60A5FA 50%, #F59E0B)" }}
             >
               We Have Answers
             </span>
           </h2>
           <p className="text-gray-400 text-lg leading-relaxed">
-            Everything you need to know about Invorex. Can not find what you are looking for?
+            Everything you need to know about Novexa. Can not find what you are looking for?
             Reach out to our team anytime.
           </p>
         </div>
@@ -251,7 +251,10 @@ function StillHaveQuestions() {
         <p className="text-gray-500 text-sm mb-5">
           Our support team is ready to help you with anything.
         </p>
-        <a
+        <button className="btn-primary">
+          Contact Support →
+        </button>
+        {/* <a
           href="#contact"
           className="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold rounded-full transition-all duration-300 hover:scale-105"
           style={{
@@ -271,7 +274,7 @@ function StillHaveQuestions() {
           }}
         >
           Contact Support →
-        </a>
+        </a> */}
       </div>
     </div>
   );

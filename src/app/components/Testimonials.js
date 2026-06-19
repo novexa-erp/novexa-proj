@@ -22,7 +22,7 @@ const testimonials = [
     role: "Owner, Raza Traders",
     avatar: "AR",
     rating: 5,
-    text: "Made invoicing 10x faster. I used to spend 2 hours making invoices in Excel. Now it takes 5 minutes. Invorex is a game changer for my business.",
+    text: "Made invoicing 10x faster. I used to spend 2 hours making invoices in Excel. Now it takes 5 minutes. Novexa is a game changer for my business.",
     color: "#F59E0B",
     bg: "rgba(245,158,11,0.08)",
     border: "rgba(245,158,11,0.25)",
@@ -52,7 +52,7 @@ const testimonials = [
     role: "Founder, Bloom Boutique",
     avatar: "FN",
     rating: 5,
-    text: "I send invoices to clients on WhatsApp directly from the app. My clients love how professional it looks. My sales have improved since I started using Invorex.",
+    text: "I send invoices to clients on WhatsApp directly from the app. My clients love how professional it looks. My sales have improved since I started using Novexa.",
     color: "#A855F7",
     bg: "rgba(168,85,247,0.08)",
     border: "rgba(168,85,247,0.25)",
@@ -72,7 +72,7 @@ const testimonials = [
     role: "Owner, ZS Accessories",
     avatar: "ZS",
     rating: 5,
-    text: "Switched from a very expensive ERP to Invorex and honestly I don't miss anything. Everything I need is here — invoices, customers, products, payments.",
+    text: "Switched from a very expensive ERP to Novexa and honestly I don't miss anything. Everything I need is here — invoices, customers, products, payments.",
     color: "#EC4899",
     bg: "rgba(236,72,153,0.08)",
     border: "rgba(236,72,153,0.25)",
@@ -243,13 +243,13 @@ export default function Testimonials() {
             Trusted by{" "}
             <span
               className="bg-clip-text text-transparent"
-              style={{ backgroundImage: "linear-gradient(135deg, #F59E0B, #EF4444 50%, #A855F7)" }}
+              style={{ backgroundImage: "linear-gradient(135deg, #2563EB, #60A5FA 50%, #F59E0B)" }}
             >
               Real Businesses
             </span>
           </h2>
           <p className="text-gray-400 text-lg leading-relaxed">
-            From small shops to growing companies — here is what our users say about Invorex.
+            From small shops to growing companies — here is what our users say about Novexa.
           </p>
 
           {/* Rating summary */}

@@ -1,0 +1,251 @@
+/* ══════════════════════════════════════════
+   Website Color Theme:
+   Primary Blue  → #2563EB / #60A5FA
+   Accent Gold   → #F59E0B / #FBBF24
+   Background    → #0d1117
+   Text          → #e2e8f0 / #9ca3af
+══════════════════════════════════════════ */
+
+/* ══════════════════════════════════════════
+   LAYOUT
+══════════════════════════════════════════ */
+.dividerWrap {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* ══════════════════════════════════════════
+   LINES
+══════════════════════════════════════════ */
+.lineTrack {
+  position: relative;
+  width: 2px;
+  height: 60px;
+  overflow: hidden;
+}
+
+/* dim static background */
+.lineStatic {
+  position: absolute;
+  inset: 0;
+  width: 2px;
+  opacity: 0.15;
+  transition: opacity 0.5s ease, box-shadow 0.5s ease;
+}
+.lineTrackTop .lineStatic {
+  background: linear-gradient(to bottom, #2563EB, transparent);
+}
+.lineTrackBottom .lineStatic {
+  background: linear-gradient(to bottom, transparent, #F59E0B);
+}
+
+/* active — track fully glows */
+.lineTrackTop.active .lineStatic {
+  opacity: 1;
+  background: linear-gradient(to bottom, #60A5FA, #2563EB);
+  box-shadow: 0 0 10px rgba(37, 99, 235, 0.9), 0 0 20px rgba(37, 99, 235, 0.4);
+}
+.lineTrackBottom.active .lineStatic {
+  opacity: 1;
+  background: linear-gradient(to bottom, #F59E0B, #FBBF24);
+  box-shadow: 0 0 10px rgba(245, 158, 11, 0.9), 0 0 20px rgba(245, 158, 11, 0.4);
+}
+
+/* travelling beacon */
+.lineBeacon {
+  position: absolute;
+  left: 0;
+  width: 2px;
+  height: 28px;
+  border-radius: 2px;
+  top: -28px;
+  opacity: 0;
+}
+.lineBeaconTop {
+  background: linear-gradient(to bottom, transparent, #ffffff, #60A5FA, #2563EB, transparent);
+}
+.lineBeaconBottom {
+  background: linear-gradient(to bottom, transparent, #ffffff, #FBBF24, #F59E0B, transparent);
+}
+
+/* shoot — fires once */
+.lineBeacon.shoot {
+  animation: beaconShoot 0.5s cubic-bezier(0.25, 0.46, 0.45, 0.94) forwards;
+}
+
+@keyframes beaconShoot {
+  0%   { top: -28px; opacity: 0; }
+  5%   { opacity: 1; }
+  92%  { opacity: 1; }
+  100% { top: 100%; opacity: 0; }
+}
+
+/* ══════════════════════════════════════════
+   CIRCLE
+══════════════════════════════════════════ */
+.circleWrap {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 68px;
+  height: 68px;
+}
+
+/* idle spin — barely visible */
+.spinRing {
+  position: absolute;
+  inset: -3px;
+  border-radius: 9999px;
+  z-index: 1;
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    rgba(37, 99, 235, 0.08) 25%,
+    transparent 50%
+  );
+  animation: spinIdle 6s linear infinite;
+}
+
+/* one fast round */
+.spinRing.oneRound {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    #2563EB   20%,
+    #60A5FA   45%,
+    #F59E0B   68%,
+    #FBBF24   78%,
+    transparent 88%
+  );
+  animation: spinOneRound 0.8s cubic-bezier(0.4, 0, 0.6, 1) forwards;
+}
+
+/* stays lit after round — slow glow spin */
+.spinRing.lit {
+  background: conic-gradient(
+    from 0deg,
+    transparent 0%,
+    #2563EB   20%,
+    #60A5FA   45%,
+    #F59E0B   68%,
+    #FBBF24   78%,
+    transparent 88%
+  );
+  animation: spinSlow 3s linear infinite;
+}
+
+@keyframes spinIdle {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes spinOneRound {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+@keyframes spinSlow {
+  from { transform: rotate(0deg); }
+  to   { transform: rotate(360deg); }
+}
+
+/* ring mask — creates hollow border look */
+.ringMask {
+  position: absolute;
+  inset: 3px;
+  border-radius: 9999px;
+  background: #0d1117;
+  z-index: 2;
+}
+
+/* outer glow */
+.outerGlow {
+  position: absolute;
+  inset: -10px;
+  border-radius: 9999px;
+  background: radial-gradient(circle, rgba(37, 99, 235, 0.05) 0%, transparent 70%);
+  z-index: 0;
+  transition: background 0.5s ease;
+}
+.outerGlow.lit {
+  background: radial-gradient(
+    circle,
+    rgba(37, 99, 235, 0.3)  0%,
+    rgba(245, 158, 11, 0.15) 50%,
+    transparent 70%
+  );
+  animation: glowPulse 1.4s ease-in-out infinite;
+}
+@keyframes glowPulse {
+  0%, 100% { transform: scale(1);    opacity: 0.75; }
+  50%       { transform: scale(1.22); opacity: 1; }
+}
+
+/* inner bg */
+.innerBg {
+  position: absolute;
+  inset: 3px;
+  border-radius: 9999px;
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.08), rgba(245, 158, 11, 0.06));
+  z-index: 3;
+  transition: background 0.4s ease;
+}
+.innerBg.lit {
+  background: linear-gradient(135deg, rgba(37, 99, 235, 0.28), rgba(245, 158, 11, 0.22));
+}
+
+/* ⚡ bolt */
+.boltIcon {
+  position: relative;
+  z-index: 4;
+  font-size: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.3;
+  filter: drop-shadow(0 0 2px rgba(37, 99, 235, 0.2));
+  transition: opacity 0.3s ease, filter 0.3s ease;
+}
+
+.boltIcon.flash {
+  animation: electricFlash 0.65s ease-in-out forwards;
+}
+
+/* stays bright after flash */
+.boltIcon.lit {
+  opacity: 1;
+  filter:
+    drop-shadow(0 0 8px #FBBF24)
+    drop-shadow(0 0 18px #F59E0B)
+    drop-shadow(0 0 32px rgba(37, 99, 235, 0.6));
+}
+
+@keyframes electricFlash {
+  0%   { opacity: 0.3;  transform: scale(1);    filter: drop-shadow(0 0 3px rgba(37,99,235,0.3)); }
+  18%  { opacity: 1;    transform: scale(1.38); filter: drop-shadow(0 0 24px #fff) drop-shadow(0 0 42px #60A5FA); }
+  36%  { opacity: 0.2;  transform: scale(0.82); filter: drop-shadow(0 0 4px #2563EB); }
+  55%  { opacity: 1;    transform: scale(1.42); filter: drop-shadow(0 0 30px #fff) drop-shadow(0 0 52px #F59E0B); }
+  75%  { opacity: 0.85; transform: scale(1.1);  filter: drop-shadow(0 0 14px #FBBF24); }
+  100% { opacity: 1;    transform: scale(1);    filter: drop-shadow(0 0 8px #FBBF24) drop-shadow(0 0 18px #F59E0B) drop-shadow(0 0 32px rgba(37,99,235,0.6)); }
+}
+
+/* ══════════════════════════════════════════
+   BRIDGE TEXT
+══════════════════════════════════════════ */
+.bridgeText {
+  text-align: center;
+  font-size: 15px;
+  font-weight: 600;
+  padding: 12px 28px;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: #6b7280;
+  transition: border-color 0.5s ease, box-shadow 0.5s ease, color 0.5s ease, background 0.5s ease;
+}
+.bridgeText.lit {
+  border-color: rgba(245, 158, 11, 0.5);
+  box-shadow: 0 0 28px rgba(245, 158, 11, 0.18), 0 0 8px rgba(37, 99, 235, 0.15);
+  color: #FDE68A;
+  background: rgba(245, 158, 11, 0.05);
+}

@@ -1,6 +1,140 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, useCallback } from "react";
+import styles from "./ProblemSolutionSection.module.css";
+
+// ── Sequenced divider animation ──────────────────────────────────────────────
+// SEQUENCE (each step adds to lit state, nothing turns off until reset):
+//
+//  phase 0  → all idle / dim
+//  phase 1  → top line beacon shoots down  → line stays lit
+//  phase 2  → circle ring does ONE fast round → ring stays lit
+//  phase 3  → ⚡ bolt double-flashes        → bolt stays lit
+//  phase 4  → bottom line beacon shoots    → line stays lit
+//  phase 5  → bridge text lights up        → text stays lit
+//  phase 6  → short pause (all lit)
+//  phase 0  → everything resets → pause → loop
+//
+// "phase" tracks the HIGHEST active step so far.
+// Components are lit when phase >= their step number.
+
+function AnimatedDivider() {
+  const [phase, setPhase]       = useState(0);  // 0–6
+  const [ringAnim, setRingAnim] = useState(""); // "" | "oneRound" | "lit"
+  const [boltAnim, setBoltAnim] = useState(""); // "" | "flash"    | "lit"
+
+  const timerRef = useRef([]);
+
+  const clearAll = () => {
+    timerRef.current.forEach(clearTimeout);
+    timerRef.current = [];
+  };
+
+  const schedule = (fn, ms) => {
+    const id = setTimeout(fn, ms);
+    timerRef.current.push(id);
+  };
+
+  const runSequence = useCallback(() => {
+    clearAll();
+
+    // Phase 1 — top line beacon shoots (500ms anim) → line stays lit
+    setPhase(1);
+    setRingAnim("");
+    setBoltAnim("");
+
+    // Phase 2 — circle does one fast spin round
+    schedule(() => {
+      setPhase(2);
+      setRingAnim("oneRound");
+      // After the round completes, keep ring lit
+      schedule(() => setRingAnim("lit"), 820);
+    }, 600); // wait for top line beacon
+
+    // Phase 3 — bolt flash
+    schedule(() => {
+      setPhase(3);
+      setBoltAnim("flash");
+      // After flash, keep bolt lit
+      schedule(() => setBoltAnim("lit"), 680);
+    }, 600 + 900); // after circle round
+
+    // Phase 4 — bottom line beacon shoots → stays lit
+    schedule(() => setPhase(4), 600 + 900 + 500);
+
+    // Phase 5 — bridge text lights up
+    schedule(() => setPhase(5), 600 + 900 + 500 + 600);
+
+    // Phase 6 — hold everything lit
+    schedule(() => setPhase(6), 600 + 900 + 500 + 600 + 400);
+
+    // Reset — all off, then restart
+    schedule(() => {
+      setPhase(0);
+      setRingAnim("");
+      setBoltAnim("");
+    }, 600 + 900 + 500 + 600 + 400 + 900);
+
+  }, []); // eslint-disable-line
+
+  // Initial start
+  useEffect(() => {
+    const id = setTimeout(runSequence, 800);
+    return () => { clearAll(); clearTimeout(id); };
+  }, []); // eslint-disable-line
+
+  // Restart after reset
+  const prevPhase = useRef(1);
+  useEffect(() => {
+    if (prevPhase.current !== 0 && phase === 0) {
+      const id = setTimeout(runSequence, 600);
+      timerRef.current.push(id);
+    }
+    prevPhase.current = phase;
+  }, [phase, runSequence]);
+
+  // Derived states — each element is lit once phase reaches its step and stays
+  const topLineLit    = phase >= 1;
+  const ringActive    = phase >= 2;
+  const boltActive    = phase >= 3;
+  const bottomLineLit = phase >= 4;
+  const textLit       = phase >= 5;
+
+  return (
+    <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: 24 }}>
+      <div className={styles.dividerWrap}>
+
+        {/* TOP LINE */}
+        <div className={`${styles.lineTrack} ${styles.lineTrackTop} ${topLineLit ? styles.active : ""}`}>
+          <div className={styles.lineStatic} />
+          <div className={`${styles.lineBeacon} ${styles.lineBeaconTop} ${phase === 1 ? styles.shoot : ""}`} />
+        </div>
+
+        {/* CIRCLE */}
+        <div className={styles.circleWrap}>
+          <div className={`${styles.outerGlow} ${ringActive ? styles.lit : ""}`} />
+          <div className={`${styles.spinRing}  ${ringAnim ? styles[ringAnim] : ""}`} />
+          <div className={styles.ringMask} />
+          <div className={`${styles.innerBg}   ${ringActive ? styles.lit : ""}`} />
+          <span className={`${styles.boltIcon} ${boltAnim ? styles[boltAnim] : ""}`}>⚡</span>
+        </div>
+
+        {/* BOTTOM LINE */}
+        <div className={`${styles.lineTrack} ${styles.lineTrackBottom} ${bottomLineLit ? styles.active : ""}`}>
+          <div className={styles.lineStatic} />
+          <div className={`${styles.lineBeacon} ${styles.lineBeaconBottom} ${phase === 4 ? styles.shoot : ""}`} />
+        </div>
+
+      </div>
+
+      {/* BRIDGE TEXT */}
+      <p className={`${styles.bridgeText} ${textLit ? styles.lit : ""}`}>
+        Novexa solves all of this — here is how 👇
+      </p>
+    </div>
+  );
+}
+// ─────────────────────────────────────────────────────────────────────────────
 
 function useInView(threshold = 0.15) {
   const [visible, setVisible] = useState(false);
@@ -309,7 +443,7 @@ export default function ProblemSolutionSection() {
               Managing Business Manually{" "}
               <span
                 className="bg-clip-text text-transparent"
-                style={{ backgroundImage: "linear-gradient(135deg, #EF4444, #F97316)" }}
+                style={{ backgroundImage: "linear-gradient(135deg, #2563EB, #60A5FA 50%, #F59E0B)" }}
               >
                 Wastes Time & Causes Errors
               </span>
@@ -337,36 +471,7 @@ export default function ProblemSolutionSection() {
             transform: dividerVisible ? "scale(1)" : "scale(0.9)",
           }}
         >
-          {/* Arrow */}
-          <div
-            className="relative flex flex-col items-center gap-1"
-            style={{ color: "rgba(255,255,255,0.15)" }}
-          >
-            <div className="w-px h-12 bg-gradient-to-b from-red-500/40 to-transparent" />
-            <div
-              className="w-14 h-14 rounded-full flex items-center justify-center text-2xl font-bold border transition-all duration-500"
-              style={{
-                background: "linear-gradient(135deg, rgba(16,185,129,0.12), rgba(37,99,235,0.12))",
-                border: "1.5px solid rgba(16,185,129,0.35)",
-                boxShadow: "0 0 30px rgba(16,185,129,0.15)",
-              }}
-            >
-              ⚡
-            </div>
-            <div className="w-px h-12 bg-gradient-to-b from-transparent to-emerald-500/40" />
-          </div>
-
-          {/* Bridge text */}
-          <p
-            className="text-center text-base font-semibold px-6 py-3 rounded-full"
-            style={{
-              background: "rgba(255,255,255,0.03)",
-              border: "1px solid rgba(255,255,255,0.08)",
-              color: "#9ca3af",
-            }}
-          >
-            Invorex solves all of this — here is how 👇
-          </p>
+          <AnimatedDivider />
         </div>
 
         {/* ─── SOLUTION BLOCK ─── */}
@@ -396,16 +501,16 @@ export default function ProblemSolutionSection() {
           {/* Heading */}
           <div className="text-center max-w-2xl mx-auto mb-14">
             <h2 className="text-white leading-tight mb-4">
-              Invorex Gives You{" "}
+              Novexa Gives You{" "}
               <span
                 className="bg-clip-text text-transparent"
-                style={{ backgroundImage: "linear-gradient(135deg, #10B981, #2563EB 50%, #A855F7)" }}
+                style={{ backgroundImage: "linear-gradient(135deg, #2563EB, #60A5FA 50%, #F59E0B)" }}
               >
                 Everything in One Place
               </span>
             </h2>
             <p className="text-gray-400 text-lg leading-relaxed">
-              One platform. Zero confusion. Invorex replaces your spreadsheets, manual tracking,
+              One platform. Zero confusion. Novexa replaces your spreadsheets, manual tracking,
               and guesswork with smart, automated tools built for real businesses.
             </p>
           </div>
@@ -424,47 +529,10 @@ export default function ProblemSolutionSection() {
             Stop managing manually. Start running smarter.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-4">
-            <button
-              className="group relative inline-flex items-center gap-2 px-8 py-4 text-base font-semibold text-white rounded-full overflow-hidden transition-all duration-300 hover:scale-105"
-              style={{
-                background: "linear-gradient(135deg, #10B981 0%, #059669 50%, #047857 100%)",
-                boxShadow: "0 6px 25px rgba(16,185,129,0.35), inset 0 1px 0 rgba(255,255,255,0.15)",
-              }}
-              onMouseEnter={e =>
-                (e.currentTarget.style.boxShadow =
-                  "0 8px 35px rgba(16,185,129,0.55), inset 0 1px 0 rgba(255,255,255,0.15)")
-              }
-              onMouseLeave={e =>
-                (e.currentTarget.style.boxShadow =
-                  "0 6px 25px rgba(16,185,129,0.35), inset 0 1px 0 rgba(255,255,255,0.15)")
-              }
-            >
-              <span>Fix My Business Now</span>
-              <span className="text-sm transition-transform duration-300 group-hover:translate-x-1">
-                →
-              </span>
-              <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/15 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
+            <button className="btn-primary">
+              Fix My Business Now <span className="text-sm">→</span>
             </button>
-            <button
-              className="inline-flex items-center gap-2 px-8 py-4 text-base font-semibold rounded-full transition-all duration-300 hover:scale-105"
-              style={{
-                color: "#93C5FD",
-                background: "rgba(37,99,235,0.08)",
-                border: "1.5px solid rgba(37,99,235,0.45)",
-              }}
-              onMouseEnter={e => {
-                e.currentTarget.style.background = "rgba(37,99,235,0.18)";
-                e.currentTarget.style.borderColor = "rgba(96,165,250,0.7)";
-                e.currentTarget.style.color = "#fff";
-                e.currentTarget.style.boxShadow = "0 4px 20px rgba(37,99,235,0.25)";
-              }}
-              onMouseLeave={e => {
-                e.currentTarget.style.background = "rgba(37,99,235,0.08)";
-                e.currentTarget.style.borderColor = "rgba(37,99,235,0.45)";
-                e.currentTarget.style.color = "#93C5FD";
-                e.currentTarget.style.boxShadow = "none";
-              }}
-            >
+            <button className="btn-secondary">
               See All Features <span className="text-sm">→</span>
             </button>
           </div>
