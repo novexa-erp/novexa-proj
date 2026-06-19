@@ -1,26 +1,142 @@
 @import "tailwindcss";
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
+body {
+  font-family: var(--font-poppins) !important;
+  background-color: #0d1117;
+  color: #ffffff;
 }
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+/* Smooth scroll */
+html {
+  scroll-behavior: smooth;
 }
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+/* Custom scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #0d1117;
+}
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(to bottom, #2563EB, #F59E0B);
+  border-radius: 99px;
+}
+
+/* Selection color */
+::selection {
+  background: rgba(37, 99, 235, 0.35);
+  color: #fff;
+}
+
+/* Desktop (Default) */
+h1 {
+  font-size: 48px !important;
+  font-weight: 700 !important; 
+}
+
+h2 {
+  font-size: 40px !important;
+  font-weight: 700 !important;
+}
+
+h3 {
+  font-size: 32px !important;
+  font-weight: 600 !important;
+}
+
+h4 {
+  font-size: 24px !important;
+  font-weight: 600 !important;
+}
+
+h5 {
+  font-size: 20px !important;
+  font-weight: 600 !important;
+}
+
+h6 {
+  font-size: 18px !important;
+  font-weight: 600 !important;
+}
+
+/* Tablet */
+@media (max-width: 1024px) {
+  h1 {
+    font-size: 42px !important;
+  }
+
+  h2 {
+    font-size: 36px !important;
+  }
+
+  h3 {
+    font-size: 28px !important;
+  }
+
+  h4 {
+    font-size: 22px !important;
+  }
+
+  h5 {
+    font-size: 18px !important;
+  }
+
+  h6 {
+    font-size: 16px !important;
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+/* Mobile */
+@media (max-width: 768px) {
+  h1 {
+    font-size: 36px !important;
+  }
+
+  h2 {
+    font-size: 30px !important;
+  }
+
+  h3 {
+    font-size: 24px !important;
+  }
+
+  h4 {
+    font-size: 20px !important;
+  }
+
+  h5 {
+    font-size: 18px !important;
+  }
+
+  h6 {
+    font-size: 16px !important;
+  }
+}
+
+/* Small Mobile */
+@media (max-width: 480px) {
+  h1 {
+    font-size: 32px !important;
+  }
+
+  h2 {
+    font-size: 28px !important;
+  }
+
+  h3 {
+    font-size: 22px !important;
+  }
+
+  h4 {
+    font-size: 18px !important;
+  }
+
+  h5 {
+    font-size: 16px !important;
+  }
+
+  h6 {
+    font-size: 14px !important;
+  }
 }
