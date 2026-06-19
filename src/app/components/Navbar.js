@@ -6,11 +6,11 @@ import Link from "next/link";
 
 const navLinks = [
   { label: "Home",     href: "/" },
-  { label: "Features", href: "/features" },
-  { label: "Modules",  href: "/modules" },
+  { label: "Features", href: "/pages/features" },
+  { label: "Modules",  href: "/pages/modules" },
   { label: "Pricing",  href: "#pricing" },
-  { label: "About",    href: "/about" },
-  { label: "Contact",  href: "/contact" },
+  { label: "About",    href: "/pages/about" },
+  { label: "Contact",  href: "/pages/contact" },
 ];
 
 export default function Navbar() {
