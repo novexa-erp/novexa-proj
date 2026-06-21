@@ -1,10 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { auth } from "../../firebase";
+import { signInWithEmailAndPassword } from "firebase/auth";
 
 export default function LoginPage() {
+  const router = useRouter();
   const [mounted, setMounted]   = useState(false);
   const [focused, setFocused]   = useState(null);
   const [form, setForm]         = useState({ email: "", password: "" });
@@ -14,11 +18,30 @@ export default function LoginPage() {
 
   useEffect(() => { setTimeout(() => setMounted(true), 60); }, []);
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setError("");
     setLoading(true);
-    setTimeout(() => { setLoading(false); setError("Invalid email or password. Please try again."); }, 1500);
+
+    try {
+      await signInWithEmailAndPassword(auth, form.email, form.password);
+      // Redirect to dashboard after successful login
+      router.push("/dashboard");
+    } catch (err) {
+      setLoading(false);
+      console.error("Login error:", err);
+      
+      // Handle specific Firebase errors
+      if (err.code === "auth/user-not-found" || err.code === "auth/wrong-password") {
+        setError("Invalid email or password. Please try again.");
+      } else if (err.code === "auth/invalid-email") {
+        setError("Invalid email address.");
+      } else if (err.code === "auth/too-many-requests") {
+        setError("Too many failed attempts. Please try again later.");
+      } else {
+        setError("Login failed. Please try again.");
+      }
+    }
   }
 
   const field = (name) => ({

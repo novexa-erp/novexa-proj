@@ -1,17 +1,23 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { auth } from "../../firebase";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
 
 const steps = ["Account", "Business", "Done"];
 
 export default function RegisterPage() {
+  const router = useRouter();
   const [mounted, setMounted]   = useState(false);
   const [step, setStep]         = useState(0);
   const [focused, setFocused]   = useState(null);
   const [showPass, setShowPass] = useState(false);
   const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState("");
+  const [showSuccessPopup, setShowSuccessPopup] = useState(false);
   const [form, setForm]         = useState({
     name: "", email: "", password: "",
     business: "", phone: "", industry: "",
@@ -34,15 +40,95 @@ export default function RegisterPage() {
     },
   });
 
-  function handleNext(e) {
+  async function handleNext(e) {
     e.preventDefault();
-    if (step === 0) { setStep(1); return; }
+    setError("");
+
+    if (step === 0) { 
+      setStep(1); 
+      return; 
+    }
+
+    // Step 1: Create Firebase account
     setLoading(true);
-    setTimeout(() => { setLoading(false); setStep(2); }, 1600);
+    try {
+      // Create user with email and password
+      const userCredential = await createUserWithEmailAndPassword(
+        auth,
+        form.email,
+        form.password
+      );
+
+      // Update user profile with name
+      await updateProfile(userCredential.user, {
+        displayName: form.name,
+      });
+
+      // Show success popup
+      setLoading(false);
+      setShowSuccessPopup(true);
+
+      // Redirect to dashboard after 2 seconds
+      setTimeout(() => {
+        router.push("/dashboard");
+      }, 2000);
+
+    } catch (err) {
+      setLoading(false);
+      console.error("Registration error:", err);
+      
+      // Handle specific Firebase errors
+      if (err.code === "auth/email-already-in-use") {
+        setError("This email is already registered. Please sign in instead.");
+      } else if (err.code === "auth/weak-password") {
+        setError("Password should be at least 6 characters.");
+      } else if (err.code === "auth/invalid-email") {
+        setError("Invalid email address.");
+      } else {
+        setError("Registration failed. Please try again.");
+      }
+    }
   }
 
   return (
-    <div className="min-h-screen bg-[#0d1117] flex">
+    <div className="min-h-screen bg-[#0d1117] flex relative">
+      
+      {/* Success Popup */}
+      {showSuccessPopup && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4" style={{ background: "rgba(0,0,0,0.8)" }}>
+          <div 
+            className="relative max-w-md w-full p-8 rounded-3xl text-center"
+            style={{ 
+              background: "linear-gradient(135deg, #0a1628 0%, #0d1117 100%)",
+              border: "2px solid rgba(245,158,11,0.3)",
+              boxShadow: "0 0 60px rgba(245,158,11,0.2)"
+            }}
+          >
+            <div className="w-20 h-20 rounded-full flex items-center justify-center text-5xl mx-auto mb-5 animate-bounce"
+              style={{ 
+                background: "rgba(245,158,11,0.12)", 
+                border: "3px solid rgba(245,158,11,0.4)", 
+                boxShadow: "0 0 40px rgba(245,158,11,0.3)" 
+              }}>
+              🎉
+            </div>
+            <h2 className="text-white font-bold text-3xl mb-3">Successfully Registered!</h2>
+            <p className="text-gray-400 text-base mb-2">
+              Welcome to Novexa ERP, <strong className="text-[#F59E0B]">{form.name || "there"}</strong>!
+            </p>
+            <p className="text-gray-500 text-sm mb-6">
+              Redirecting you to your dashboard...
+            </p>
+            <div className="flex items-center justify-center gap-2">
+              <svg className="w-5 h-5 animate-spin text-[#F59E0B]" viewBox="0 0 24 24" fill="none">
+                <circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25" />
+                <path fill="currentColor" d="M4 12a8 8 0 018-8v8z" className="opacity-75" />
+              </svg>
+              <span className="text-gray-400 text-sm">Loading your dashboard...</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Left panel ── */}
       <div className="hidden lg:flex lg:w-[42%] relative overflow-hidden flex-col justify-between p-12">
@@ -145,22 +231,15 @@ export default function RegisterPage() {
             ))}
           </div>
 
-          {step === 2 ? (
-            /* ── Success ── */
-            <div className="text-center py-8">
-              <div className="w-20 h-20 rounded-full flex items-center justify-center text-4xl mx-auto mb-5"
-                style={{ background: "rgba(245,158,11,0.12)", border: "2px solid rgba(245,158,11,0.4)", boxShadow: "0 0 40px rgba(245,158,11,0.2)" }}>
-                🎉
-              </div>
-              <h2 className="text-white font-bold text-2xl mb-2">Account Created!</h2>
-              <p className="text-gray-400 text-sm mb-2">Welcome to Novexa ERP, <strong className="text-white">{form.name || "there"}</strong>!</p>
-              <p className="text-gray-500 text-sm mb-8">We sent a confirmation to <span className="text-blue-400">{form.email}</span>.</p>
-              <Link href="/login" className="btn-primary">Go to Dashboard →</Link>
-              <p className="text-gray-600 text-xs mt-4">Or check your email to verify your account.</p>
+          {/* Error Alert */}
+          {error && (
+            <div className="flex items-center gap-2 px-4 py-3 rounded-xl mb-5 text-sm"
+              style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "#FCA5A5" }}>
+              <span>⚠</span> {error}
             </div>
-          ) : (
-            <>
-              <div className="mb-7">
+          )}
+
+          <div className="mb-7">
                 <h1 className="text-white font-bold mb-1.5" style={{ fontSize: 26 }}>
                   {step === 0 ? "Create your account" : "Tell us about your business"}
                 </h1>
@@ -275,8 +354,6 @@ export default function RegisterPage() {
                   <Link href="/privacy-policy" className="text-gray-500 hover:text-gray-300 transition-colors">Privacy Policy</Link>
                 </p>
               )}
-            </>
-          )}
         </div>
       </div>
     </div>
