@@ -1,18 +1,35 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { createUserWithEmailAndPassword, updateProfile } from "firebase/auth";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
+import { auth, db } from "@/lib/firebase";
+
+// Firebase error → human readable
+function firebaseError(code) {
+  const map = {
+    "auth/email-already-in-use": "An account with this email already exists.",
+    "auth/invalid-email":        "Please enter a valid email address.",
+    "auth/weak-password":        "Password must be at least 6 characters.",
+    "auth/too-many-requests":    "Too many attempts. Please wait and try again.",
+  };
+  return map[code] || "Something went wrong. Please try again.";
+}
 
 const steps = ["Account", "Business", "Done"];
 
 export default function RegisterPage() {
-  const [mounted, setMounted]   = useState(false);
-  const [step, setStep]         = useState(0);
-  const [focused, setFocused]   = useState(null);
-  const [showPass, setShowPass] = useState(false);
-  const [loading, setLoading]   = useState(false);
-  const [form, setForm]         = useState({
+  const router                            = useRouter();
+  const [mounted, setMounted]             = useState(false);
+  const [step, setStep]                   = useState(0);
+  const [focused, setFocused]             = useState(null);
+  const [showPass, setShowPass]           = useState(false);
+  const [loading, setLoading]             = useState(false);
+  const [error, setError]                 = useState("");
+  const [form, setForm]                   = useState({
     name: "", email: "", password: "",
     business: "", phone: "", industry: "",
   });
@@ -34,11 +51,36 @@ export default function RegisterPage() {
     },
   });
 
-  function handleNext(e) {
+  async function handleNext(e) {
     e.preventDefault();
+    setError("");
+
     if (step === 0) { setStep(1); return; }
+
     setLoading(true);
-    setTimeout(() => { setLoading(false); setStep(2); }, 1600);
+    try {
+      const credential = await createUserWithEmailAndPassword(auth, form.email, form.password);
+      const user = credential.user;
+
+      await updateProfile(user, { displayName: form.name });
+
+      await setDoc(doc(db, "users", user.uid), {
+        uid:       user.uid,
+        name:      form.name,
+        email:     form.email,
+        business:  form.business,
+        phone:     form.phone || "",
+        industry:  form.industry || "",
+        plan:      "free",
+        createdAt: serverTimestamp(),
+      });
+
+      setStep(2);
+      setTimeout(() => router.push("/dashboard"), 2000);
+    } catch (err) {
+      setError(firebaseError(err.code));
+      setLoading(false);
+    }
   }
 
   return (
@@ -244,6 +286,13 @@ export default function RegisterPage() {
                       </select>
                     </div>
                   </>
+                )}
+
+                {error && (
+                  <div className="flex items-center gap-2 px-4 py-3 rounded-xl text-sm"
+                    style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "#FCA5A5" }}>
+                    <span>⚠</span> {error}
+                  </div>
                 )}
 
                 <button type="submit" disabled={loading} className="btn-primary w-full justify-center mt-1"

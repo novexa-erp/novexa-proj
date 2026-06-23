@@ -1,24 +1,47 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
+import { signInWithEmailAndPassword } from "firebase/auth";
+import { auth } from "@/lib/firebase";
+
+// Firebase error → human readable
+function firebaseError(code) {
+  const map = {
+    "auth/user-not-found":     "No account found with this email.",
+    "auth/wrong-password":     "Incorrect password. Please try again.",
+    "auth/invalid-credential": "Invalid email or password.",
+    "auth/invalid-email":      "Please enter a valid email address.",
+    "auth/too-many-requests":  "Too many attempts. Please wait and try again.",
+    "auth/user-disabled":      "This account has been disabled.",
+  };
+  return map[code] || "Something went wrong. Please try again.";
+}
 
 export default function LoginPage() {
-  const [mounted, setMounted]   = useState(false);
-  const [focused, setFocused]   = useState(null);
-  const [form, setForm]         = useState({ email: "", password: "" });
-  const [showPass, setShowPass] = useState(false);
-  const [loading, setLoading]   = useState(false);
-  const [error, setError]       = useState("");
+  const router                            = useRouter();
+  const [mounted, setMounted]             = useState(false);
+  const [focused, setFocused]             = useState(null);
+  const [form, setForm]                   = useState({ email: "", password: "" });
+  const [showPass, setShowPass]           = useState(false);
+  const [loading, setLoading]             = useState(false);
+  const [error, setError]                 = useState("");
 
   useEffect(() => { setTimeout(() => setMounted(true), 60); }, []);
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setError("");
     setLoading(true);
-    setTimeout(() => { setLoading(false); setError("Invalid email or password. Please try again."); }, 1500);
+    try {
+      await signInWithEmailAndPassword(auth, form.email, form.password);
+      router.push("/dashboard");
+    } catch (err) {
+      setError(firebaseError(err.code));
+      setLoading(false);
+    }
   }
 
   const field = (name) => ({
