@@ -206,19 +206,3 @@ h6 {
 }
 
 /* ══════════════════════════════════════════ */
-
-/* HeroSlider animations */
-@keyframes float {
-  0%, 100% { transform: translateY(0px) scale(1); opacity: 0.4; }
-  50% { transform: translateY(-12px) scale(1.2); opacity: 0.8; }
-}
-
-@keyframes progress {
-  from { width: 0%; }
-  to { width: 100%; }
-}
-
-.animate-float {
-  animation: float 3s ease-in-out infinite;
-}
-
