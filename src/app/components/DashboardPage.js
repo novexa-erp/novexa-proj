@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, Suspense } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
@@ -47,7 +47,8 @@ function todayStr() {
   return new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 }
 
-export default function DashboardPage() {
+// Separate component for search params to wrap in Suspense
+function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
@@ -638,5 +639,21 @@ export default function DashboardPage() {
       )}
 
     </div>
+  );
+}
+
+// Main export with Suspense boundary
+export default function DashboardPage() {
+  return (
+    <Suspense fallback={
+      <div className="min-h-screen bg-[#0d1117] flex items-center justify-center">
+        <div className="relative">
+          <div className="w-20 h-20 rounded-full border-4 border-t-amber-500 border-r-purple-500 border-b-blue-500 border-l-pink-500 animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center text-3xl animate-pulse">📊</div>
+        </div>
+      </div>
+    }>
+      <DashboardContent />
+    </Suspense>
   );
 }
