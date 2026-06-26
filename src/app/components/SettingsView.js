@@ -59,7 +59,7 @@ const SECT = ({ title, color = "#F59E0B", children }) => (
   </div>
 );
 
-export default function SettingsView({ uid, user, userDoc, onSettingsSaved }) {
+export default function SettingsView({ uid, user, userDoc, onSettingsSaved, loading }) {
   const logoInputRef = useRef(null);
 
   const [profile, setProfile] = useState({
@@ -159,14 +159,23 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved }) {
 
   const cardS = { background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" };
 
-  return (
-    <div className="flex flex-col gap-6 max-w-2xl">
-
-      {/* ── Page header ── */}
-      <div>
-        <h2 className="text-white font-black text-xl">Settings</h2>
-        <p className="text-gray-500 text-xs mt-0.5">Business info, logo, currency and security settings</p>
+  // ── Professional Loader ───────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="relative">
+          <div className="w-20 h-20 rounded-full border-4 border-t-amber-500 border-r-purple-500 border-b-blue-500 border-l-pink-500 animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center text-3xl animate-pulse">⚙️</div>
+        </div>
       </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col lg:flex-row gap-6 w-full max-w-7xl">
+      
+      {/* ────────────── LEFT COLUMN: Forms ────────────── */}
+      <div className="flex-1 flex flex-col gap-6">
 
       {/* ── Profile & Business form ── */}
       <form onSubmit={handleSaveProfile} className="rounded-2xl p-6 flex flex-col gap-6" style={cardS}>
@@ -321,6 +330,101 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved }) {
           </div>
         </SECT>
       </form>
+
+      </div>
+
+      {/* ────────────── RIGHT COLUMN: Info Cards ────────────── */}
+      <div className="lg:w-96 flex flex-col gap-4">
+        
+        {/* Quick Tips Card */}
+        <div className="rounded-2xl p-5 flex flex-col gap-4" style={cardS}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+              style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)" }}>
+              💡
+            </div>
+            <h3 className="text-white font-bold text-sm">Quick Tips</h3>
+          </div>
+          <div className="flex flex-col gap-3">
+            {[
+              { icon: "🏢", text: "Add your business logo for professional invoices" },
+              { icon: "💰", text: "Select your default currency for all transactions" },
+              { icon: "🔒", text: "Change password regularly for better security" },
+              { icon: "📧", text: "Keep your email updated for notifications" },
+            ].map((tip, i) => (
+              <div key={i} className="flex items-start gap-3 text-xs">
+                <span className="text-lg leading-none mt-0.5">{tip.icon}</span>
+                <p className="text-gray-400 leading-relaxed">{tip.text}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* Account Stats Card */}
+        <div className="rounded-2xl p-5 flex flex-col gap-4" style={cardS}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+              style={{ background: "rgba(37,99,235,0.12)" }}>
+              📊
+            </div>
+            <h3 className="text-white font-bold text-sm">Account Info</h3>
+          </div>
+          <div className="flex flex-col gap-2">
+            <div className="flex justify-between items-center py-2 border-b border-white/5">
+              <span className="text-gray-500 text-xs">Account Status</span>
+              <span className="px-2 py-1 rounded-lg text-xs font-semibold"
+                style={{ background: "rgba(52,211,153,0.12)", color: "#34d399" }}>
+                Active
+              </span>
+            </div>
+            <div className="flex justify-between items-center py-2 border-b border-white/5">
+              <span className="text-gray-500 text-xs">User ID</span>
+              <span className="text-gray-400 text-xs font-mono">{uid?.slice(0, 8)}...</span>
+            </div>
+            <div className="flex justify-between items-center py-2">
+              <span className="text-gray-500 text-xs">Email Verified</span>
+              <span className="text-xs">
+                {user?.emailVerified ? "✓ Yes" : "⚠ No"}
+              </span>
+            </div>
+          </div>
+        </div>
+
+        {/* Security Tips Card */}
+        <div className="rounded-2xl p-5 flex flex-col gap-4" 
+          style={{ background: "rgba(248,113,113,0.05)", border: "1px solid rgba(248,113,113,0.15)" }}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+              style={{ background: "rgba(248,113,113,0.15)" }}>
+              🛡️
+            </div>
+            <h3 className="text-white font-bold text-sm">Security Best Practices</h3>
+          </div>
+          <div className="flex flex-col gap-2.5 text-xs text-gray-400 leading-relaxed">
+            <p>✓ Use a strong password with uppercase, lowercase, numbers & symbols</p>
+            <p>✓ Never share your password with anyone</p>
+            <p>✓ Change your password every 3-6 months</p>
+            <p>✓ Sign out from shared or public devices</p>
+          </div>
+        </div>
+
+        {/* Help Card */}
+        <div className="rounded-2xl p-5 flex flex-col gap-3" style={cardS}>
+          <div className="flex items-center gap-3">
+            <span className="text-2xl">🤝</span>
+            <h3 className="text-white font-bold text-sm">Need Help?</h3>
+          </div>
+          <p className="text-gray-400 text-xs leading-relaxed">
+            Having trouble with settings? Contact our support team for assistance.
+          </p>
+          <button type="button" 
+            className="px-4 py-2.5 rounded-xl text-xs font-semibold transition-all hover:scale-105 w-full"
+            style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.25)", color: "#60A5FA" }}>
+            Contact Support
+          </button>
+        </div>
+
+      </div>
 
     </div>
   );

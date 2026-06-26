@@ -109,68 +109,116 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
   const card = "rounded-2xl p-5";
   const cardStyle = { background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" };
 
-  return (
-    <div className="flex flex-col gap-5">
-
-      {/* ── Top bar ── */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        {/* tabs */}
-        <div className="flex gap-1 p-1 rounded-xl" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
-          {TABS.map(t => {
-            const count = t === "All" ? directInvoices.length : directInvoices.filter(i => i.status === t).length;
-            const active = activeTab === t;
-            return (
-              <button key={t} onClick={() => setActiveTab(t)}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all flex items-center gap-1.5"
-                style={{
-                  background: active ? (t === "Paid" ? "rgba(52,211,153,0.15)" : t === "Unpaid" ? "rgba(248,113,113,0.15)" : t === "Partial" ? "rgba(251,191,36,0.15)" : "rgba(37,99,235,0.15)") : "transparent",
-                  color: active ? (t === "Paid" ? "#34d399" : t === "Unpaid" ? "#f87171" : t === "Partial" ? "#fbbf24" : "#60A5FA") : "#6b7280",
-                }}>
-                {t}
-                <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full"
-                  style={{ background: "rgba(255,255,255,0.07)" }}>{count}</span>
-              </button>
-            );
-          })}
+  // ── Professional Loader ───────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="relative">
+          <div className="w-20 h-20 rounded-full border-4 border-t-amber-500 border-r-purple-500 border-b-blue-500 border-l-pink-500 animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center text-3xl animate-pulse">🧾</div>
         </div>
+      </div>
+    );
+  }
 
-        <div className="flex gap-2">
-          {/* search */}
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs">🔍</span>
-            <input placeholder="Search customer / ID..." value={search}
-              onChange={e => setSearch(e.target.value)}
-              className="pl-8 pr-3 py-2 rounded-xl text-xs text-white outline-none"
-              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", width: 200 }} />
+  return (
+    <div className="flex flex-col gap-5 w-full">
+
+      {/* Professional Header */}
+      <div className="relative overflow-hidden rounded-xl p-6" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
+        <div className="absolute inset-0 bg-gradient-to-r from-orange-500/5 via-pink-500/5 to-purple-500/5 animate-gradient-x" />
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold mb-1 bg-gradient-to-r from-amber-400 via-pink-500 to-purple-500 bg-clip-text text-transparent">
+              Invoice Management
+            </h2>
+            <p className="text-gray-400 text-xs">Create and manage customer invoices</p>
           </div>
-          {/* new invoice btn */}
+          
           <button onClick={() => { setEditTarget(null); setShowModal(true); }}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all hover:scale-105"
-            style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", color: "#000" }}>
-            ➕ New Invoice
+            className="group relative px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg">
+            <div className="absolute inset-0 bg-gradient-to-r from-amber-500 to-orange-600 transition-transform group-hover:scale-105" />
+            <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            <span className="relative z-10 flex items-center gap-2 text-black font-bold">
+              <span className="text-base group-hover:rotate-90 transition-transform duration-300">+</span>
+              Create Invoice
+            </span>
           </button>
         </div>
       </div>
 
-      {/* ── Stats row ── */}
-      {!loading && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
-          {[
-            { label: "Total Invoices",  val: directInvoices.length,                                                                    color: "#60A5FA" },
-            { label: "Total Amount",    val: formatRs(directInvoices.reduce((s,i)=>s+(Number(i.amount)||0),0)),                        color: "#fff"    },
-            { label: "Total Collected", val: formatRs(directInvoices.reduce((s,i)=>s+(Number(i.amountPaid)||0),0)),                    color: "#34d399" },
-            { label: "Total Balance",   val: formatRs(directInvoices.reduce((s,i)=>s+(Number(i.balance)||0),0)),                       color: "#f87171" },
-          ].map(s => (
-            <div key={s.label} className={card} style={cardStyle}>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">{s.label}</p>
-              <p className="font-black text-base" style={{ color: s.color }}>{s.val}</p>
+      {/* Professional Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        {[
+          { label: "Total Invoices", value: directInvoices.length, icon: "🧾", color: "from-orange-500 to-amber-600" },
+          { label: "Total Amount", value: formatRs(directInvoices.reduce((s,i)=>s+(Number(i.amount)||0),0)), icon: "💰", color: "from-pink-500 to-purple-600" },
+          { label: "Total Collected", value: formatRs(directInvoices.reduce((s,i)=>s+(Number(i.amountPaid)||0),0)), icon: "💵", color: "from-green-500 to-emerald-600" },
+          { label: "Total Balance", value: formatRs(directInvoices.reduce((s,i)=>s+(Number(i.balance)||0),0)), icon: "⏳", color: "from-rose-500 to-red-600" },
+        ].map((stat, i) => (
+          <div key={i} 
+            className="group relative rounded-lg p-4 overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:-translate-y-1 cursor-pointer"
+            style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
+            <div className={`absolute inset-0 bg-gradient-to-br ${stat.color} opacity-5 group-hover:opacity-10 transition-opacity duration-300`} />
+            <div className="relative z-10">
+              <div className="flex items-start justify-between mb-3">
+                <div className="text-2xl font-bold group-hover:scale-110 transition-all duration-300">
+                  {stat.icon}
+                </div>
+                <div className={`px-2 py-0.5 rounded-md text-[10px] font-semibold bg-gradient-to-r ${stat.color} text-white`}>
+                  Live
+                </div>
+              </div>
+              <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide mb-1">{stat.label}</p>
+              <p className="text-white font-bold text-2xl">{typeof stat.value === 'number' ? stat.value : stat.value}</p>
             </div>
-          ))}
+            <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${stat.color} opacity-50`} />
+          </div>
+        ))}
+      </div>
+
+      {/* Search & Filter Tabs */}
+      <div className="flex flex-col lg:flex-row gap-3">
+        <div className="flex-1 relative group">
+          <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-pink-500 rounded-lg opacity-0 group-hover:opacity-10 blur-xl transition-opacity duration-300" />
+          <input
+            type="text"
+            placeholder="🔍 Search by customer name or invoice ID..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="relative w-full px-4 py-2.5 pl-10 rounded-lg text-sm text-white outline-none transition-all duration-300"
+            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
+          />
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base">🔍</span>
         </div>
-      )}
+
+        <div className="flex flex-wrap gap-2">
+          {TABS.map(t => {
+            const count = t === "All" ? directInvoices.length : directInvoices.filter(i => i.status === t).length;
+            const icons = { All: "📋", Unpaid: "❌", Partial: "⚡", Paid: "✅" };
+            return (
+              <button
+                key={t}
+                onClick={() => setActiveTab(t)}
+                className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-300 ${
+                  activeTab === t ? "scale-105 shadow-lg" : "hover:scale-105"
+                }`}
+                style={{
+                  background: activeTab === t 
+                    ? "linear-gradient(135deg, #F59E0B, #D97706)"
+                    : "rgba(255,255,255,0.05)",
+                  border: `1px solid ${activeTab === t ? "#F59E0B" : "rgba(255,255,255,0.1)"}`,
+                  color: activeTab === t ? "#000" : "#9ca3af",
+                }}>
+                <span className="text-sm font-bold">{icons[t]}</span>
+                {t} ({count})
+              </button>
+            );
+          })}
+        </div>
+      </div>
 
       {/* ── Invoice list ── */}
-      <div className="rounded-2xl overflow-hidden" style={cardStyle}>
+      <div className="rounded-xl overflow-hidden" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
         {/* list header */}
         <div className="hidden md:grid px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-gray-600 border-b border-white/[0.05]"
           style={{ gridTemplateColumns: "1fr 120px 110px 110px 90px 120px" }}>
@@ -182,28 +230,28 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
           <span className="text-right">Actions</span>
         </div>
 
-        {loading ? (
-          [...Array(5)].map((_, i) => (
-            <div key={i} className="px-5 py-4 border-b border-white/[0.04] animate-pulse flex gap-3">
-              <div className="w-8 h-8 rounded-xl bg-white/5 flex-shrink-0" />
-              <div className="flex-1 flex flex-col gap-2 py-1">
-                <div className="h-3 bg-white/5 rounded w-40" />
-                <div className="h-2 bg-white/5 rounded w-24" />
-              </div>
+        {filtered.length === 0 ? (
+          <div className="py-16 text-center relative">
+            <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 via-pink-500/5 to-blue-500/5" />
+            <div className="relative z-10">
+              <div className="text-4xl mb-4 font-bold">{search ? "🔍" : "🧾"}</div>
+              <h3 className="text-white font-bold text-xl mb-2">
+                {search ? "No matches found" : `No ${activeTab === "All" ? "" : activeTab.toLowerCase() + " "}invoices yet`}
+              </h3>
+              <p className="text-gray-400 text-sm mb-6 max-w-md mx-auto">
+                {search 
+                  ? `No invoices match "${search}"`
+                  : "Create your first invoice to get started"
+                }
+              </p>
+              {!search && (
+                <button onClick={() => { setEditTarget(null); setShowModal(true); }}
+                  className="px-6 py-3 rounded-lg text-sm font-semibold transition-all duration-300 hover:scale-105 shadow-lg"
+                  style={{ background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#000" }}>
+                  + Create First Invoice
+                </button>
+              )}
             </div>
-          ))
-        ) : filtered.length === 0 ? (
-          <div className="py-16 text-center">
-            <p className="text-4xl mb-3">🧾</p>
-            <p className="text-gray-400 text-sm font-medium">
-              {search ? "No invoices match your search." : `No ${activeTab === "All" ? "" : activeTab.toLowerCase() + " "}invoices yet.`}
-            </p>
-            {!search && (
-              <button onClick={() => { setEditTarget(null); setShowModal(true); }}
-                className="mt-3 text-xs font-semibold transition-colors" style={{ color: "#F59E0B" }}>
-                Create your first invoice →
-              </button>
-            )}
           </div>
         ) : (
           filtered.map((inv) => {
@@ -353,6 +401,17 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
           </div>
         </div>
       )}
+
+      <style jsx global>{`
+        @keyframes gradient-x {
+          0%, 100% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+        }
+        .animate-gradient-x {
+          background-size: 200% 200%;
+          animation: gradient-x 5s ease infinite;
+        }
+      `}</style>
     </div>
   );
 }

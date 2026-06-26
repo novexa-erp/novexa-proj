@@ -329,32 +329,34 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
     <>
     <div className="flex flex-col gap-5">
 
-      {/* top nav */}
-      <div className="flex items-center justify-between flex-wrap gap-3">
-        <button onClick={onBack}
-          className="flex items-center gap-2 text-sm font-semibold transition-colors"
-          style={{ color: "#9ca3af" }}
-          onMouseEnter={e => e.currentTarget.style.color = "#fff"}
-          onMouseLeave={e => e.currentTarget.style.color = "#9ca3af"}>
-          ← Back to Customers
-        </button>
-        <div className="flex gap-2 flex-wrap">
-          {/* ★ Generate Invoice btn */}
-          <button onClick={openNewInvoice}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all hover:scale-105"
-            style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", color: "#000" }}>
-            🧾 Generate Invoice
+      {/* Professional Top Nav */}
+      <div className="relative overflow-hidden rounded-xl p-5" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
+        <div className="absolute inset-0 bg-gradient-to-r from-orange-500/5 via-pink-500/5 to-purple-500/5" />
+        <div className="relative z-10 flex items-center justify-between flex-wrap gap-3">
+          <button onClick={onBack}
+            className="flex items-center gap-2 text-sm font-semibold transition-colors group"
+            style={{ color: "#9ca3af" }}>
+            <span className="group-hover:-translate-x-1 transition-transform duration-300">←</span>
+            <span className="group-hover:text-white">Back to Customers</span>
           </button>
-          <button onClick={onEdit}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-105"
-            style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.25)", color: "#60A5FA" }}>
-            ✏️ Edit
-          </button>
-          <button onClick={onDelete}
-            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-105"
-            style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171" }}>
-            🗑 Delete
-          </button>
+          <div className="flex gap-2 flex-wrap">
+            {/* ★ Generate Invoice btn */}
+            <button onClick={openNewInvoice}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all hover:scale-105 shadow-lg"
+              style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", color: "#000" }}>
+              🧾 Generate Invoice
+            </button>
+            <button onClick={onEdit}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-105"
+              style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.25)", color: "#60A5FA" }}>
+              ✏️ Edit
+            </button>
+            <button onClick={onDelete}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-105"
+              style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171" }}>
+              🗑 Delete
+            </button>
+          </div>
         </div>
       </div>
 
@@ -614,6 +616,7 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
   const custLinkedInvoices = invoices.filter(i => i.customerId);
   const activeCount  = customers.filter(c => c.status !== "inactive").length;
   const totalRevenue = custLinkedInvoices.filter(i => i.status === "Paid").reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  const totalPaid    = custLinkedInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
   const totalBalance = custLinkedInvoices.reduce((s, i) => s + (Number(i.balance) || 0), 0);
 
   const filtered = customers.filter(c => {
@@ -627,6 +630,18 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
   });
 
   const cardS = { background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" };
+
+  // ── Professional Loader ───────────────────────────────────────────────────
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-96">
+        <div className="relative">
+          <div className="w-20 h-20 rounded-full border-4 border-t-amber-500 border-r-purple-500 border-b-blue-500 border-l-pink-500 animate-spin" />
+          <div className="absolute inset-0 flex items-center justify-center text-3xl animate-pulse">👥</div>
+        </div>
+      </div>
+    );
+  }
 
   // detail view
   if (detailCust) {
@@ -656,121 +671,202 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
   }
 
   return (
-    <div className="flex flex-col gap-5">
-      {/* top bar */}
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h2 className="text-white font-black text-xl">Customers</h2>
-          <p className="text-gray-500 text-xs mt-0.5">{customers.length} total</p>
-        </div>
-        <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex gap-1 p-1 rounded-xl" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
-            {["All", "active", "inactive"].map(t => (
-              <button key={t} onClick={() => setStatusFilter(t)}
-                className="px-3 py-1.5 rounded-lg text-xs font-semibold capitalize transition-all"
-                style={{ background: statusFilter === t ? "rgba(37,99,235,0.15)" : "transparent",
-                  color: statusFilter === t ? "#60A5FA" : "#6b7280" }}>
-                {t === "All" ? `All (${customers.length})` : t === "active" ? `Active (${activeCount})` : `Inactive (${customers.length - activeCount})`}
-              </button>
-            ))}
+    <div className="flex flex-col gap-5 w-full">
+      
+      {/* Professional Header */}
+      <div className="relative overflow-hidden rounded-xl p-6" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
+        <div className="absolute inset-0 bg-gradient-to-r from-orange-500/5 via-pink-500/5 to-purple-500/5 animate-gradient-x" />
+        <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold mb-1 bg-gradient-to-r from-amber-400 via-pink-500 to-purple-500 bg-clip-text text-transparent">
+              Customer Management
+            </h2>
+            <p className="text-gray-400 text-xs">Manage your customer base and relationships</p>
           </div>
-          <div className="relative">
-            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-xs">🔍</span>
-            <input placeholder="Name, shop, phone, city..." value={search} onChange={e => setSearch(e.target.value)}
-              className="pl-8 pr-3 py-2 rounded-xl text-xs text-white outline-none"
-              style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", width: 220 }} />
-          </div>
+          
           <button onClick={() => { setEditTarget(null); setShowModal(true); }}
-            className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all hover:scale-105"
-            style={{ background: "linear-gradient(135deg,#2563EB,#1d4ed8)", color: "#fff" }}>
-            ➕ New Customer
+            className="group relative px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg">
+            <div className="absolute inset-0 bg-gradient-to-r from-amber-500 to-orange-600 transition-transform group-hover:scale-105" />
+            <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+            <span className="relative z-10 flex items-center gap-2 text-black font-bold">
+              <span className="text-base group-hover:rotate-90 transition-transform duration-300">+</span>
+              Add Customer
+            </span>
           </button>
         </div>
       </div>
 
-      {/* stats */}
-      {!loading && (
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      {/* Professional Stats */}
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           {[
-            { label: "Total Customers", val: customers.length,       icon: "👥", color: "#60A5FA",  bg: "rgba(37,99,235,0.08)",  border: "rgba(37,99,235,0.2)"   },
-            { label: "Active",          val: activeCount,            icon: "✅", color: "#34d399",  bg: "rgba(52,211,153,0.08)", border: "rgba(52,211,153,0.2)"  },
-            { label: "Total Revenue",   val: formatRs(totalRevenue), icon: "💰", color: "#F59E0B",  bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.2)"  },
-            { label: "Balance Due",     val: formatRs(totalBalance), icon: "⏳",
-              color: totalBalance > 0 ? "#f87171" : "#34d399",
-              bg: totalBalance > 0 ? "rgba(248,113,113,0.08)" : "rgba(52,211,153,0.08)",
-              border: totalBalance > 0 ? "rgba(248,113,113,0.2)" : "rgba(52,211,153,0.2)" },
-          ].map(s => (
-            <div key={s.label} className="rounded-2xl p-4 transition-all duration-200"
-              style={{ background: s.bg, border: `1px solid ${s.border}` }}
-              onMouseEnter={e => e.currentTarget.style.transform = "translateY(-2px)"}
-              onMouseLeave={e => e.currentTarget.style.transform = "translateY(0)"}>
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-lg">{s.icon}</span>
-                <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "rgba(255,255,255,0.3)" }}>{s.label}</p>
+            { label: "Total Customers", value: customers.length, icon: "👥", color: "from-orange-500 to-amber-600" },
+            { label: "Active Customers", value: activeCount, icon: "✅", color: "from-pink-500 to-purple-600" },
+            { label: "Total Revenue", value: formatRs(totalRevenue), icon: "💰", color: "from-amber-500 to-orange-600" },
+            { label: "Total Paid", value: formatRs(totalPaid), icon: "💵", color: "from-green-500 to-emerald-600" },
+            { label: "Balance Due", value: formatRs(totalBalance), icon: "⏳", color: totalBalance > 0 ? "from-rose-500 to-red-600" : "from-green-500 to-emerald-600" },
+          ].map((stat, i) => (
+            <div key={i} 
+              className="group relative rounded-lg p-4 overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:-translate-y-1 cursor-pointer"
+              style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
+              <div className={`absolute inset-0 bg-gradient-to-br ${stat.color} opacity-5 group-hover:opacity-10 transition-opacity duration-300`} />
+              <div className="relative z-10">
+                <div className="flex items-start justify-between mb-3">
+                  <div className="text-2xl font-bold group-hover:scale-110 transition-all duration-300">
+                    {stat.icon}
+                  </div>
+                  <div className={`px-2 py-0.5 rounded-md text-[10px] font-semibold bg-gradient-to-r ${stat.color} text-white`}>
+                    Live
+                  </div>
+                </div>
+                <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide mb-1">{stat.label}</p>
+                <p className="text-white font-bold text-2xl">{typeof stat.value === 'number' ? stat.value : stat.value}</p>
               </div>
-              <p className="font-black text-xl" style={{ color: s.color }}>{s.val}</p>
+              <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${stat.color} opacity-50`} />
             </div>
           ))}
         </div>
-      )}
 
-      {/* grid */}
-      {loading ? (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {[...Array(6)].map((_, i) => (
-            <div key={i} className="rounded-2xl p-5 animate-pulse" style={{ ...cardS, height: 130 }} />
+      {/* Search & Filter */}
+      <div className="flex flex-col lg:flex-row gap-3">
+        <div className="flex-1 relative group">
+          <div className="absolute inset-0 bg-gradient-to-r from-orange-500 to-pink-500 rounded-lg opacity-0 group-hover:opacity-10 blur-xl transition-opacity duration-300" />
+          <input
+            type="text"
+            placeholder="🔍 Search by name, shop, phone, city..."
+            value={search}
+            onChange={e => setSearch(e.target.value)}
+            className="relative w-full px-4 py-2.5 pl-10 rounded-lg text-sm text-white outline-none transition-all duration-300"
+            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
+          />
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-base">🔍</span>
+        </div>
+
+        <div className="flex flex-wrap gap-2">
+          {[
+            { id: "All", label: "All", icon: "📋", count: customers.length },
+            { id: "active", label: "Active", icon: "✅", count: activeCount },
+            { id: "inactive", label: "Inactive", icon: "❌", count: customers.length - activeCount },
+          ].map(f => (
+            <button
+              key={f.id}
+              onClick={() => setStatusFilter(f.id)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-300 ${
+                statusFilter === f.id ? "scale-105 shadow-lg" : "hover:scale-105"
+              }`}
+              style={{
+                background: statusFilter === f.id 
+                  ? "linear-gradient(135deg, #F59E0B, #D97706)"
+                  : "rgba(255,255,255,0.05)",
+                border: `1px solid ${statusFilter === f.id ? "#F59E0B" : "rgba(255,255,255,0.1)"}`,
+                color: statusFilter === f.id ? "#000" : "#9ca3af",
+              }}>
+              <span className="text-sm font-bold">{f.icon}</span>
+              {f.label} ({f.count})
+            </button>
           ))}
         </div>
-      ) : filtered.length === 0 ? (
-        <div className="rounded-2xl py-20 text-center" style={cardS}>
-          <p className="text-4xl mb-3">👥</p>
-          <p className="text-gray-400 text-sm font-medium">{search ? "No customers match your search." : "No customers yet."}</p>
-          {!search && (
-            <button onClick={() => setShowModal(true)} className="mt-3 text-xs font-semibold" style={{ color: "#2563EB" }}>
-              Add your first customer →
-            </button>
-          )}
+      </div>
+
+      {/* Customers Grid */}
+      {filtered.length === 0 ? (
+        <div className="rounded-xl p-16 text-center relative overflow-hidden" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
+          <div className="absolute inset-0 bg-gradient-to-br from-purple-500/5 via-pink-500/5 to-blue-500/5" />
+          <div className="relative z-10">
+            <div className="text-4xl mb-4 font-bold">{search ? "🔍" : "👥"}</div>
+            <h3 className="text-white font-bold text-xl mb-2">
+              {search ? "No matches found" : "No customers yet"}
+            </h3>
+            <p className="text-gray-400 text-sm mb-6 max-w-md mx-auto">
+              {search 
+                ? `No customers match "${search}"`
+                : "Start by adding your first customer"
+              }
+            </p>
+            {!search && (
+              <button onClick={() => setShowModal(true)}
+                className="px-6 py-3 rounded-lg text-sm font-semibold transition-all duration-300 hover:scale-105 shadow-lg"
+                style={{ background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#000" }}>
+                + Create First Customer
+              </button>
+            )}
+          </div>
         </div>
       ) : (
-        <div className="grid sm:grid-cols-2 lg:grid-cols-3 gap-3">
-          {filtered.map(c => {
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
+          {filtered.map((c, idx) => {
             const custInv = invoices.filter(i => i.customerId === c.id);
             const custBal = custInv.reduce((s, i) => s + (Number(i.balance) || 0), 0);
             return (
-              <button key={c.id} onClick={() => setDetailCust(c)}
-                className="rounded-2xl p-5 text-left transition-all duration-200"
-                style={cardS}
-                onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-2px)"; e.currentTarget.style.boxShadow = "0 8px 24px rgba(0,0,0,0.3)"; e.currentTarget.style.borderColor = "rgba(37,99,235,0.3)"; }}
-                onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "none"; e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)"; }}>
-                <div className="flex items-start gap-3 mb-3">
-                  <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black text-white flex-shrink-0"
-                    style={{ background: avatarColor(c.id) }}>
+              <div key={c.id}
+                onClick={() => setDetailCust(c)}
+                className="customer-card group relative rounded-lg overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:-translate-y-1 cursor-pointer"
+                style={{ 
+                  background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", 
+                  border: "1px solid rgba(255,255,255,0.1)", 
+                  backdropFilter: "blur(12px)",
+                  animationDelay: `${idx * 0.05}s`,
+                }}>
+                
+                {/* Gradient Overlay */}
+                <div className="absolute inset-0 bg-gradient-to-br from-orange-500/5 via-pink-500/5 to-purple-500/5 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                
+                {/* Status Badge */}
+                <div className="absolute top-3 right-3 z-20">
+                  <div className={`px-2 py-1 rounded-md text-[10px] font-semibold backdrop-blur-lg transition-all duration-300 group-hover:scale-110 ${
+                    c.status === "inactive" 
+                      ? "bg-red-500/20 text-red-300 border border-red-400/40" 
+                      : "bg-green-500/20 text-green-300 border border-green-400/40"
+                  }`}>
+                    {c.status === "inactive" ? "Inactive" : "Active"}
+                  </div>
+                </div>
+
+                {/* Avatar */}
+                <div className="relative p-4 pb-0">
+                  <div className="w-16 h-16 mx-auto rounded-2xl flex items-center justify-center text-xl font-black text-white mb-3 transition-transform duration-300 group-hover:scale-110"
+                    style={{ background: avatarColor(c.id), boxShadow: "0 8px 24px rgba(0,0,0,0.3)" }}>
                     {initials(c.name)}
                   </div>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-white font-bold text-sm truncate">{c.name}</p>
-                    {c.shopName && <p className="text-amber-400 text-xs font-medium truncate">{c.shopName}</p>}
+                </div>
+
+                {/* Content */}
+                <div className="relative p-4 pt-2 space-y-2.5">
+                  
+                  {/* Name & Shop */}
+                  <div className="text-center">
+                    <h3 className="text-white font-bold text-base line-clamp-1 group-hover:text-amber-400 transition-colors">
+                      {c.name}
+                    </h3>
+                    {c.shopName && (
+                      <p className="text-amber-400 text-sm font-semibold line-clamp-1 mt-0.5">{c.shopName}</p>
+                    )}
                   </div>
-                  <span className="text-[9px] font-bold px-2 py-0.5 rounded-full flex-shrink-0"
-                    style={{ background: c.status === "inactive" ? "rgba(248,113,113,0.1)" : "rgba(52,211,153,0.1)",
-                      color: c.status === "inactive" ? "#f87171" : "#34d399",
-                      border: `1px solid ${c.status === "inactive" ? "rgba(248,113,113,0.2)" : "rgba(52,211,153,0.2)"}` }}>
-                    {c.status === "inactive" ? "Inactive" : "Active"}
-                  </span>
+
+                  {/* Contact Info */}
+                  <div className="flex flex-col gap-1 text-center">
+                    {c.phone && <p className="text-gray-400 text-xs">📞 {c.phone}</p>}
+                    {c.city && <p className="text-gray-400 text-xs">📍 {c.city}</p>}
+                  </div>
+
+                  {/* Stats */}
+                  <div className="flex items-center justify-between pt-3 border-t border-white/5">
+                    <div className="text-left">
+                      <p className="text-[10px] text-gray-500 uppercase font-semibold tracking-wide">Invoices</p>
+                      <p className="text-white font-bold text-sm">{custInv.length}</p>
+                    </div>
+                    <div className="text-right">
+                      <p className="text-[10px] text-gray-500 uppercase font-semibold tracking-wide">Balance</p>
+                      {custBal > 0 ? (
+                        <p className="text-rose-400 font-bold text-sm">{formatRs(custBal).replace('Rs. ', '₨')}</p>
+                      ) : custInv.length > 0 ? (
+                        <p className="text-emerald-400 font-bold text-sm">Cleared ✓</p>
+                      ) : (
+                        <p className="text-gray-600 font-bold text-sm">—</p>
+                      )}
+                    </div>
+                  </div>
                 </div>
-                <div className="flex flex-col gap-1 mb-3">
-                  {c.phone && <p className="text-gray-500 text-xs">📞 {c.phone}</p>}
-                  {c.city  && <p className="text-gray-500 text-xs">📍 {c.city}</p>}
-                </div>
-                <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
-                  <p className="text-[10px] text-gray-600 font-medium">{custInv.length} invoice{custInv.length !== 1 ? "s" : ""}</p>
-                  {custBal > 0 ? (
-                    <p className="text-xs font-bold" style={{ color: "#f87171" }}>Bal: {formatRs(custBal)}</p>
-                  ) : custInv.length > 0 ? (
-                    <p className="text-xs font-bold" style={{ color: "#34d399" }}>Cleared ✓</p>
-                  ) : null}
-                </div>
-              </button>
+              </div>
             );
           })}
         </div>
@@ -788,6 +884,30 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
         <DeleteConfirm name={customers.find(c => c.id === deleteConf)?.name}
           onConfirm={() => handleDelete(deleteConf)} onCancel={() => setDeleteConf(null)} />
       )}
+
+      <style jsx global>{`
+        @keyframes gradient-x {
+          0%, 100% { background-position: 0% 50%; }
+          50% { background-position: 100% 50%; }
+        }
+        .animate-gradient-x {
+          background-size: 200% 200%;
+          animation: gradient-x 5s ease infinite;
+        }
+        @keyframes fadeInUp {
+          from {
+            opacity: 0;
+            transform: translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: translateY(0);
+          }
+        }
+        .customer-card {
+          animation: fadeInUp 0.4s ease-out both;
+        }
+      `}</style>
     </div>
   );
 }

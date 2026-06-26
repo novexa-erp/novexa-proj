@@ -44,6 +44,10 @@ service cloud.firestore {
         allow read, write: if isSignedIn() && isOwner(userId);
       }
 
+      match /purchases/{purchaseId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+
       match /expenses/{expenseId} {
         allow read, write: if isSignedIn() && isOwner(userId);
       }

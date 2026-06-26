@@ -1,7 +1,7 @@
 "use client";
 
 import { useState, useEffect } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import Link from "next/link";
 import Image from "next/image";
 import { onAuthStateChanged, signOut } from "firebase/auth";
@@ -13,6 +13,10 @@ import { auth, db } from "@/lib/firebase";
 import InvoicesView from "./InvoicesView";
 import CustomersView from "./CustomersView";
 import SettingsView from "./SettingsView";
+import InventoryView from "./InventoryView";
+import PaymentsView from "./PaymentsView";
+import PurchasesView from "./PurchasesView";
+import AnalyticsView from "./AnalyticsView";
 
 // ── Sidebar nav items ────────────────────────────────────────────────────────
 const navItems = [
@@ -21,8 +25,8 @@ const navItems = [
   { icon: "👥", label: "Customers",  id: "customers" },
   { icon: "📦", label: "Inventory",  id: "inventory" },
   { icon: "💳", label: "Payments",   id: "payments"  },
+  { icon: "🛒", label: "Purchases",  id: "purchases" },
   { icon: "📈", label: "Analytics",  id: "analytics" },
-  { icon: "🧑‍💼", label: "HR",        id: "hr"        },
   { icon: "⚙️", label: "Settings",  id: "settings"  },
 ];
 
@@ -45,6 +49,7 @@ function todayStr() {
 
 export default function DashboardPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
 
   // ── Auth state ──────────────────────────────────────────────────────────────
   const [user, setUser]         = useState(null);
@@ -52,8 +57,10 @@ export default function DashboardPage() {
   const [authLoading, setAuthLoading] = useState(true);
 
   // ── Nav / UI ────────────────────────────────────────────────────────────────
-  const [activeNav, setActiveNav]   = useState("overview");
+  // Initialize from URL query param or default to "overview"
+  const [activeNav, setActiveNav]   = useState(searchParams.get("view") || "overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [viewLoading, setViewLoading] = useState(false); // Loading state for tab switching
 
   // ── Firestore data ──────────────────────────────────────────────────────────
   const [invoices,  setInvoices]  = useState([]);
@@ -81,6 +88,27 @@ export default function DashboardPage() {
     });
     return () => unsub();
   }, [router]);
+
+  // ── Sync activeNav with URL ──────────────────────────────────────────────────
+  useEffect(() => {
+    const view = searchParams.get("view");
+    if (view && navItems.some(item => item.id === view)) {
+      setActiveNav(view);
+    }
+  }, [searchParams]);
+
+  // ── Update URL when navigation changes ──────────────────────────────────────
+  function handleNavChange(navId) {
+    setViewLoading(true); // Show loader when switching tabs
+    setActiveNav(navId);
+    setSidebarOpen(false);
+    // Update URL without page reload
+    const params = new URLSearchParams(window.location.search);
+    params.set("view", navId);
+    router.push(`${window.location.pathname}?${params.toString()}`, { scroll: false });
+    // Hide loader after a brief moment to show transition
+    setTimeout(() => setViewLoading(false), 300);
+  }
 
   // ── Real-time Firestore listeners ────────────────────────────────────────────
   // Subcollections under users/{uid}/ — no composite index needed
@@ -131,12 +159,12 @@ export default function DashboardPage() {
   const otherBalance    = otherInvoices.reduce((s, i) => s + (Number(i.balance) || 0), 0);
 
   const stats = [
-    { label: "Total Revenue",       value: formatRs(totalRevenue),   change: `${invoices.filter(i=>i.status==="Paid").length} paid`,          up: true,                icon: "💰", color: "#F59E0B", bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.25)" },
-    { label: "Invoices Sent",       value: String(invoices.length),  change: `${invoices.filter(i=>i.status==="Unpaid").length} unpaid`,       up: invoices.filter(i=>i.status==="Unpaid").length === 0, icon: "🧾", color: "#2563EB", bg: "rgba(37,99,235,0.08)", border: "rgba(37,99,235,0.25)" },
-    { label: "Customer Balance",    value: formatRs(customerBalance), change: `${customerInvoices.length} invoices`,                          up: customerBalance === 0, icon: "👥", color: "#F59E0B", bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.25)",
-      onClick: () => setActiveNav("customers") },
-    { label: "Other Invoice Balance", value: formatRs(otherBalance),  change: `${otherInvoices.length} invoices`,                             up: otherBalance === 0,   icon: "🧾", color: "#2563EB", bg: "rgba(37,99,235,0.08)", border: "rgba(37,99,235,0.25)",
-      onClick: () => setActiveNav("invoices") },
+    { label: "Total Revenue",       value: formatRs(totalRevenue),   change: `${invoices.filter(i=>i.status==="Paid").length} paid`,          up: true,                icon: "💰", color: "from-amber-500 to-orange-600" },
+    { label: "Invoices Sent",       value: String(invoices.length),  change: `${invoices.filter(i=>i.status==="Unpaid").length} unpaid`,       up: invoices.filter(i=>i.status==="Unpaid").length === 0, icon: "🧾", color: "from-pink-500 to-purple-600" },
+    { label: "Customer Balance",    value: formatRs(customerBalance), change: `${customerInvoices.length} invoices`,                          up: customerBalance === 0, icon: "👥", color: "from-orange-500 to-amber-600",
+      onClick: () => handleNavChange("customers") },
+    { label: "Other Invoice Balance", value: formatRs(otherBalance),  change: `${otherInvoices.length} invoices`,                             up: otherBalance === 0,   icon: "🧾", color: "from-blue-500 to-cyan-600",
+      onClick: () => handleNavChange("invoices") },
   ];
 
   // ── Sign out ─────────────────────────────────────────────────────────────────
@@ -237,10 +265,10 @@ export default function DashboardPage() {
   const initials    = displayName.charAt(0).toUpperCase();
 
   const quickActions = [
-    { icon: "➕", label: "New Invoice",  color: "#F59E0B", bg: "rgba(245,158,11,0.1)", border: "rgba(245,158,11,0.3)", action: () => setActiveNav("invoices")   },
-    { icon: "👤", label: "Add Customer", color: "#2563EB", bg: "rgba(37,99,235,0.1)",  border: "rgba(37,99,235,0.3)",  action: () => setActiveNav("customers") },
-    { icon: "📦", label: "Add Product",  color: "#F59E0B", bg: "rgba(245,158,11,0.1)", border: "rgba(245,158,11,0.3)", action: () => setShowProductModal(true)  },
-    { icon: "📄", label: "Export PDF",   color: "#2563EB", bg: "rgba(37,99,235,0.1)",  border: "rgba(37,99,235,0.3)",  action: () => window.print()             },
+    { icon: "➕", label: "New Invoice",  color: "from-amber-500 to-orange-600", action: () => handleNavChange("invoices")   },
+    { icon: "👤", label: "Add Customer", color: "from-pink-500 to-purple-600", action: () => handleNavChange("customers") },
+    { icon: "📦", label: "Add Product",  color: "from-orange-500 to-amber-600", action: () => setShowProductModal(true)  },
+    { icon: "📄", label: "Export PDF",   color: "from-blue-500 to-cyan-600",  action: () => window.print()             },
   ];
 
   return (
@@ -268,7 +296,7 @@ export default function DashboardPage() {
           {navItems.map((item) => {
             const isActive = activeNav === item.id;
             return (
-              <button key={item.id} onClick={() => { setActiveNav(item.id); setSidebarOpen(false); }}
+              <button key={item.id} onClick={() => handleNavChange(item.id)}
                 className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full text-left transition-all duration-200"
                 style={{
                   background: isActive ? "rgba(37,99,235,0.12)" : "transparent",
@@ -341,86 +369,98 @@ export default function DashboardPage() {
 
           {/* ── Invoices full page ── */}
           {activeNav === "invoices" ? (
-            <InvoicesView uid={user?.uid} invoices={invoices} loading={dataLoading} products={inventory} userDoc={userDoc} />
+            <InvoicesView uid={user?.uid} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} />
           ) : activeNav === "customers" ? (
-            <CustomersView uid={user?.uid} customers={customers} invoices={invoices} loading={dataLoading} products={inventory} userDoc={userDoc} />
+            <CustomersView uid={user?.uid} customers={customers} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} />
+          ) : activeNav === "inventory" ? (
+            <InventoryView uid={user?.uid} />
+          ) : activeNav === "payments" ? (
+            <PaymentsView uid={user?.uid} />
+          ) : activeNav === "purchases" ? (
+            <PurchasesView uid={user?.uid} />
+          ) : activeNav === "analytics" ? (
+            <AnalyticsView uid={user?.uid} />
           ) : activeNav === "settings" ? (
-            <SettingsView uid={user?.uid} user={user} userDoc={userDoc}
+            <SettingsView uid={user?.uid} user={user} userDoc={userDoc} loading={viewLoading}
               onSettingsSaved={(updated) => setUserDoc(prev => ({ ...prev, ...updated }))} />
+          ) : (
+          <>
+          {/* Overview Section with Professional Loader */}
+          {dataLoading || viewLoading ? (
+            <div className="flex items-center justify-center h-96">
+              <div className="relative">
+                <div className="w-20 h-20 rounded-full border-4 border-t-amber-500 border-r-purple-500 border-b-blue-500 border-l-pink-500 animate-spin" />
+                <div className="absolute inset-0 flex items-center justify-center text-3xl animate-pulse">📊</div>
+              </div>
+            </div>
           ) : (
           <>
           {/* quick actions */}
           <div className="flex flex-wrap gap-3 mb-7">
             {quickActions.map((a) => (
               <button key={a.label} onClick={a.action}
-                className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-200 hover:scale-105"
-                style={{ background: a.bg, border: `1px solid ${a.border}`, color: a.color }}>
-                {a.icon} {a.label}
+                className="group relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg">
+                <div className={`absolute inset-0 bg-gradient-to-r ${a.color} opacity-90`} />
+                <div className={`absolute inset-0 bg-gradient-to-r ${a.color} opacity-0 group-hover:opacity-100 transition-opacity duration-300 brightness-110`} />
+                <span className="relative z-10 text-white">{a.icon}</span>
+                <span className="relative z-10 text-white">{a.label}</span>
               </button>
             ))}
           </div>
 
-          {/* loading shimmer */}
-          {dataLoading ? (
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
-              {[...Array(4)].map((_, i) => (
-                <div key={i} className="rounded-2xl p-5 animate-pulse" style={{ background: "rgba(255,255,255,0.04)", height: 110 }} />
-              ))}
-            </div>
-          ) : (
-            /* stat cards */
-            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
+          {/* stat cards */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-7">
               {stats.map((s) => (
                 <div key={s.label}
-                  className="rounded-2xl p-5 transition-all duration-300"
-                  style={{ background: s.bg, border: `1px solid ${s.border}`, cursor: s.onClick ? "pointer" : "default" }}
-                  onClick={s.onClick}
-                  onMouseEnter={e => { e.currentTarget.style.transform = "translateY(-3px)"; e.currentTarget.style.boxShadow = `0 12px 30px ${s.bg}`; }}
-                  onMouseLeave={e => { e.currentTarget.style.transform = "translateY(0)"; e.currentTarget.style.boxShadow = "none"; }}>
-                  <div className="flex items-start justify-between mb-3">
-                    <span className="text-xl">{s.icon}</span>
-                    <span className="text-xs font-bold px-2 py-0.5 rounded-full"
-                      style={{ background: s.up ? "rgba(52,211,153,0.12)" : "rgba(248,113,113,0.12)", color: s.up ? "#34d399" : "#f87171" }}>
-                      {s.change}
-                    </span>
+                  className="group relative rounded-lg p-5 overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:-translate-y-1"
+                  style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)", cursor: s.onClick ? "pointer" : "default" }}
+                  onClick={s.onClick}>
+                  
+                  {/* Gradient Overlay */}
+                  <div className={`absolute inset-0 bg-gradient-to-br ${s.color} opacity-5 group-hover:opacity-10 transition-opacity duration-300`} />
+                  
+                  <div className="relative z-10">
+                    <div className="flex items-start justify-between mb-3">
+                      <div className="text-2xl font-bold group-hover:scale-110 transition-all duration-300">
+                        {s.icon}
+                      </div>
+                      <div className={`px-2 py-0.5 rounded-md text-[10px] font-semibold bg-gradient-to-r ${s.color} text-white`}>
+                        {s.change}
+                      </div>
+                    </div>
+                    <p className="text-white font-bold text-2xl leading-none mb-1">{s.value}</p>
+                    <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1">
+                      {s.label}
+                      {s.onClick && <span className="text-amber-400">→</span>}
+                    </p>
                   </div>
-                  <p className="text-white font-black text-xl leading-none mb-1">{s.value}</p>
-                  <p className="text-xs font-medium flex items-center gap-1" style={{ color: "rgba(255,255,255,0.4)" }}>
-                    {s.label}
-                    {s.onClick && <span style={{ color: "rgba(255,255,255,0.2)" }}>→</span>}
-                  </p>
+                  
+                  {/* Bottom gradient bar */}
+                  <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${s.color} opacity-50`} />
                 </div>
               ))}
             </div>
-          )}
 
           {/* bottom grid */}
           <div className="grid lg:grid-cols-3 gap-5">
 
             {/* recent invoices */}
-            <div className="lg:col-span-2 rounded-2xl overflow-hidden"
-              style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}>
-              <div className="flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-                <h3 className="text-white font-bold text-sm">Recent Invoices</h3>
-                <button onClick={() => setActiveNav("invoices")}
-                  className="text-xs font-semibold transition-colors" style={{ color: "#60A5FA" }}
-                  onMouseEnter={e => e.currentTarget.style.color = "#F59E0B"}
-                  onMouseLeave={e => e.currentTarget.style.color = "#60A5FA"}>
-                  View all →
-                </button>
+            <div className="lg:col-span-2 rounded-xl overflow-hidden"
+              style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
+              <div className="relative overflow-hidden">
+                <div className="absolute inset-0 bg-gradient-to-r from-orange-500/5 via-pink-500/5 to-purple-500/5" />
+                <div className="relative z-10 flex items-center justify-between px-5 py-4 border-b" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
+                  <h3 className="text-white font-bold text-sm">Recent Invoices</h3>
+                  <button onClick={() => handleNavChange("invoices")}
+                    className="text-xs font-semibold transition-colors" style={{ color: "#F59E0B" }}
+                    onMouseEnter={e => e.currentTarget.style.color = "#FCD34D"}
+                    onMouseLeave={e => e.currentTarget.style.color = "#F59E0B"}>
+                    View all →
+                  </button>
+                </div>
               </div>
               <div className="divide-y" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
-                {dataLoading ? (
-                  [...Array(4)].map((_, i) => (
-                    <div key={i} className="px-5 py-3.5 animate-pulse flex gap-3">
-                      <div className="w-8 h-8 rounded-xl bg-white/5" />
-                      <div className="flex-1 flex flex-col gap-2 py-1">
-                        <div className="h-3 bg-white/5 rounded w-32" />
-                        <div className="h-2 bg-white/5 rounded w-20" />
-                      </div>
-                    </div>
-                  ))
-                ) : invoices.length === 0 ? (
+                {invoices.length === 0 ? (
                   <div className="px-5 py-10 text-center">
                     <p className="text-gray-500 text-sm">No invoices yet.</p>
                     <button onClick={() => setShowInvoiceModal(true)} className="text-blue-400 text-xs mt-2 hover:text-blue-300">Create your first invoice →</button>
@@ -459,11 +499,12 @@ export default function DashboardPage() {
             {/* right sidebar */}
             <div className="flex flex-col gap-4">
               {/* stock alerts */}
-              <div className="rounded-2xl p-5" style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}>
-                <h3 className="text-white font-bold text-sm mb-4">Stock Alerts</h3>
-                {dataLoading ? (
-                  [...Array(3)].map((_, i) => <div key={i} className="h-6 rounded bg-white/5 mb-2 animate-pulse" />)
-                ) : lowStockItems.length === 0 ? (
+              <div className="rounded-xl p-5" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-base">⚠️</span>
+                  <h3 className="text-white font-bold text-sm">Stock Alerts</h3>
+                </div>
+                {lowStockItems.length === 0 ? (
                   <p className="text-gray-500 text-xs">All stock levels are healthy ✓</p>
                 ) : (
                   <div className="flex flex-col gap-2.5">
@@ -484,37 +525,37 @@ export default function DashboardPage() {
               </div>
 
               {/* payment summary */}
-              <div className="rounded-2xl p-5" style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}>
-                <h3 className="text-white font-bold text-sm mb-4">Payment Summary</h3>
-                {dataLoading ? (
-                  <div className="h-20 animate-pulse bg-white/5 rounded-xl" />
-                ) : (
-                  <div className="flex flex-col gap-3">
-                    {[
-                      { label: "Collected", amount: formatRs(totalRevenue),  color: "#34d399", pct: collectedPct },
-                      { label: "Pending",   amount: formatRs(pendingAmount), color: "#fbbf24", pct: pendingPct   },
-                    ].map((p) => (
-                      <div key={p.label}>
-                        <div className="flex justify-between mb-1.5">
-                          <span className="text-gray-400 text-xs">{p.label}</span>
-                          <span className="text-white text-xs font-semibold">{p.amount}</span>
-                        </div>
-                        <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-                          <div className="h-full rounded-full transition-all duration-700"
-                            style={{ width: `${p.pct}%`, background: p.color }} />
-                        </div>
+              <div className="rounded-xl p-5" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-base">💳</span>
+                  <h3 className="text-white font-bold text-sm">Payment Summary</h3>
+                </div>
+                <div className="flex flex-col gap-3">
+                  {[
+                    { label: "Collected", amount: formatRs(totalRevenue),  color: "#34d399", pct: collectedPct },
+                    { label: "Pending",   amount: formatRs(pendingAmount), color: "#fbbf24", pct: pendingPct   },
+                  ].map((p) => (
+                    <div key={p.label}>
+                      <div className="flex justify-between mb-1.5">
+                        <span className="text-gray-400 text-xs">{p.label}</span>
+                        <span className="text-white text-xs font-semibold">{p.amount}</span>
                       </div>
-                    ))}
-                  </div>
-                )}
+                      <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700"
+                          style={{ width: `${p.pct}%`, background: p.color }} />
+                      </div>
+                    </div>
+                  ))}
+                </div>
               </div>
 
               {/* customers quick list */}
-              <div className="rounded-2xl p-5" style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}>
-                <h3 className="text-white font-bold text-sm mb-4">Recent Customers</h3>
-                {dataLoading ? (
-                  <div className="h-20 animate-pulse bg-white/5 rounded-xl" />
-                ) : customers.length === 0 ? (
+              <div className="rounded-xl p-5" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
+                <div className="flex items-center gap-2 mb-4">
+                  <span className="text-base">👥</span>
+                  <h3 className="text-white font-bold text-sm">Recent Customers</h3>
+                </div>
+                {customers.length === 0 ? (
                   <p className="text-gray-500 text-xs">No customers yet.</p>
                 ) : (
                   <div className="flex flex-col gap-2.5">
@@ -535,6 +576,8 @@ export default function DashboardPage() {
               </div>
             </div>
           </div>
+          </>
+          )}
           </>
           )}
         </main>
