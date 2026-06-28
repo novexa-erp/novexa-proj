@@ -1,6 +1,6 @@
 "use client";
 import { useState, useRef, useEffect } from "react";
-import { doc, setDoc, serverTimestamp, updatePassword, EmailAuthProvider, reauthenticateWithCredential } from "firebase/firestore";
+import { doc, serverTimestamp } from "firebase/firestore";
 import { updatePassword as fbUpdatePassword, EmailAuthProvider as FBEmailAuthProvider, reauthenticateWithCredential as fbReauth } from "firebase/auth";
 import { db } from "@/lib/firebase";
 
@@ -232,7 +232,10 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
             </div>
             <div>
               <label style={lbl}>Email</label>
-              <SInput type="email" placeholder="you@business.com" value={profile.email} onChange={set("email")} />
+              <SInput type="email" placeholder="you@business.com" value={profile.email} onChange={set("email")} disabled={true} />
+              <p className="text-gray-500 text-[10px] mt-1.5 flex items-center gap-1">
+                <span>🔒</span> Email cannot be changed for security reasons
+              </p>
             </div>
             <div className="col-span-2">
               <label style={lbl}>Address</label>

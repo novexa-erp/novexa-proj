@@ -5,7 +5,8 @@ import Image from "next/image";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { doc, getDoc } from "firebase/firestore";
 
 const navLinks = [
   { label: "Home",     href: "/" },
@@ -21,9 +22,13 @@ export default function Navbar() {
   const [scrolled, setScrolled]       = useState(false);
   const [menuOpen, setMenuOpen]       = useState(false);
   const [user, setUser]               = useState(null);
+  const [userDoc, setUserDoc]         = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
   const [profileOpen, setProfileOpen] = useState(false);
   const profileRef                    = useRef(null);
+  
+  // Logout confirmation state
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   // scroll listener
   useEffect(() => {
@@ -34,9 +39,22 @@ export default function Navbar() {
 
   // Firebase auth state
   useEffect(() => {
-    const unsub = onAuthStateChanged(auth, (u) => {
+    const unsub = onAuthStateChanged(auth, async (u) => {
       setUser(u);
       setAuthLoading(false);
+      // Fetch user document for logo
+      if (u) {
+        try {
+          const userSnap = await getDoc(doc(db, "users", u.uid));
+          if (userSnap.exists()) {
+            setUserDoc(userSnap.data());
+          }
+        } catch (err) {
+          console.error("Error fetching user doc:", err);
+        }
+      } else {
+        setUserDoc(null);
+      }
     });
     return () => unsub();
   }, []);
@@ -55,7 +73,14 @@ export default function Navbar() {
   async function handleSignOut() {
     await signOut(auth);
     setProfileOpen(false);
+    setShowLogoutConfirm(false);
     router.push("/");
+  }
+  
+  function confirmLogout() {
+    setShowLogoutConfirm(true);
+    setProfileOpen(false);
+    setMenuOpen(false);
   }
 
   // Initials from display name or email
@@ -120,13 +145,19 @@ export default function Navbar() {
                   className="flex items-center gap-2 px-3 py-1.5 rounded-full transition-all duration-200 hover:bg-white/8"
                   style={{ border: "1px solid rgba(255,255,255,0.1)" }}
                 >
-                  {/* avatar */}
-                  <div
-                    className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
-                    style={{ background: "linear-gradient(135deg, #2563EB, #F59E0B)" }}
-                  >
-                    {initials}
-                  </div>
+                  {/* avatar with logo support */}
+                  {userDoc?.logoDataUrl ? (
+                    <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0" style={{ border: "1px solid rgba(255,255,255,0.1)" }}>
+                      <img src={userDoc.logoDataUrl} alt="Logo" className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div
+                      className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                      style={{ background: "linear-gradient(135deg, #2563EB, #F59E0B)" }}
+                    >
+                      {initials}
+                    </div>
+                  )}
                   <span className="text-gray-300 text-sm font-medium max-w-[120px] truncate">
                     {user.displayName || user.email?.split("@")[0]}
                   </span>
@@ -163,7 +194,7 @@ export default function Navbar() {
                         <span>⚙️</span> Settings
                       </Link>
                       <div className="h-px my-1" style={{ background: "rgba(255,255,255,0.06)" }} />
-                      <button onClick={handleSignOut}
+                      <button onClick={confirmLogout}
                         className="flex items-center gap-2.5 px-3 py-2 rounded-xl text-sm w-full text-left transition-all duration-150"
                         style={{ color: "#f87171" }}
                         onMouseEnter={e => e.currentTarget.style.background = "rgba(248,113,113,0.08)"}
@@ -177,12 +208,12 @@ export default function Navbar() {
             ) : (
               /* ── Not logged in ── */
               <>
-                <Link href="/login"
+                <Link href="/pages/login"
                   className="px-4 py-2 text-sm font-medium text-gray-400 hover:text-white transition-colors duration-200">
                   Sign In
                 </Link>
                 <Link
-                  href="/contact"
+                  href="/pages/contact"
                   className="group relative inline-flex items-center gap-2 px-6 py-2.5 text-sm font-semibold text-white rounded-full overflow-hidden transition-all duration-300 hover:scale-105 hover:shadow-[0_0_20px_rgba(245,158,11,0.5)]"
                   style={{
                     background: "linear-gradient(135deg, #F59E0B 0%, #D97706 50%, #B45309 100%)",
@@ -225,10 +256,16 @@ export default function Navbar() {
               <>
                 {/* mobile — logged in */}
                 <div className="flex items-center gap-3 px-4 py-2">
-                  <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
-                    style={{ background: "linear-gradient(135deg, #2563EB, #F59E0B)" }}>
-                    {initials}
-                  </div>
+                  {userDoc?.logoDataUrl ? (
+                    <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0" style={{ border: "1px solid rgba(255,255,255,0.1)" }}>
+                      <img src={userDoc.logoDataUrl} alt="Logo" className="w-full h-full object-cover" />
+                    </div>
+                  ) : (
+                    <div className="w-8 h-8 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                      style={{ background: "linear-gradient(135deg, #2563EB, #F59E0B)" }}>
+                      {initials}
+                    </div>
+                  )}
                   <div>
                     <p className="text-white text-sm font-medium">{user.displayName || "User"}</p>
                     <p className="text-gray-500 text-xs truncate">{user.email}</p>
@@ -239,7 +276,7 @@ export default function Navbar() {
                   style={{ background: "linear-gradient(135deg, #2563EB, #1d4ed8)", boxShadow: "0 4px 15px rgba(37,99,235,0.3)" }}>
                   Go to Dashboard →
                 </Link>
-                <button onClick={() => { handleSignOut(); setMenuOpen(false); }}
+                <button onClick={confirmLogout}
                   className="px-4 py-3 text-sm font-medium text-center rounded-full transition-all"
                   style={{ color: "#f87171", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)" }}>
                   Sign Out
@@ -247,11 +284,11 @@ export default function Navbar() {
               </>
             ) : (
               <>
-                <Link href="/login" onClick={() => setMenuOpen(false)}
+                <Link href="/pages/login" onClick={() => setMenuOpen(false)}
                   className="px-4 py-3 text-sm font-medium text-center text-gray-400 hover:text-white hover:bg-white/5 rounded-lg transition-all">
                   Sign In
                 </Link>
-                <Link href="/contact" onClick={() => setMenuOpen(false)}
+                <Link href="/pages/contact" onClick={() => setMenuOpen(false)}
                   className="px-4 py-3 text-sm font-semibold text-center text-white rounded-full"
                   style={{ background: "linear-gradient(135deg, #F59E0B 0%, #D97706 50%, #B45309 100%)", boxShadow: "0 4px 15px rgba(245,158,11,0.3)" }}>
                   Get Started →
@@ -261,6 +298,33 @@ export default function Navbar() {
           </div>
         </div>
       </div>
+      
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)" }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 flex flex-col gap-4 text-center"
+            style={{ background: "#0d1117", border: "1px solid rgba(239,68,68,0.3)" }}>
+            <p className="text-4xl">🚪</p>
+            <h3 className="text-white font-bold text-xl">Logout Confirmation</h3>
+            <p className="text-gray-400 text-sm">
+              Are you sure you want to logout? You'll need to sign in again to access your dashboard.
+            </p>
+            <div className="flex gap-3 mt-2">
+              <button onClick={() => setShowLogoutConfirm(false)}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all hover:scale-105"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+                Cancel
+              </button>
+              <button onClick={handleSignOut}
+                className="flex-1 py-3 rounded-xl text-sm font-bold transition-all hover:scale-105"
+                style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", color: "#ef4444" }}>
+                Yes, Logout
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </nav>
   );
 }

@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import SweetAlert from "./SweetAlert";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 export function formatRs(n) {
@@ -10,7 +11,7 @@ export function formatRs(n) {
 export const EMPTY_FORM = {
   logoDataUrl: "",
   customerName: "", address: "", phone: "", email: "",
-  items: [{ description: "", qty: 1, unitPrice: "", productId: "" }],
+  items: [{ description: "", qty: 1, unitPrice: "", productId: "", variantId: "", stock: "" }],
   discountType: "percent",
   discountValue: "",
   amountPaid: "",
@@ -121,23 +122,35 @@ function ProductPickerModal({ products, onSelect, onClose }) {
           {filtered.length === 0 ? (
             <p className="text-gray-500 text-sm text-center py-8">No products found.</p>
           ) : (
-            filtered.map(p => (
-              <button key={p.id} type="button"
-                onClick={() => onSelect(p)}
-                className="w-full flex items-center justify-between px-5 py-3 text-left border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors">
-                <div>
-                  <p className="text-white text-sm font-medium">{p.name}</p>
-                  <p className="text-gray-500 text-xs mt-0.5">
-                    Stock: <span style={{ color: (Number(p.stock) || 0) <= (Number(p.lowStockThreshold) || 10) ? "#fbbf24" : "#34d399" }}>
-                      {p.stock ?? "—"}
-                    </span>
-                  </p>
-                </div>
-                <div className="text-right flex-shrink-0 ml-4">
-                  <p className="text-amber-400 font-bold text-sm">{formatRs(p.price)}</p>
-                </div>
-              </button>
-            ))
+            filtered.map(p => {
+              const hasVariants = p.variantType !== "none" && p.variants?.length > 0;
+              const totalStock = hasVariants 
+                ? p.variants.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0)
+                : (p.stock || 0);
+              
+              return (
+                <button key={p.id} type="button"
+                  onClick={() => onSelect(p)}
+                  className="w-full flex items-center justify-between px-5 py-3 text-left border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors">
+                  <div>
+                    <p className="text-white text-sm font-medium">
+                      {p.name}
+                      {hasVariants && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 font-semibold">{p.variants.length} variants</span>}
+                    </p>
+                    <p className="text-gray-500 text-xs mt-0.5">
+                      Total Stock: <span style={{ color: totalStock <= (Number(p.lowStockThreshold) || 10) ? "#fbbf24" : "#34d399" }}>
+                        {totalStock}
+                      </span>
+                    </p>
+                  </div>
+                  <div className="text-right flex-shrink-0 ml-4">
+                    <p className="text-amber-400 font-bold text-sm">
+                      {hasVariants ? "Select →" : formatRs(p.price)}
+                    </p>
+                  </div>
+                </button>
+              );
+            })
           )}
         </div>
       </div>
@@ -145,16 +158,23 @@ function ProductPickerModal({ products, onSelect, onClose }) {
   );
 }
 
-// ── Item row with autocomplete ────────────────────────────────────────────────
-function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPicker }) {
+// ── Item row with autocomplete + variant support ─────────────────────────────
+function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPicker, onStockError }) {
   const [suggestions, setSuggestions] = useState([]);
   const [showSug, setShowSug] = useState(false);
   const rowRef = useRef(null);
+
+  // Find selected product
+  const selectedProduct = item.productId ? products.find(p => p.id === item.productId) : null;
+  const hasVariants = selectedProduct && selectedProduct.variantType !== "none" && selectedProduct.variants?.length > 0;
 
   // filter products by description typed
   function handleDescChange(val) {
     onChange(idx, "description", val);
     onChange(idx, "productId", ""); // clear link when manually typing
+    onChange(idx, "variantId", "");
+    onChange(idx, "stock", "");
+    
     if (val.trim().length > 0) {
       const matches = products.filter(p =>
         (p.name || "").toLowerCase().startsWith(val.toLowerCase()) ||
@@ -170,10 +190,63 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
 
   function selectSuggestion(p) {
     onChange(idx, "description", p.name);
-    onChange(idx, "unitPrice", String(p.price || ""));
     onChange(idx, "productId", p.id);
+    
+    // Check if product has variants
+    if (p.variantType !== "none" && p.variants?.length > 0) {
+      // Has variants - don't fill price/stock yet, wait for variant selection
+      onChange(idx, "unitPrice", "");
+      onChange(idx, "variantId", "");
+      onChange(idx, "stock", "");
+    } else {
+      // No variants - fill price and stock directly
+      onChange(idx, "unitPrice", String(p.price || ""));
+      onChange(idx, "stock", String(p.stock || 0));
+      onChange(idx, "variantId", "");
+    }
+    
     setSuggestions([]);
     setShowSug(false);
+  }
+
+  // Handle variant selection
+  function handleVariantChange(variantId) {
+    onChange(idx, "variantId", variantId);
+    
+    if (variantId && selectedProduct) {
+      // Find variant by ID or by index (for backwards compatibility)
+      let variant = selectedProduct.variants.find(v => v.id === variantId);
+      
+      // If not found by ID, try to find by index (var_0, var_1, etc.)
+      if (!variant && variantId.startsWith('var_')) {
+        const vIdx = parseInt(variantId.split('_')[1]);
+        variant = selectedProduct.variants[vIdx];
+      }
+      
+      if (variant) {
+        onChange(idx, "unitPrice", String(variant.price || ""));
+        onChange(idx, "stock", String(variant.stock || 0));
+      }
+    } else {
+      onChange(idx, "unitPrice", "");
+      onChange(idx, "stock", "");
+    }
+  }
+
+  // Handle quantity change with stock validation
+  function handleQtyChange(value) {
+    const qty = Number(value) || 0;
+    const availableStock = Number(item.stock) || 0;
+    
+    // Check if quantity exceeds stock
+    if (qty > availableStock && availableStock > 0) {
+      // Show error alert
+      onStockError(item.description || "Product", availableStock);
+      // Set to max available stock
+      onChange(idx, "qty", String(availableStock));
+    } else {
+      onChange(idx, "qty", value);
+    }
   }
 
   // close on outside click
@@ -186,11 +259,15 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
   }, []);
 
   const lineTotal = (Number(item.qty) || 0) * (Number(item.unitPrice) || 0);
+  const stock = Number(item.stock) || 0;
+  const qty = Number(item.qty) || 0;
+  const stockStatus = qty > stock ? "low" : "ok";
 
   return (
-    <div ref={rowRef} className="relative">
+    <div ref={rowRef} className="relative flex flex-col gap-2">
+      {/* Main Row */}
       <div className="grid gap-2 items-center"
-        style={{ gridTemplateColumns: "1fr 64px 110px 80px 36px" }}>
+        style={{ gridTemplateColumns: hasVariants ? "1fr 64px 110px 80px 36px" : "1fr 64px 110px 80px 36px" }}>
 
         {/* description + autocomplete */}
         <div className="relative">
@@ -211,28 +288,53 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
             <div className="absolute top-full left-0 right-0 mt-1 rounded-xl overflow-hidden z-30"
               style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.12)",
                 boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
-              {suggestions.map(p => (
-                <button key={p.id} type="button"
-                  onMouseDown={() => selectSuggestion(p)}
-                  className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-white/[0.04] transition-colors border-b border-white/[0.04] last:border-0">
-                  <div>
-                    <p className="text-white text-xs font-medium">{p.name}</p>
-                    <p className="text-gray-500 text-[10px]">Stock: {p.stock ?? "—"}</p>
-                  </div>
-                  <p className="text-amber-400 text-xs font-bold ml-2 flex-shrink-0">{formatRs(p.price)}</p>
-                </button>
-              ))}
+              {suggestions.map(p => {
+                const hasVars = p.variantType !== "none" && p.variants?.length > 0;
+                const totalStock = hasVars 
+                  ? p.variants.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0)
+                  : (p.stock || 0);
+                
+                return (
+                  <button key={p.id} type="button"
+                    onMouseDown={() => selectSuggestion(p)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-white/[0.04] transition-colors border-b border-white/[0.04] last:border-0">
+                    <div>
+                      <p className="text-white text-xs font-medium">
+                        {p.name} {hasVars && <span className="text-gray-500 text-[10px]">({p.variants.length} variants)</span>}
+                      </p>
+                      <p className="text-gray-500 text-[10px]">Stock: {totalStock}</p>
+                    </div>
+                    <p className="text-amber-400 text-xs font-bold ml-2 flex-shrink-0">
+                      {hasVars ? "Select variant →" : formatRs(p.price)}
+                    </p>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
 
         <input type="number" min="1" placeholder="1" value={item.qty}
-          onChange={e => onChange(idx, "qty", e.target.value)}
-          style={{ ...base, textAlign: "center", padding: "9px 6px" }} />
+          onChange={e => handleQtyChange(e.target.value)}
+          max={item.stock || undefined}
+          style={{ 
+            ...base, 
+            textAlign: "center", 
+            padding: "9px 6px",
+            borderColor: (qty > stock && stock > 0) ? "#f87171" : base.border,
+          }} />
 
         <input type="number" min="0" placeholder="Unit price" value={item.unitPrice}
           onChange={e => onChange(idx, "unitPrice", e.target.value)}
-          style={{ ...base, textAlign: "right", padding: "9px 10px" }} />
+          disabled={hasVariants && item.variantId}
+          style={{ 
+            ...base, 
+            textAlign: "right", 
+            padding: "9px 10px",
+            opacity: (hasVariants && item.variantId) ? 0.6 : 1,
+            cursor: (hasVariants && item.variantId) ? "not-allowed" : "text",
+            background: (hasVariants && item.variantId) ? "rgba(255,255,255,0.02)" : base.background,
+          }} />
 
         {/* line total */}
         <p className="text-xs font-semibold text-right flex-shrink-0 pr-1"
@@ -246,6 +348,58 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
           ✕
         </button>
       </div>
+
+      {/* Variant Selection Row (if product has variants) */}
+      {hasVariants && (
+        <div className="flex items-center gap-2 pl-2 pb-1 border-l-2 border-amber-500/20">
+          <span className="text-[10px] text-gray-500 font-semibold uppercase tracking-wide min-w-[60px]">Variant:</span>
+          <select
+            value={item.variantId || ""}
+            onChange={e => handleVariantChange(e.target.value)}
+            style={{ 
+              ...base, 
+              fontSize: 12, 
+              padding: "6px 10px",
+              maxWidth: "200px",
+              background: "rgba(245,158,11,0.05)",
+              borderColor: item.variantId ? "rgba(245,158,11,0.3)" : "rgba(255,255,255,0.09)",
+            }}
+          >
+            <option value="" style={{ background: "#0d1117" }}>Select variant...</option>
+            {selectedProduct.variants.map((v, vIdx) => {
+              const varId = v.id || `var_${vIdx}`;
+              return (
+                <option key={varId} value={varId} style={{ background: "#0d1117" }}>
+                  {v.label} - {formatRs(v.price)} (Stock: {v.stock || 0})
+                </option>
+              );
+            })}
+          </select>
+          {item.variantId && (
+            <span className="text-[10px] px-2 py-1 rounded-md font-semibold"
+              style={{
+                background: stockStatus === "ok" ? "rgba(52,211,153,0.1)" : "rgba(248,113,113,0.1)",
+                color: stockStatus === "ok" ? "#34d399" : "#f87171",
+              }}>
+              {stockStatus === "low" ? `⚠ Only ${stock} available` : `✓ ${stock} in stock`}
+            </span>
+          )}
+        </div>
+      )}
+
+      {/* Stock indicator for non-variant products */}
+      {!hasVariants && item.productId && stock >= 0 && (
+        <div className="flex items-center gap-2 pl-2 text-[10px]">
+          <span
+            className="px-2 py-0.5 rounded-md font-semibold"
+            style={{
+              background: stockStatus === "ok" ? "rgba(52,211,153,0.1)" : "rgba(248,113,113,0.1)",
+              color: stockStatus === "ok" ? "#34d399" : "#f87171",
+            }}>
+            {stockStatus === "low" ? `⚠ Only ${stock} available` : `✓ ${stock} in stock`}
+          </span>
+        </div>
+      )}
     </div>
   );
 }
@@ -261,6 +415,9 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, product
   const [pickerIdx, setPickerIdx] = useState(null);
   const overlayRef                = useRef(null);
   const logoInputRef              = useRef(null);
+  
+  // Sweet Alert State for stock validation
+  const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
 
   useEffect(() => {
     if (initial) {
@@ -290,18 +447,41 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, product
     });
   }
   function addItem() {
-    setForm(p => ({ ...p, items: [...p.items, { description: "", qty: 1, unitPrice: "", productId: "" }] }));
+    setForm(p => ({ ...p, items: [...p.items, { description: "", qty: 1, unitPrice: "", productId: "", variantId: "", stock: "" }] }));
   }
   function removeItem(idx) {
     setForm(p => ({ ...p, items: p.items.filter((_, i) => i !== idx) }));
+  }
+
+  // Stock validation error handler
+  function handleStockError(productName, availableStock) {
+    setAlert({
+      show: true,
+      type: "warning",
+      title: "Insufficient Stock! ⚠️",
+      message: `You have only ${availableStock} units of "${productName}" in stock. Would you like to add more stock? Go to Inventory to increase stock levels.`,
+    });
   }
 
   // select from picker modal
   function handlePickerSelect(p) {
     if (pickerIdx === null) return;
     setItem(pickerIdx, "description", p.name);
-    setItem(pickerIdx, "unitPrice", String(p.price || ""));
     setItem(pickerIdx, "productId", p.id);
+    
+    // Check if product has variants
+    if (p.variantType !== "none" && p.variants?.length > 0) {
+      // Has variants - don't fill price/stock yet, wait for variant selection
+      setItem(pickerIdx, "unitPrice", "");
+      setItem(pickerIdx, "variantId", "");
+      setItem(pickerIdx, "stock", "");
+    } else {
+      // No variants - fill price and stock directly
+      setItem(pickerIdx, "unitPrice", String(p.price || ""));
+      setItem(pickerIdx, "stock", String(p.stock || 0));
+      setItem(pickerIdx, "variantId", "");
+    }
+    
     setPickerIdx(null);
   }
 
@@ -317,6 +497,15 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, product
 
   return (
     <>
+    {/* Sweet Alert for Stock Validation */}
+    <SweetAlert
+      show={alert.show}
+      type={alert.type}
+      title={alert.title}
+      message={alert.message}
+      onClose={() => setAlert({ ...alert, show: false })}
+    />
+    
     <div ref={overlayRef}
       className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto"
       style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
@@ -418,7 +607,8 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, product
                 <ItemRow key={idx} item={item} idx={idx} products={products}
                   onChange={setItem} onRemove={removeItem}
                   canRemove={form.items.length > 1}
-                  onOpenPicker={(i) => setPickerIdx(i)} />
+                  onOpenPicker={(i) => setPickerIdx(i)}
+                  onStockError={handleStockError} />
               ))}
               <button type="button" onClick={addItem}
                 className="flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl w-fit transition-colors mt-1"
@@ -483,6 +673,71 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, product
               </FInput>
             </div>
           </div>
+
+          {/* ── Payment Collection (Only for Edit with Balance) ── */}
+          {initial && balance > 0 && (
+            <div>
+              <p className={sect} style={{ color: "#10b981" }}>
+                💰 Collect Payment
+                <span className="ml-2 text-gray-600 normal-case tracking-normal font-normal">(optional - add new payment)</span>
+              </p>
+              <div className="p-4 rounded-xl" style={{ background: "rgba(16,185,129,0.05)", border: "1px solid rgba(16,185,129,0.2)" }}>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                  {/* Payer Info */}
+                  <div className="col-span-2">
+                    <p className="text-xs font-bold text-green-400 mb-2 uppercase tracking-wide">👤 Payment From (Payer)</p>
+                  </div>
+                  <FInput label="Payer Name">
+                    <StyledInput placeholder="e.g. Ali Ahmed" value={form.payerName || ""}
+                      onChange={(e) => setForm(p => ({ ...p, payerName: e.target.value }))} />
+                  </FInput>
+                  <FInput label="Payer Contact">
+                    <StyledInput type="tel" placeholder="+92 300 1234567" value={form.payerContact || ""}
+                      onChange={(e) => setForm(p => ({ ...p, payerContact: e.target.value }))} />
+                  </FInput>
+                  
+                  {/* Receiver Info */}
+                  <div className="col-span-2 mt-2">
+                    <p className="text-xs font-bold text-blue-400 mb-2 uppercase tracking-wide">💵 Payment To (Receiver)</p>
+                  </div>
+                  <FInput label="Receiver Name">
+                    <StyledInput placeholder="e.g. Muhammad Salman" value={form.receiverName || ""}
+                      onChange={(e) => setForm(p => ({ ...p, receiverName: e.target.value }))} />
+                  </FInput>
+                  <FInput label="Receiver Contact">
+                    <StyledInput type="tel" placeholder="+92 300 7654321" value={form.receiverContact || ""}
+                      onChange={(e) => setForm(p => ({ ...p, receiverContact: e.target.value }))} />
+                  </FInput>
+                  
+                  {/* Payment Amount */}
+                  <div className="col-span-2 mt-2">
+                    <FInput label={`💸 Payment Amount (Max: ${formatRs(balance)})`}>
+                      <StyledInput type="number" min="0" max={balance} step="0.01"
+                        placeholder="0" value={form.newPaymentAmount || ""}
+                        onChange={(e) => {
+                          const val = Number(e.target.value) || 0;
+                          if (val <= balance) {
+                            setForm(p => ({ ...p, newPaymentAmount: e.target.value }));
+                          }
+                        }} />
+                    </FInput>
+                  </div>
+                </div>
+                
+                {form.newPaymentAmount && Number(form.newPaymentAmount) > 0 && (
+                  <div className="mt-3 p-3 rounded-lg" style={{ background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.3)" }}>
+                    <p className="text-xs text-green-300 mb-1 font-semibold">✓ Payment Preview:</p>
+                    <p className="text-xs text-gray-400">
+                      {form.payerName || "Payer"} will pay <span className="text-white font-bold">{formatRs(form.newPaymentAmount)}</span> to {form.receiverName || "Receiver"}
+                    </p>
+                    <p className="text-xs text-gray-400 mt-1">
+                      New Balance: <span className="text-amber-400 font-bold">{formatRs(Math.max(0, balance - Number(form.newPaymentAmount)))}</span>
+                    </p>
+                  </div>
+                )}
+              </div>
+            </div>
+          )}
 
           {/* ── Early Payment Condition ── */}
           <div>

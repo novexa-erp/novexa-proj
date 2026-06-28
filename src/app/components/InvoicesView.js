@@ -6,6 +6,7 @@ import {
 import { db } from "@/lib/firebase";
 import InvoiceModal, { formatRs } from "./InvoiceModal";
 import InvoicePDFModal from "./InvoicePDF";
+import SweetAlert from "./SweetAlert";
 
 const STATUS_STYLE = {
   Paid:    { color: "#34d399", bg: "rgba(52,211,153,0.1)",  border: "rgba(52,211,153,0.25)"  },
@@ -42,6 +43,9 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
   const [deleteConf,  setDeleteConf]  = useState(null); // invoice id
   const [search,      setSearch]      = useState("");
   const [pdfInvoice,  setPdfInvoice]  = useState(null); // invoice to preview PDF
+  
+  // Sweet Alert State
+  const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
 
   // only show invoices NOT linked to a customer (customerId = undefined/null/empty)
   const directInvoices = invoices.filter(i => !i.customerId);
@@ -84,17 +88,125 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
       };
 
       if (editTarget) {
+        // Update invoice
         await updateDoc(doc(db, "users", uid, "invoices", editTarget.id), {
           ...payload, updatedAt: serverTimestamp(),
         });
+        
+        // Handle payment collection if provided
+        if (formData.newPaymentAmount && Number(formData.newPaymentAmount) > 0) {
+          const paymentAmount = Number(formData.newPaymentAmount);
+          const currentPaid = Number(formData.amountPaid) || 0;
+          const newTotalPaid = currentPaid + paymentAmount;
+          const newBalance = Math.max(0, payload.amount - newTotalPaid);
+          const newStatus = newBalance === 0 ? "Paid" : newTotalPaid > 0 ? "Partial" : "Unpaid";
+          
+          // Update invoice with new payment
+          await updateDoc(doc(db, "users", uid, "invoices", editTarget.id), {
+            amountPaid: newTotalPaid,
+            balance: newBalance,
+            status: newStatus,
+            lastPaymentAt: serverTimestamp(),
+            updatedAt: serverTimestamp(),
+          });
+          
+          // Create payment record
+          await addDoc(collection(db, "users", uid, "payments"), {
+            type: "received",
+            amount: paymentAmount,
+            invoiceId: editTarget.id,
+            invoiceNumber: `INV-${editTarget.id.slice(-4).toUpperCase()}`,
+            customer: formData.customerName,
+            payerName: formData.payerName || formData.customerName,
+            payerContact: formData.payerContact || formData.phone,
+            receiverName: formData.receiverName || "",
+            receiverContact: formData.receiverContact || "",
+            description: `Payment for invoice ${editTarget.id.slice(-4).toUpperCase()}`,
+            method: "cash",
+            status: "completed",
+            createdAt: serverTimestamp(),
+          });
+          
+          setAlert({
+            show: true,
+            type: "success",
+            title: "Payment Collected! 💰",
+            message: `Payment of ${formatRs(paymentAmount)} collected from ${formData.payerName || formData.customerName}. Invoice updated to ${newStatus}.`,
+          });
+        } else {
+          // Show update success alert (no payment)
+          setAlert({
+            show: true,
+            type: "success",
+            title: "Invoice Updated! ✓",
+            message: `Invoice for ${formData.customerName} has been updated successfully.`,
+          });
+        }
       } else {
+        // Create new invoice
         await addDoc(collection(db, "users", uid, "invoices"), {
           ...payload, createdAt: serverTimestamp(),
+        });
+        
+        // Update stock for each item in the invoice
+        for (const item of formData.items) {
+          if (item.productId && item.qty) {
+            const productRef = doc(db, "users", uid, "products", item.productId);
+            const product = products.find(p => p.id === item.productId);
+            
+            if (product) {
+              const qtyToDeduct = Number(item.qty) || 0;
+              
+              // Check if product has variants
+              if (item.variantId && product.variants?.length > 0) {
+                // Update variant stock
+                const updatedVariants = product.variants.map(v => {
+                  // Match by ID or by index (for backwards compatibility)
+                  const varId = v.id || `var_${product.variants.indexOf(v)}`;
+                  if (varId === item.variantId) {
+                    const currentStock = Number(v.stock) || 0;
+                    const newStock = Math.max(0, currentStock - qtyToDeduct);
+                    return { ...v, stock: newStock };
+                  }
+                  return v;
+                });
+                
+                await updateDoc(productRef, {
+                  variants: updatedVariants,
+                  updatedAt: serverTimestamp(),
+                });
+              } else {
+                // Update simple product stock
+                const currentStock = Number(product.stock) || 0;
+                const newStock = Math.max(0, currentStock - qtyToDeduct);
+                
+                await updateDoc(productRef, {
+                  stock: newStock,
+                  updatedAt: serverTimestamp(),
+                });
+              }
+            }
+          }
+        }
+        
+        // Show create success alert
+        setAlert({
+          show: true,
+          type: "success",
+          title: "Invoice Created! 🧾",
+          message: `New invoice for ${formData.customerName} has been created successfully. Stock updated.`,
         });
       }
       setShowModal(false);
       setEditTarget(null);
-    } catch (err) { alert("Error: " + err.message); }
+    } catch (err) { 
+      setAlert({
+        show: true,
+        type: "error",
+        title: "Failed to Save Invoice",
+        message: err.message || "Something went wrong. Please try again.",
+      });
+    }
     setSaving(false);
   }
 
@@ -102,7 +214,22 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
   async function handleDelete(id) {
     try {
       await deleteDoc(doc(db, "users", uid, "invoices", id));
-    } catch (err) { alert("Error: " + err.message); }
+      
+      // Show delete success alert
+      setAlert({
+        show: true,
+        type: "success",
+        title: "Invoice Deleted! 🗑️",
+        message: "The invoice has been permanently deleted from your records.",
+      });
+    } catch (err) { 
+      setAlert({
+        show: true,
+        type: "error",
+        title: "Failed to Delete Invoice",
+        message: err.message || "Something went wrong. Please try again.",
+      });
+    }
     setDeleteConf(null);
   }
 
@@ -123,6 +250,14 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
 
   return (
     <div className="flex flex-col gap-5 w-full">
+      {/* Sweet Alert */}
+      <SweetAlert
+        show={alert.show}
+        type={alert.type}
+        title={alert.title}
+        message={alert.message}
+        onClose={() => setAlert({ ...alert, show: false })}
+      />
 
       {/* Professional Header */}
       <div className="relative overflow-hidden rounded-xl p-6" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>

@@ -1,4 +1,4 @@
-import LoginPage from "../components/LoginPage";
+import LoginPage from "../../components/LoginPage";
 
 export const metadata = {
   title: "Sign In — Novexa ERP",

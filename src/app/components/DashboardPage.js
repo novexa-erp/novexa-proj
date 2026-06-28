@@ -17,6 +17,7 @@ import InventoryView from "./InventoryView";
 import PaymentsView from "./PaymentsView";
 import PurchasesView from "./PurchasesView";
 import AnalyticsView from "./AnalyticsView";
+import SweetAlert from "./SweetAlert";
 
 // ── Sidebar nav items ────────────────────────────────────────────────────────
 const navItems = [
@@ -74,6 +75,12 @@ function DashboardContent() {
   const [showCustomerModal, setShowCustomerModal] = useState(false);
   const [showProductModal,  setShowProductModal]  = useState(false);
   const [formSaving, setFormSaving] = useState(false);
+
+  // ── Sweet Alert State ─────────────────────────────────────────────────────
+  const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
+  
+  // ── Logout Confirmation ─────────────────────────────────────────────────────
+  const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
   // ── Auth guard ──────────────────────────────────────────────────────────────
   useEffect(() => {
@@ -171,7 +178,11 @@ function DashboardContent() {
   // ── Sign out ─────────────────────────────────────────────────────────────────
   async function handleSignOut() {
     await signOut(auth);
-    router.push("/login");
+    router.push("/pages/login");
+  }
+  
+  function confirmLogout() {
+    setShowLogoutConfirm(true);
   }
 
   // ── Quick action handlers ─────────────────────────────────────────────────────
@@ -193,7 +204,22 @@ function DashboardContent() {
       });
       setCustForm({ name: "", phone: "", email: "", address: "" });
       setShowCustomerModal(false);
-    } catch (err) { alert("Error: " + err.message); }
+      
+      // Show success alert
+      setAlert({
+        show: true,
+        type: "success",
+        title: "Customer Added! 👥",
+        message: `${custForm.name} has been added to your customer list successfully.`,
+      });
+    } catch (err) { 
+      setAlert({
+        show: true,
+        type: "error",
+        title: "Failed to Add Customer",
+        message: err.message || "Something went wrong. Please try again.",
+      });
+    }
     setFormSaving(false);
   }
 
@@ -211,7 +237,22 @@ function DashboardContent() {
       });
       setProdForm({ name: "", stock: "", price: "", lowStockThreshold: "10" });
       setShowProductModal(false);
-    } catch (err) { alert("Error: " + err.message); }
+      
+      // Show success alert
+      setAlert({
+        show: true,
+        type: "success",
+        title: "Product Added! 📦",
+        message: `${prodForm.name} has been added to your inventory successfully.`,
+      });
+    } catch (err) { 
+      setAlert({
+        show: true,
+        type: "error",
+        title: "Failed to Add Product",
+        message: err.message || "Something went wrong. Please try again.",
+      });
+    }
     setFormSaving(false);
   }
 
@@ -274,6 +315,14 @@ function DashboardContent() {
 
   return (
     <div className="min-h-screen bg-[#0d1117] flex" style={{ fontFamily: "var(--font-poppins, sans-serif)" }}>
+      {/* Sweet Alert */}
+      <SweetAlert
+        show={alert.show}
+        type={alert.type}
+        title={alert.title}
+        message={alert.message}
+        onClose={() => setAlert({ ...alert, show: false })}
+      />
 
       {/* ── Sidebar ── */}
       <aside
@@ -314,16 +363,30 @@ function DashboardContent() {
 
         {/* user */}
         <div className="px-4 py-4 border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-          <div className="flex items-center gap-3 px-2 py-2 rounded-xl cursor-pointer hover:bg-white/5 group">
-            <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
-              style={{ background: "linear-gradient(135deg,#2563EB,#F59E0B)", color: "#fff" }}>{initials}</div>
+          <div className="flex items-center gap-3 px-2 py-2 rounded-xl mb-2">
+            {/* User Logo/Avatar */}
+            {userDoc?.logoDataUrl ? (
+              <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0" style={{ border: "1px solid rgba(255,255,255,0.1)" }}>
+                <img src={userDoc.logoDataUrl} alt="Logo" className="w-full h-full object-cover" />
+              </div>
+            ) : (
+              <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
+                style={{ background: "linear-gradient(135deg,#2563EB,#F59E0B)", color: "#fff" }}>{initials}</div>
+            )}
             <div className="flex-1 min-w-0">
               <p className="text-white text-xs font-semibold truncate">{displayName}</p>
               <p className="text-gray-500 text-[10px] truncate">{user?.email}</p>
             </div>
-            <button onClick={handleSignOut} title="Sign out"
-              className="text-gray-600 hover:text-red-400 text-xs transition-colors opacity-0 group-hover:opacity-100">⏻</button>
           </div>
+          {/* Logout Button */}
+          <button 
+            onClick={confirmLogout} 
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full text-left transition-all duration-200 hover:bg-red-500/10 group"
+            style={{ color: "#ef4444", border: "1px solid rgba(239,68,68,0.2)" }}>
+            <span className="text-base">🚪</span>
+            <span>Logout</span>
+            <span className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">→</span>
+          </button>
         </div>
       </aside>
 
@@ -360,8 +423,15 @@ function DashboardContent() {
                 <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-amber-400" />
               )}
             </button>
-            <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold cursor-pointer"
-              style={{ background: "linear-gradient(135deg,#2563EB,#F59E0B)", color: "#fff" }}>{initials}</div>
+            {/* User Logo/Avatar */}
+            {userDoc?.logoDataUrl ? (
+              <div className="w-9 h-9 rounded-xl overflow-hidden cursor-pointer" style={{ border: "1px solid rgba(255,255,255,0.1)" }}>
+                <img src={userDoc.logoDataUrl} alt="Logo" className="w-full h-full object-cover" />
+              </div>
+            ) : (
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold cursor-pointer"
+                style={{ background: "linear-gradient(135deg,#2563EB,#F59E0B)", color: "#fff" }}>{initials}</div>
+            )}
           </div>
         </header>
 
@@ -601,7 +671,7 @@ function DashboardContent() {
           </div>
           <div>
             <label style={labelStyle}>Email</label>
-            <input type="email" style={inputStyle} placeholder="customer@example.com"
+            <input  type="email" style={inputStyle} placeholder="customer@example.com"
               value={custForm.email} onChange={e => setCustForm({ ...custForm, email: e.target.value })} />
           </div>
           <div>
@@ -636,6 +706,33 @@ function DashboardContent() {
               value={prodForm.lowStockThreshold} onChange={e => setProdForm({ ...prodForm, lowStockThreshold: e.target.value })} />
           </div>
         </Modal>
+      )}
+
+      {/* Logout Confirmation Modal */}
+      {showLogoutConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)" }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 flex flex-col gap-4 text-center animate-scaleIn"
+            style={{ background: "#0d1117", border: "1px solid rgba(239,68,68,0.3)" }}>
+            <p className="text-4xl">🚪</p>
+            <h3 className="text-white font-bold text-xl">Logout Confirmation</h3>
+            <p className="text-gray-400 text-sm">
+              Are you sure you want to logout? You'll need to sign in again to access your dashboard.
+            </p>
+            <div className="flex gap-3 mt-2">
+              <button onClick={() => setShowLogoutConfirm(false)}
+                className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all hover:scale-105"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+                Cancel
+              </button>
+              <button onClick={() => { setShowLogoutConfirm(false); handleSignOut(); }}
+                className="flex-1 py-3 rounded-xl text-sm font-bold transition-all hover:scale-105"
+                style={{ background: "rgba(239,68,68,0.15)", border: "1px solid rgba(239,68,68,0.4)", color: "#ef4444" }}>
+                Yes, Logout
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
     </div>

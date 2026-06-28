@@ -7,6 +7,168 @@ import Image from "next/image";
 import { signInWithEmailAndPassword } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 
+// Custom Sweet Alert Component
+function SweetAlert({ show, type, title, message, onClose }) {
+  const [isVisible, setIsVisible] = useState(false);
+  const [isLeaving, setIsLeaving] = useState(false);
+
+  useEffect(() => {
+    if (show) {
+      setIsVisible(true);
+      setIsLeaving(false);
+    }
+  }, [show]);
+
+  const handleClose = () => {
+    setIsLeaving(true);
+    setTimeout(() => {
+      setIsVisible(false);
+      onClose();
+    }, 300);
+  };
+
+  if (!show && !isVisible) return null;
+
+  const config = {
+    success: {
+      gradient: "from-emerald-500 to-green-600",
+      icon: "✓",
+      iconBg: "rgba(16, 185, 129, 0.15)",
+      iconColor: "#10b981",
+      borderColor: "rgba(16, 185, 129, 0.3)",
+    },
+    error: {
+      gradient: "from-red-500 to-rose-600",
+      icon: "✕",
+      iconBg: "rgba(239, 68, 68, 0.15)",
+      iconColor: "#ef4444",
+      borderColor: "rgba(239, 68, 68, 0.3)",
+    },
+  };
+
+  const style = config[type] || config.error;
+
+  return (
+    <div
+      className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+      style={{
+        background: "rgba(0,0,0,0.75)",
+        backdropFilter: "blur(8px)",
+        animation: isLeaving ? "fadeOut 0.3s ease-out" : "fadeIn 0.3s ease-out",
+      }}
+      onClick={handleClose}
+    >
+      <style jsx>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes fadeOut {
+          from { opacity: 1; }
+          to { opacity: 0; }
+        }
+        @keyframes slideUp {
+          from { transform: translateY(30px) scale(0.9); opacity: 0; }
+          to { transform: translateY(0) scale(1); opacity: 1; }
+        }
+        @keyframes slideDown {
+          from { transform: translateY(0) scale(1); opacity: 1; }
+          to { transform: translateY(30px) scale(0.9); opacity: 0; }
+        }
+        @keyframes ripple {
+          0% { transform: scale(0); opacity: 1; }
+          100% { transform: scale(2.5); opacity: 0; }
+        }
+        @keyframes iconPop {
+          0% { transform: scale(0) rotate(-180deg); }
+          50% { transform: scale(1.2) rotate(10deg); }
+          100% { transform: scale(1) rotate(0deg); }
+        }
+      `}</style>
+
+      <div
+        className="relative w-full max-w-sm rounded-3xl p-8 flex flex-col items-center gap-6"
+        style={{
+          background: "linear-gradient(135deg, rgba(13,17,23,0.98) 0%, rgba(8,13,20,0.98) 100%)",
+          border: `1.5px solid ${style.borderColor}`,
+          boxShadow: `0 20px 60px rgba(0,0,0,0.5), 0 0 0 1px ${style.borderColor}`,
+          animation: isLeaving ? "slideDown 0.3s ease-out" : "slideUp 0.4s cubic-bezier(0.34, 1.56, 0.64, 1)",
+        }}
+        onClick={(e) => e.stopPropagation()}
+      >
+        {/* Top Gradient Line */}
+        <div
+          className={`absolute top-0 left-0 right-0 h-1 rounded-t-3xl bg-gradient-to-r ${style.gradient}`}
+        />
+
+        {/* Icon Container */}
+        <div className="relative">
+          {/* Ripple Effect */}
+          <div
+            className="absolute inset-0 rounded-full"
+            style={{
+              background: style.iconBg,
+              animation: "ripple 1.5s infinite",
+            }}
+          />
+          
+          {/* Icon */}
+          <div
+            className="relative w-20 h-20 rounded-full flex items-center justify-center text-4xl font-bold"
+            style={{
+              background: style.iconBg,
+              border: `2px solid ${style.borderColor}`,
+              color: style.iconColor,
+              animation: "iconPop 0.5s cubic-bezier(0.34, 1.56, 0.64, 1) 0.2s backwards",
+            }}
+          >
+            {style.icon}
+          </div>
+        </div>
+
+        {/* Content */}
+        <div className="flex flex-col items-center gap-2 text-center">
+          <h3
+            className="text-white font-bold text-2xl"
+            style={{
+              animation: "slideUp 0.5s ease-out 0.3s backwards",
+            }}
+          >
+            {title}
+          </h3>
+          <p
+            className="text-gray-400 text-sm leading-relaxed max-w-xs"
+            style={{
+              animation: "slideUp 0.5s ease-out 0.4s backwards",
+            }}
+          >
+            {message}
+          </p>
+        </div>
+
+        {/* Button */}
+        <button
+          onClick={handleClose}
+          className={`relative group w-full py-3.5 rounded-xl text-white font-semibold text-sm overflow-hidden transition-all duration-300 hover:scale-[1.02] active:scale-[0.98]`}
+          style={{
+            background: `linear-gradient(135deg, ${style.gradient})`,
+            boxShadow: `0 4px 20px ${style.iconBg}`,
+            animation: "slideUp 0.5s ease-out 0.5s backwards",
+          }}
+        >
+          <span className="relative z-10">Got it!</span>
+          <div
+            className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+            style={{
+              background: "linear-gradient(135deg, rgba(255,255,255,0.1) 0%, transparent 100%)",
+            }}
+          />
+        </button>
+      </div>
+    </div>
+  );
+}
+
 // Firebase error → human readable
 function firebaseError(code) {
   const map = {
@@ -28,6 +190,9 @@ export default function LoginPage() {
   const [showPass, setShowPass]           = useState(false);
   const [loading, setLoading]             = useState(false);
   const [error, setError]                 = useState("");
+  
+  // Sweet Alert State
+  const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
 
   useEffect(() => { setTimeout(() => setMounted(true), 60); }, []);
 
@@ -37,10 +202,32 @@ export default function LoginPage() {
     setLoading(true);
     try {
       await signInWithEmailAndPassword(auth, form.email, form.password);
-      router.push("/dashboard");
-    } catch (err) {
-      setError(firebaseError(err.code));
+      
+      // Show success alert
+      setAlert({
+        show: true,
+        type: "success",
+        title: "Welcome Back! 🎉",
+        message: "Login successful! Redirecting you to your dashboard...",
+      });
+      
       setLoading(false);
+      
+      // Redirect after showing success alert
+      setTimeout(() => {
+        router.push("/dashboard");
+      }, 2000);
+    } catch (err) {
+      const errorMsg = firebaseError(err.code);
+      setLoading(false);
+      
+      // Show error alert instead of inline error
+      setAlert({
+        show: true,
+        type: "error",
+        title: "Login Failed",
+        message: errorMsg,
+      });
     }
   }
 
@@ -58,6 +245,14 @@ export default function LoginPage() {
 
   return (
     <div className="min-h-screen bg-[#0d1117] flex">
+      {/* Sweet Alert */}
+      <SweetAlert
+        show={alert.show}
+        type={alert.type}
+        title={alert.title}
+        message={alert.message}
+        onClose={() => setAlert({ ...alert, show: false })}
+      />
 
       {/* ── Left panel — branding ── */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden flex-col justify-between p-12">
@@ -155,17 +350,17 @@ export default function LoginPage() {
 
           <div className="mb-8">
             <h1 className="text-white font-bold mb-2" style={{ fontSize: 28 }}>Sign in</h1>
-            <p className="text-gray-400 text-sm">
+            {/* <p className="text-gray-400 text-sm">
               Don&apos;t have an account?{" "}
               <Link href="/register" className="font-semibold transition-colors duration-200" style={{ color: "#F59E0B" }}
                 onMouseEnter={e => e.currentTarget.style.color = "#FCD34D"} onMouseLeave={e => e.currentTarget.style.color = "#F59E0B"}>
                 Create one free →
               </Link>
-            </p>
+            </p> */}
           </div>
 
           {/* social login */}
-          <div className="grid grid-cols-2 gap-3 mb-6">
+          {/* <div className="grid grid-cols-2 gap-3 mb-6">
             {[
               { label: "Google", icon: <svg className="w-4 h-4" viewBox="0 0 24 24"><path fill="#4285F4" d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z"/><path fill="#34A853" d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z"/><path fill="#FBBC05" d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l2.85-2.22.81-.62z"/><path fill="#EA4335" d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z"/></svg> },
               { label: "Microsoft", icon: <svg className="w-4 h-4" viewBox="0 0 24 24"><path fill="#F25022" d="M1 1h10v10H1z"/><path fill="#7FBA00" d="M13 1h10v10H13z"/><path fill="#00A4EF" d="M1 13h10v10H1z"/><path fill="#FFB900" d="M13 13h10v10H13z"/></svg> },
@@ -179,22 +374,14 @@ export default function LoginPage() {
                 <span>{s.label}</span>
               </button>
             ))}
-          </div>
+          </div> */}
 
           {/* divider */}
-          <div className="flex items-center gap-3 mb-6">
+          {/* <div className="flex items-center gap-3 mb-6">
             <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.07)" }} />
             <span className="text-xs text-gray-600 font-medium">or continue with email</span>
             <div className="flex-1 h-px" style={{ background: "rgba(255,255,255,0.07)" }} />
-          </div>
-
-          {/* error */}
-          {error && (
-            <div className="flex items-center gap-2 px-4 py-3 rounded-xl mb-5 text-sm"
-              style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "#FCA5A5" }}>
-              <span>⚠</span> {error}
-            </div>
-          )}
+          </div> */}
 
           <form onSubmit={handleSubmit} className="flex flex-col gap-4">
             <div>

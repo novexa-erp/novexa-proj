@@ -7,6 +7,7 @@ import {
 import { db } from "@/lib/firebase";
 import InvoiceModal, { EMPTY_FORM, calcTotals } from "./InvoiceModal";
 import InvoicePDFModal from "./InvoicePDF";
+import SweetAlert from "./SweetAlert";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function formatRs(n) {
@@ -186,6 +187,14 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
   const [savingInv,    setSavingInv]    = useState(false);
   const [deleteInvId,  setDeleteInvId]  = useState(null);
   const [pdfInv,       setPdfInv]       = useState(null);
+  
+  // ★ Customer payments history
+  const [customerPayments, setCustomerPayments] = useState([]);
+  const [paymentsLoading, setPaymentsLoading] = useState(true);
+  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  
+  // ★ Sweet Alert State
+  const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
 
   useEffect(() => {
     if (!uid || !customer.id) return;
@@ -199,6 +208,31 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
     );
     return () => unsub();
   }, [uid, customer.id]);
+
+  // ★ NEW: Load customer's payment history
+  useEffect(() => {
+    if (!uid) return;
+    const unsub = onSnapshot(
+      query(
+        collection(db, "users", uid, "payments"),
+        orderBy("createdAt", "desc")
+      ),
+      snap => { 
+        // Filter payments related to this customer
+        const allPayments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const custPayments = allPayments.filter(p => 
+          p.customer === customer.name || 
+          p.payerName === customer.name ||
+          p.customerId === customer.id ||
+          custInvoices.some(inv => inv.id === p.invoiceId)
+        );
+        setCustomerPayments(custPayments); 
+        setPaymentsLoading(false); 
+      },
+      () => setPaymentsLoading(false)
+    );
+    return () => unsub();
+  }, [uid, customer.id, customer.name, custInvoices]);
 
   // ── computed ──────────────────────────────────────────────────────────────
   const totalBusiness = custInvoices.reduce((s, i) => s + (Number(i.amount) || 0), 0);
@@ -271,6 +305,71 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
           doc(db, "users", uid, "invoices", editInv.id),
           { ...payload, updatedAt: serverTimestamp() }
         ).catch(() => {}); // ignore if not in global
+        
+        // ★ Handle payment collection if provided
+        if (formData.newPaymentAmount && Number(formData.newPaymentAmount) > 0) {
+          const paymentAmount = Number(formData.newPaymentAmount);
+          const currentPaid = Number(formData.amountPaid) || 0;
+          const newTotalPaid = currentPaid + paymentAmount;
+          const newBalance = Math.max(0, payload.amount - newTotalPaid);
+          const newStatus = newBalance === 0 ? "Paid" : newTotalPaid > 0 ? "Partial" : "Unpaid";
+          
+          // Update invoice with new payment (customer subcollection)
+          await updateDoc(
+            doc(db, "users", uid, "customers", customer.id, "invoices", editInv.id),
+            {
+              amountPaid: newTotalPaid,
+              balance: newBalance,
+              status: newStatus,
+              lastPaymentAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            }
+          );
+          
+          // Update global invoice too
+          await updateDoc(
+            doc(db, "users", uid, "invoices", editInv.id),
+            {
+              amountPaid: newTotalPaid,
+              balance: newBalance,
+              status: newStatus,
+              lastPaymentAt: serverTimestamp(),
+              updatedAt: serverTimestamp(),
+            }
+          ).catch(() => {});
+          
+          // Create payment record
+          await addDoc(collection(db, "users", uid, "payments"), {
+            type: "received",
+            amount: paymentAmount,
+            invoiceId: editInv.id,
+            invoiceNumber: `INV-${editInv.id.slice(-4).toUpperCase()}`,
+            customerId: customer.id,
+            customer: formData.customerName || customer.name,
+            payerName: formData.payerName || formData.customerName || customer.name,
+            payerContact: formData.payerContact || formData.phone || customer.phone,
+            receiverName: formData.receiverName || "",
+            receiverContact: formData.receiverContact || "",
+            description: `Payment for invoice ${editInv.id.slice(-4).toUpperCase()} from ${customer.name}`,
+            method: "cash",
+            status: "completed",
+            createdAt: serverTimestamp(),
+          });
+          
+          setAlert({
+            show: true,
+            type: "success",
+            title: "Payment Collected! 💰",
+            message: `Payment of ${formatRs(paymentAmount)} collected from ${formData.payerName || customer.name}. Invoice updated to ${newStatus}.`,
+          });
+        } else {
+          setAlert({
+            show: true,
+            type: "success",
+            title: "Invoice Updated! ✓",
+            message: `Invoice has been updated successfully.`,
+          });
+        }
       } else {
         // add to customer subcollection first to get the id
         const ref = await addDoc(
@@ -292,7 +391,14 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
       }
       setShowInvModal(false);
       setEditInv(null);
-    } catch (err) { alert("Error: " + err.message); }
+    } catch (err) { 
+      setAlert({
+        show: true,
+        type: "error",
+        title: "Failed to Save Invoice",
+        message: err.message || "Something went wrong. Please try again.",
+      });
+    }
     setSavingInv(false);
   }
 
@@ -300,7 +406,21 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
     try {
       await deleteDoc(doc(db, "users", uid, "customers", customer.id, "invoices", id));
       await deleteDoc(doc(db, "users", uid, "invoices", id)).catch(() => {});
-    } catch (err) { alert("Error: " + err.message); }
+      
+      setAlert({
+        show: true,
+        type: "success",
+        title: "Invoice Deleted! 🗑️",
+        message: "The invoice has been permanently deleted.",
+      });
+    } catch (err) { 
+      setAlert({
+        show: true,
+        type: "error",
+        title: "Failed to Delete Invoice",
+        message: err.message || "Something went wrong. Please try again.",
+      });
+    }
     setDeleteInvId(null);
   }
 
@@ -327,6 +447,15 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
 
   return (
     <>
+    {/* Sweet Alert */}
+    <SweetAlert
+      show={alert.show}
+      type={alert.type}
+      title={alert.title}
+      message={alert.message}
+      onClose={() => setAlert({ ...alert, show: false })}
+    />
+    
     <div className="flex flex-col gap-5">
 
       {/* Professional Top Nav */}
@@ -340,17 +469,29 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             <span className="group-hover:text-white">Back to Customers</span>
           </button>
           <div className="flex gap-2 flex-wrap">
-            {/* ★ Generate Invoice btn */}
+            {/* Generate Invoice */}
             <button onClick={openNewInvoice}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all hover:scale-105 shadow-lg"
               style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", color: "#000" }}>
               🧾 Generate Invoice
             </button>
+            
+            {/* View History - NEW BUTTON */}
+            <button 
+              onClick={() => setShowHistoryModal(true)}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all hover:scale-105 shadow-lg"
+              style={{ background: "linear-gradient(135deg,#8B5CF6,#7C3AED)", color: "#fff" }}>
+              📊 View History
+            </button>
+            
+            {/* Edit */}
             <button onClick={onEdit}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-105"
               style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.25)", color: "#60A5FA" }}>
               ✏️ Edit
             </button>
+            
+            {/* Delete */}
             <button onClick={onDelete}
               className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-105"
               style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171" }}>
@@ -558,7 +699,327 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         </div>
       </div>
     )}
+
+    {/* ★ NEW: Customer Activity History Modal */}
+    {showHistoryModal && (
+      <CustomerHistoryModal
+        customer={customer}
+        invoices={custInvoices}
+        payments={customerPayments}
+        onClose={() => setShowHistoryModal(false)}
+      />
+    )}
     </>
+  );
+}
+
+// ★ NEW: Customer History & Activity Report Modal ─────────────────────────────
+function CustomerHistoryModal({ customer, invoices, payments, onClose }) {
+  const [filter, setFilter] = useState("all"); // all, invoices, payments
+  
+  // Combine invoices and payments into timeline
+  const timeline = [];
+  
+  // Add invoices to timeline
+  invoices.forEach(inv => {
+    const date = inv.createdAt?.toDate ? inv.createdAt.toDate() : new Date(inv.createdAt);
+    timeline.push({
+      type: "invoice",
+      date,
+      timestamp: date.getTime(),
+      data: inv,
+    });
+  });
+  
+  // Add payments to timeline
+  payments.forEach(pay => {
+    const date = pay.createdAt?.toDate ? pay.createdAt.toDate() : new Date(pay.createdAt);
+    timeline.push({
+      type: "payment",
+      date,
+      timestamp: date.getTime(),
+      data: pay,
+    });
+  });
+  
+  // Sort by date (newest first)
+  timeline.sort((a, b) => b.timestamp - a.timestamp);
+  
+  // Filter timeline
+  const filtered = filter === "all" 
+    ? timeline 
+    : timeline.filter(item => item.type === filter.slice(0, -1)); // "invoices" → "invoice"
+  
+  // Calculate totals
+  const totalInvoices = invoices.length;
+  const totalPayments = payments.length;
+  const totalInvoiced = invoices.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
+  const totalPaid = payments.reduce((sum, pay) => sum + (Number(pay.amount) || 0), 0);
+  const totalBalance = invoices.reduce((sum, inv) => sum + (Number(inv.balance) || 0), 0);
+  
+  function formatDate(date) {
+    return date.toLocaleDateString("en-PK", { 
+      day: "2-digit", 
+      month: "short", 
+      year: "numeric",
+      hour: "2-digit",
+      minute: "2-digit"
+    });
+  }
+  
+  function handlePrint() {
+    window.print();
+  }
+  
+  return (
+    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 animate-fadeIn"
+      style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)" }}>
+      <div className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl overflow-hidden animate-scaleIn"
+        style={{ background: "#0d1117", border: "1px solid rgba(139,92,246,0.3)", boxShadow: "0 20px 60px rgba(139,92,246,0.3)" }}>
+        
+        {/* Header */}
+        <div className="relative overflow-hidden px-6 py-5 border-b border-white/10">
+          <div className="absolute inset-0 bg-gradient-to-r from-purple-500/10 via-pink-500/10 to-blue-500/10" />
+          <div className="relative z-10 flex items-center justify-between">
+            <div>
+              <h2 className="text-white font-black text-xl mb-1">
+                📊 Activity History & Report
+              </h2>
+              <p className="text-gray-400 text-xs">
+                Complete transaction history for <span className="text-purple-400 font-semibold">{customer.name}</span>
+              </p>
+            </div>
+            <div className="flex gap-2">
+              <button onClick={handlePrint}
+                className="px-4 py-2 rounded-lg text-xs font-semibold transition-all hover:scale-105"
+                style={{ background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }}>
+                🖨️ Print
+              </button>
+              <button onClick={onClose}
+                className="w-10 h-10 rounded-lg flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/5 transition-all text-2xl font-bold">
+                ×
+              </button>
+            </div>
+          </div>
+        </div>
+        
+        {/* Summary Stats */}
+        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 p-4 border-b border-white/10">
+          {[
+            { label: "Total Invoices", value: totalInvoices, icon: "🧾", color: "#60A5FA" },
+            { label: "Total Invoiced", value: formatRs(totalInvoiced), icon: "💼", color: "#F59E0B" },
+            { label: "Total Payments", value: totalPayments, icon: "💰", color: "#34d399" },
+            { label: "Total Paid", value: formatRs(totalPaid), icon: "✅", color: "#10b981" },
+            { label: "Balance Due", value: formatRs(totalBalance), icon: "⏳", color: totalBalance > 0 ? "#f87171" : "#34d399" },
+          ].map((stat, i) => (
+            <div key={i} className="rounded-lg p-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-sm">{stat.icon}</span>
+                <p className="text-[9px] font-bold uppercase tracking-wide text-gray-500">{stat.label}</p>
+              </div>
+              <p className="text-sm font-bold" style={{ color: stat.color }}>{stat.value}</p>
+            </div>
+          ))}
+        </div>
+        
+        {/* Filter Tabs */}
+        <div className="flex gap-2 px-4 py-3 border-b border-white/10">
+          {[
+            { id: "all", label: "All Activities", icon: "📋", count: timeline.length },
+            { id: "invoices", label: "Invoices", icon: "🧾", count: totalInvoices },
+            { id: "payments", label: "Payments", icon: "💰", count: totalPayments },
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setFilter(tab.id)}
+              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-300 ${
+                filter === tab.id ? "scale-105 shadow-lg" : "hover:scale-105"
+              }`}
+              style={{
+                background: filter === tab.id 
+                  ? "linear-gradient(135deg, #8B5CF6, #7C3AED)"
+                  : "rgba(255,255,255,0.05)",
+                border: `1px solid ${filter === tab.id ? "#8B5CF6" : "rgba(255,255,255,0.1)"}`,
+                color: filter === tab.id ? "#fff" : "#9ca3af",
+              }}>
+              <span>{tab.icon}</span>
+              {tab.label}
+              <span className="ml-1 px-1.5 py-0.5 rounded text-[10px] font-bold"
+                style={{ background: filter === tab.id ? "rgba(255,255,255,0.2)" : "rgba(255,255,255,0.1)" }}>
+                {tab.count}
+              </span>
+            </button>
+          ))}
+        </div>
+        
+        {/* Timeline */}
+        <div className="flex-1 overflow-y-auto p-4">
+          {filtered.length === 0 ? (
+            <div className="text-center py-12">
+              <div className="text-4xl mb-2">📭</div>
+              <p className="text-gray-500 text-sm">No activities found</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {filtered.map((item, idx) => (
+                <div key={idx} 
+                  className="group relative rounded-lg p-4 transition-all duration-300 hover:scale-[1.01]"
+                  style={{ 
+                    background: item.type === "invoice" 
+                      ? "rgba(37,99,235,0.05)" 
+                      : "rgba(16,185,129,0.05)",
+                    border: `1px solid ${item.type === "invoice" ? "rgba(37,99,235,0.2)" : "rgba(16,185,129,0.2)"}` 
+                  }}>
+                  
+                  {/* Timeline dot */}
+                  <div className="absolute left-0 top-6 w-2 h-2 rounded-full -translate-x-1/2"
+                    style={{ background: item.type === "invoice" ? "#60A5FA" : "#10b981" }} />
+                  
+                  <div className="flex items-start justify-between gap-4">
+                    <div className="flex items-start gap-3 flex-1 min-w-0">
+                      {/* Icon */}
+                      <div className={`w-10 h-10 rounded-lg flex items-center justify-center text-lg font-bold flex-shrink-0`}
+                        style={{ 
+                          background: item.type === "invoice" 
+                            ? "rgba(37,99,235,0.15)" 
+                            : "rgba(16,185,129,0.15)",
+                          border: `1px solid ${item.type === "invoice" ? "rgba(37,99,235,0.3)" : "rgba(16,185,129,0.3)"}`,
+                          color: item.type === "invoice" ? "#60A5FA" : "#10b981"
+                        }}>
+                        {item.type === "invoice" ? "🧾" : "💰"}
+                      </div>
+                      
+                      {/* Content */}
+                      <div className="flex-1 min-w-0">
+                        {item.type === "invoice" ? (
+                          <>
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="text-white text-sm font-bold">
+                                Invoice #{item.data.id.slice(-4).toUpperCase()}
+                              </p>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                style={{ 
+                                  background: item.data.status === "Paid" ? "rgba(52,211,153,0.1)" : 
+                                             item.data.status === "Partial" ? "rgba(251,191,36,0.1)" : "rgba(248,113,113,0.1)",
+                                  color: item.data.status === "Paid" ? "#34d399" : 
+                                         item.data.status === "Partial" ? "#fbbf24" : "#f87171",
+                                  border: `1px solid ${item.data.status === "Paid" ? "rgba(52,211,153,0.25)" : 
+                                                       item.data.status === "Partial" ? "rgba(251,191,36,0.25)" : "rgba(248,113,113,0.25)"}`
+                                }}>
+                                {item.data.status}
+                              </span>
+                            </div>
+                            <p className="text-gray-400 text-xs mb-2">
+                              📅 {formatDate(item.date)}
+                              {item.data.items?.length > 0 && ` · ${item.data.items.length} item(s)`}
+                            </p>
+                            <div className="flex flex-wrap gap-3 text-xs">
+                              <span className="text-white font-semibold">
+                                Amount: <span className="text-amber-400">{formatRs(item.data.amount)}</span>
+                              </span>
+                              {item.data.amountPaid > 0 && (
+                                <span className="text-white font-semibold">
+                                  Paid: <span className="text-green-400">{formatRs(item.data.amountPaid)}</span>
+                                </span>
+                              )}
+                              {item.data.balance > 0 && (
+                                <span className="text-white font-semibold">
+                                  Balance: <span className="text-red-400">{formatRs(item.data.balance)}</span>
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        ) : (
+                          <>
+                            <div className="flex items-center gap-2 mb-1">
+                              <p className="text-white text-sm font-bold">
+                                Payment Received
+                              </p>
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                                style={{ background: "rgba(52,211,153,0.1)", color: "#34d399", border: "1px solid rgba(52,211,153,0.25)" }}>
+                                {item.data.status || "Completed"}
+                              </span>
+                            </div>
+                            <p className="text-gray-400 text-xs mb-2">
+                              📅 {formatDate(item.date)}
+                              {item.data.invoiceNumber && ` · ${item.data.invoiceNumber}`}
+                            </p>
+                            <div className="flex flex-wrap gap-3 text-xs">
+                              <span className="text-white font-semibold">
+                                Amount: <span className="text-green-400">{formatRs(item.data.amount)}</span>
+                              </span>
+                              {item.data.payerName && (
+                                <span className="text-gray-400">
+                                  From: <span className="text-white">{item.data.payerName}</span>
+                                </span>
+                              )}
+                              {item.data.receiverName && (
+                                <span className="text-gray-400">
+                                  To: <span className="text-white">{item.data.receiverName}</span>
+                                </span>
+                              )}
+                              {item.data.method && (
+                                <span className="text-gray-400">
+                                  Method: <span className="text-white capitalize">{item.data.method}</span>
+                                </span>
+                              )}
+                            </div>
+                          </>
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
+        
+        {/* Footer */}
+        <div className="px-6 py-4 border-t border-white/10 flex items-center justify-between">
+          <p className="text-gray-500 text-xs">
+            Generated on {new Date().toLocaleDateString("en-PK", { day: "2-digit", month: "long", year: "numeric" })}
+          </p>
+          <button onClick={onClose}
+            className="px-6 py-2 rounded-lg text-sm font-semibold transition-all hover:scale-105"
+            style={{ background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }}>
+            Close
+          </button>
+        </div>
+      </div>
+      
+      <style jsx>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes scaleIn {
+          from { transform: scale(0.95); opacity: 0; }
+          to { transform: scale(1); opacity: 1; }
+        }
+        .animate-fadeIn {
+          animation: fadeIn 0.3s ease-out;
+        }
+        .animate-scaleIn {
+          animation: scaleIn 0.3s ease-out;
+        }
+        
+        @media print {
+          @page {
+            margin: 1cm;
+          }
+          body * {
+            visibility: hidden;
+          }
+          .print\\:block {
+            visibility: visible !important;
+            position: absolute;
+            left: 0;
+            top: 0;
+          }
+        }
+      `}</style>
+    </div>
   );
 }
 
@@ -571,6 +1032,9 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
   const [search,       setSearch]       = useState("");
   const [detailCust,   setDetailCust]   = useState(null);
   const [statusFilter, setStatusFilter] = useState("All");
+  
+  // Sweet Alert State
+  const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
 
   // sync detailCust when customers list updates (e.g. after edit)
   useEffect(() => {
@@ -591,6 +1055,14 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
           address: form.address || "", city: form.city || "",
           notes: form.notes || "", updatedAt: serverTimestamp(),
         });
+        
+        // Show update success alert
+        setAlert({
+          show: true,
+          type: "success",
+          title: "Customer Updated! ✓",
+          message: `${form.name}'s information has been updated successfully.`,
+        });
       } else {
         await addDoc(collection(db, "users", uid, "customers"), {
           name: form.name, shopName: form.shopName || "",
@@ -598,9 +1070,24 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
           address: form.address || "", city: form.city || "",
           notes: form.notes || "", status: "active", createdAt: serverTimestamp(),
         });
+        
+        // Show create success alert
+        setAlert({
+          show: true,
+          type: "success",
+          title: "Customer Added! 👥",
+          message: `${form.name} has been added to your customer list successfully.`,
+        });
       }
       setShowModal(false); setEditTarget(null);
-    } catch (err) { alert("Error: " + err.message); }
+    } catch (err) { 
+      setAlert({
+        show: true,
+        type: "error",
+        title: "Failed to Save Customer",
+        message: err.message || "Something went wrong. Please try again.",
+      });
+    }
     setSaving(false);
   }
 
@@ -608,7 +1095,22 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
     try {
       await deleteDoc(doc(db, "users", uid, "customers", id));
       if (detailCust?.id === id) setDetailCust(null);
-    } catch (err) { alert("Error: " + err.message); }
+      
+      // Show delete success alert
+      setAlert({
+        show: true,
+        type: "success",
+        title: "Customer Deleted! 🗑️",
+        message: "The customer has been permanently deleted from your records.",
+      });
+    } catch (err) { 
+      setAlert({
+        show: true,
+        type: "error",
+        title: "Failed to Delete Customer",
+        message: err.message || "Something went wrong. Please try again.",
+      });
+    }
     setDeleteConf(null);
   }
 
@@ -672,6 +1174,14 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
 
   return (
     <div className="flex flex-col gap-5 w-full">
+      {/* Sweet Alert */}
+      <SweetAlert
+        show={alert.show}
+        type={alert.type}
+        title={alert.title}
+        message={alert.message}
+        onClose={() => setAlert({ ...alert, show: false })}
+      />
       
       {/* Professional Header */}
       <div className="relative overflow-hidden rounded-xl p-6" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
