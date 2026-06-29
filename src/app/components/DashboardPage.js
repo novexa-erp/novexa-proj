@@ -448,7 +448,7 @@ function DashboardContent() {
           ) : activeNav === "payments" ? (
             <PaymentsView uid={user?.uid} />
           ) : activeNav === "purchases" ? (
-            <PurchasesView uid={user?.uid} />
+            <PurchasesView uid={user?.uid} userDoc={userDoc} />
           ) : activeNav === "analytics" ? (
             <AnalyticsView uid={user?.uid} />
           ) : activeNav === "settings" ? (

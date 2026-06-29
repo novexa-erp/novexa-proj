@@ -48,6 +48,15 @@ service cloud.firestore {
         allow read, write: if isSignedIn() && isOwner(userId);
       }
 
+      match /suppliers/{supplierId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+
+        // Supplier ki apni purchases subcollection
+        match /purchases/{purchaseId} {
+          allow read, write: if isSignedIn() && isOwner(userId);
+        }
+      }
+
       match /expenses/{expenseId} {
         allow read, write: if isSignedIn() && isOwner(userId);
       }
