@@ -2,11 +2,12 @@
 import { useState, useEffect } from "react";
 import {
   collection, addDoc, doc, updateDoc, deleteDoc,
-  serverTimestamp, onSnapshot, query, orderBy,
+  serverTimestamp, onSnapshot, query, orderBy, where, getDocs,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import InvoiceModal, { EMPTY_FORM, calcTotals } from "./InvoiceModal";
 import InvoicePDFModal from "./InvoicePDF";
+import CustomerHistoryPDFModal from "./CustomerHistoryPDF";
 import SweetAlert from "./SweetAlert";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -191,7 +192,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
   // ★ Customer payments history
   const [customerPayments, setCustomerPayments] = useState([]);
   const [paymentsLoading, setPaymentsLoading] = useState(true);
-  const [showHistoryModal, setShowHistoryModal] = useState(false);
+  const [showHistoryModal, setShowHistoryModal] = useState(null); // null=closed, "all"=full history, invoiceId=that invoice only
   
   // ★ Sweet Alert State
   const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
@@ -209,55 +210,102 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
     return () => unsub();
   }, [uid, customer.id]);
 
-  // ★ NEW: Load customer's payment history
+  // ★ Load customer's payment history — filtered strictly by customerId
   useEffect(() => {
-    if (!uid) return;
+    if (!uid || !customer.id) return;
     const unsub = onSnapshot(
       query(
         collection(db, "users", uid, "payments"),
         orderBy("createdAt", "desc")
       ),
-      snap => { 
-        // Filter payments related to this customer
+      snap => {
         const allPayments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        const custPayments = allPayments.filter(p => 
-          p.customer === customer.name || 
-          p.payerName === customer.name ||
+        // Build a set of invoice IDs belonging to THIS customer
+        const custInvoiceIds = new Set(custInvoices.map(inv => inv.id));
+        // Keep only payments that belong to this specific customer
+        const custPayments = allPayments.filter(p =>
           p.customerId === customer.id ||
-          custInvoices.some(inv => inv.id === p.invoiceId)
+          (p.invoiceId && custInvoiceIds.has(p.invoiceId))
         );
-        setCustomerPayments(custPayments); 
-        setPaymentsLoading(false); 
+        setCustomerPayments(custPayments);
+        setPaymentsLoading(false);
       },
       () => setPaymentsLoading(false)
     );
     return () => unsub();
-  }, [uid, customer.id, customer.name, custInvoices]);
+  }, [uid, customer.id, custInvoices]);
 
   // ── computed ──────────────────────────────────────────────────────────────
-  const totalBusiness = custInvoices.reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  // Find invoice IDs whose balance has been carried forward into a newer invoice
+  // These should NOT be counted in totalBalance to avoid double-counting
+  const carriedForwardIds = new Set();
+  custInvoices.forEach(inv => {
+    (inv.items || []).forEach(it => {
+      const desc = it.description || "";
+      if (desc.startsWith("Previous Balance · INV-")) {
+        // Extract the 4-char suffix e.g. "Previous Balance · INV-UTWW" → "UTWW"
+        const suffix = desc.replace("Previous Balance · INV-", "").trim().slice(0, 4).toUpperCase();
+        // Find the matching invoice by id suffix
+        const matched = custInvoices.find(i => (i.id || "").slice(-4).toUpperCase() === suffix);
+        if (matched) carriedForwardIds.add(matched.id);
+      }
+    });
+  });
+
+  // Only count invoices that are NOT carried forward (to avoid double-counting)
+  const totalBusiness = custInvoices.reduce((s, i) => {
+    if (carriedForwardIds.has(i.id)) return s;
+    // Use actualAmount if available, else full amount
+    const amt = i.actualAmount != null ? Number(i.actualAmount) : (Number(i.amount) || 0);
+    return s + amt;
+  }, 0);
   const totalPaid     = custInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
-  const totalBalance  = custInvoices.reduce((s, i) => s + (Number(i.balance) || 0), 0);
+  const totalBalance  = custInvoices.reduce((s, i) => {
+    // If this invoice's balance is already carried into a newer invoice, skip it
+    if (carriedForwardIds.has(i.id)) return s;
+    return s + (Number(i.balance) || 0);
+  }, 0);
   const paidCount     = custInvoices.filter(i => i.status === "Paid").length;
 
   // ── generate invoice with prev balance carried forward ───────────────────
   function openNewInvoice() {
-    const prevBal = totalBalance; // carry-forward
+    // Only carry forward the LATEST unpaid/partial invoice's balance
+    // (that invoice already includes previous balances in its own items)
+    const pendingInvoices = custInvoices.filter(
+      inv => (inv.status === "Unpaid" || inv.status === "Partial") && Number(inv.balance) > 0
+    );
+
+    // Sort by createdAt descending — take only the most recent one
+    const sorted = [...pendingInvoices].sort((a, b) => {
+      const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
+      const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+      return bTime - aTime;
+    });
+    const latestPending = sorted[0];
+
+    const prevBalItems = latestPending ? [{
+      description: `Previous Balance · INV-${(latestPending.id || "").slice(-4).toUpperCase()}`,
+      qty:         1,
+      unitPrice:   String(Number(latestPending.balance) || 0),
+      productId:   "",
+      variantId:   "",
+      variantLabel: "",
+      variantUnit:  "",
+      stock:       "",
+      locked:      true, // mark as read-only
+    }] : [];
+
     const prefilled = {
       ...EMPTY_FORM,
       customerName: customer.name,
       phone:        customer.phone || "",
       email:        customer.email || "",
-      address:      customer.address || (customer.city ? `${customer.city}${customer.address ? ", " + customer.address : ""}` : ""),
-      // if prev balance exists, add it as a line item so customer knows
-      items: prevBal > 0
-        ? [
-            { description: `Previous Balance Carried Forward`, qty: 1, unitPrice: String(prevBal), productId: "" },
-            { description: "", qty: 1, unitPrice: "", productId: "" },
-          ]
-        : [{ description: "", qty: 1, unitPrice: "", productId: "" }],
-      note: prevBal > 0
-        ? `Includes previous outstanding balance of Rs. ${prevBal.toLocaleString("en-PK")}.`
+      address:      customer.address || (customer.city ? `${customer.city}` : ""),
+      items: prevBalItems.length > 0
+        ? [...prevBalItems, { description: "", qty: 1, unitPrice: "", productId: "", variantId: "", variantLabel: "", variantUnit: "", stock: "" }]
+        : [{ description: "", qty: 1, unitPrice: "", productId: "", variantId: "", variantLabel: "", variantUnit: "", stock: "" }],
+      note: latestPending
+        ? `Includes previous outstanding balance from INV-${(latestPending.id || "").slice(-4).toUpperCase()} (Rs. ${Number(latestPending.balance).toLocaleString("en-PK")}).`
         : "",
     };
     setEditInv(null);
@@ -270,6 +318,20 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
     setSavingInv(true);
     try {
       const { subtotal, discount, afterDiscount, paid, balance } = calcTotals(formData);
+
+      // Calculate actual amount excluding "Previous Balance · INV-" carry-forward items
+      // These items are bookkeeping only — history should show real sale amount
+      const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+      const actualItems   = (formData.items || []).filter(it => !isPrevBalItem(it));
+      const actualAmount  = actualItems.reduce(
+        (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0
+      );
+      // Apply same discount ratio to actual amount
+      const discountVal = formData.discountType === "percent"
+        ? actualAmount * (Number(formData.discountValue) || 0) / 100
+        : Math.min(Number(formData.discountValue) || 0, actualAmount);
+      const actualAmountAfterDiscount = Math.max(actualAmount - discountVal, 0);
+
       const payload = {
         logoDataUrl:          formData.logoDataUrl || "",
         customerId:           customer.id,
@@ -284,6 +346,9 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         subtotal,
         discount,
         amount:               afterDiscount,
+        // actualAmount = only the real sold items, no prev balance carry-forward
+        // used in history to show what was actually sold in this invoice
+        actualAmount:         actualAmountAfterDiscount,
         amountPaid:           paid,
         balance,
         status:               balance === 0 && afterDiscount > 0 ? "Paid" : paid > 0 ? "Partial" : "Unpaid",
@@ -295,26 +360,251 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
       };
 
       if (editInv) {
+        // ── Handle additional items (new purchase on existing invoice) ──────────
+        const newItems = (formData.additionalItems || []).filter(
+          it => it.description.trim() && Number(it.qty) > 0 && Number(it.unitPrice) >= 0
+        );
+        const hasNewItems = newItems.length > 0;
+        const newPurchaseAmount = newItems.reduce(
+          (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0
+        );
+
+        if (hasNewItems) {
+          // Merge new items into existing items array
+          const existingItems = [...(formData.items || [])];
+          const mergedItems = [...existingItems];
+          newItems.forEach(newIt => {
+            // If same product+variant already exists, add qty; otherwise push new row
+            const existIdx = mergedItems.findIndex(ex =>
+              ex.description === newIt.description &&
+              ex.productId === newIt.productId &&
+              (ex.variantId || "") === (newIt.variantId || "")
+            );
+            if (existIdx >= 0) {
+              mergedItems[existIdx] = {
+                ...mergedItems[existIdx],
+                qty: (Number(mergedItems[existIdx].qty) || 0) + (Number(newIt.qty) || 0),
+              };
+            } else {
+              mergedItems.push(newIt);
+            }
+          });
+
+          // Recalculate totals with merged items
+          const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+          const mergedSubtotal = mergedItems.reduce(
+            (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0
+          );
+          const mergedDiscount = formData.discountType === "percent"
+            ? mergedSubtotal * (Number(formData.discountValue) || 0) / 100
+            : Number(formData.discountValue) || 0;
+          const mergedAfterDiscount = Math.max(mergedSubtotal - mergedDiscount, 0);
+          const currentAmountPaid = Number(formData.amountPaid) || 0;
+          const mergedBalance = Math.max(mergedAfterDiscount - currentAmountPaid, 0);
+          const mergedStatus = mergedBalance === 0 ? "Paid" : currentAmountPaid > 0 ? "Partial" : "Unpaid";
+
+          // actualAmount with merged items (no prev bal)
+          const mergedActual = mergedItems
+            .filter(it => !isPrevBalItem(it))
+            .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+          const mergedDiscountForActual = formData.discountType === "percent"
+            ? mergedActual * (Number(formData.discountValue) || 0) / 100
+            : Math.min(Number(formData.discountValue) || 0, mergedActual);
+          const mergedActualAfterDiscount = Math.max(mergedActual - mergedDiscountForActual, 0);
+
+          const mergedPayload = {
+            ...payload,
+            items: mergedItems,
+            subtotal: mergedSubtotal,
+            discount: mergedDiscount,
+            amount: mergedAfterDiscount,
+            actualAmount: mergedActualAfterDiscount,
+            amountPaid: currentAmountPaid,
+            balance: mergedBalance,
+            status: mergedStatus,
+          };
+
+          // Update invoice with merged items + new totals
+          await updateDoc(
+            doc(db, "users", uid, "customers", customer.id, "invoices", editInv.id),
+            { ...mergedPayload, updatedAt: serverTimestamp() }
+          );
+          await updateDoc(
+            doc(db, "users", uid, "invoices", editInv.id),
+            { ...mergedPayload, updatedAt: serverTimestamp() }
+          ).catch(() => {});
+
+          // Deduct stock for new items
+          for (const item of newItems) {
+            if (item.productId && item.qty) {
+              const productRef = doc(db, "users", uid, "products", item.productId);
+              const product = products.find(p => p.id === item.productId);
+              if (product) {
+                const qtyToDeduct = Number(item.qty) || 0;
+                if (item.variantId && product.variants?.length > 0) {
+                  const updatedVariants = product.variants.map(v => {
+                    const varId = v.id || `var_${product.variants.indexOf(v)}`;
+                    if (varId === item.variantId) {
+                      return { ...v, stock: Math.max(0, (Number(v.stock) || 0) - qtyToDeduct) };
+                    }
+                    return v;
+                  });
+                  await updateDoc(productRef, { variants: updatedVariants, updatedAt: serverTimestamp() });
+                } else {
+                  await updateDoc(productRef, {
+                    stock: Math.max(0, (Number(product.stock) || 0) - qtyToDeduct),
+                    updatedAt: serverTimestamp(),
+                  });
+                }
+              }
+            }
+          }
+
+          // Create purchase history record
+          const prevActualBalance = Math.max(0, (payload.actualAmount || actualAmountAfterDiscount) - currentAmountPaid);
+          const newActualBalance  = Math.max(0, mergedActualAfterDiscount - currentAmountPaid);
+          await addDoc(collection(db, "users", uid, "payments"), {
+            type: "purchase",
+            purchaseAmount: newPurchaseAmount,   // new items ka total
+            amount: prevActualBalance,            // balance before (for Amount col in history)
+            paid: 0,                             // no payment — purchase record
+            balance: newActualBalance,            // new balance after purchase
+            historyBalance: newActualBalance,
+            invoiceId: editInv.id,
+            invoiceNumber: `INV-${editInv.id.slice(-4).toUpperCase()}`,
+            customerId: customer.id,
+            customer: customer.name,
+            description: `Additional purchase on invoice ${editInv.id.slice(-4).toUpperCase()}: ${newItems.map(it => `${it.description} x${it.qty}`).join(", ")}`,
+            items: newItems,
+            status: mergedStatus,
+            createdAt: serverTimestamp(),
+          });
+
+          setAlert({
+            show: true,
+            type: "success",
+            title: "Invoice Updated! 🛍️",
+            message: `${formatRs(newPurchaseAmount)} worth of new items added to invoice. Balance updated to ${formatRs(mergedBalance)}.`,
+          });
+          setShowInvModal(false);
+          setEditInv(null);
+          setSavingInv(false);
+          return; // done — skip rest of edit logic
+        }
+
+        // ── Handle Goods Return ──────────────────────────────────────────────
+        const retData = formData.returnItem;
+        if (retData && retData.description && Number(retData.qty) > 0 && Number(retData.rate) > 0) {
+          const returnAmount  = Number(retData.qty) * Number(retData.rate);
+          const currentPaid   = Number(formData.amountPaid) || 0;
+          // Current actual amount before return
+          const currentActual = payload.actualAmount || actualAmountAfterDiscount;
+          const newActual     = Math.max(0, currentActual - returnAmount);
+          const newFullAmount = Math.max(0, payload.amount - returnAmount);
+          const newBalance    = Math.max(0, newFullAmount - currentPaid);
+          const newStatus     = newBalance === 0 ? "Paid" : currentPaid > 0 ? "Partial" : "Unpaid";
+
+          // Update invoice with reduced amounts
+          const returnPayload = {
+            amount:       newFullAmount,
+            actualAmount: newActual,
+            balance:      newBalance,
+            status:       newStatus,
+            updatedAt:    serverTimestamp(),
+          };
+          await updateDoc(
+            doc(db, "users", uid, "customers", customer.id, "invoices", editInv.id),
+            returnPayload
+          );
+          await updateDoc(
+            doc(db, "users", uid, "invoices", editInv.id),
+            returnPayload
+          ).catch(() => {});
+
+          // Add stock back for returned item
+          const returnedProduct = products.find(p =>
+            p.name === retData.description || (retData.productId && p.id === retData.productId)
+          );
+          if (returnedProduct) {
+            const qtyBack = Number(retData.qty) || 0;
+            if (retData.variantId && returnedProduct.variants?.length > 0) {
+              const updatedVariants = returnedProduct.variants.map(v => {
+                const varId = v.id || `var_${returnedProduct.variants.indexOf(v)}`;
+                if (varId === retData.variantId) {
+                  return { ...v, stock: (Number(v.stock) || 0) + qtyBack };
+                }
+                return v;
+              });
+              await updateDoc(doc(db, "users", uid, "products", returnedProduct.id), {
+                variants: updatedVariants, updatedAt: serverTimestamp(),
+              });
+            } else {
+              await updateDoc(doc(db, "users", uid, "products", returnedProduct.id), {
+                stock: (Number(returnedProduct.stock) || 0) + qtyBack,
+                updatedAt: serverTimestamp(),
+              });
+            }
+          }
+
+          // Create return record in payments collection
+          await addDoc(collection(db, "users", uid, "payments"), {
+            type:           "return",
+            returnAmount,
+            qty:            Number(retData.qty),
+            rate:           Number(retData.rate),
+            description:    retData.description,
+            balanceBefore:  Math.max(0, currentActual - currentPaid),
+            historyBalance: Math.max(0, newActual - currentPaid),
+            balance:        newBalance,
+            invoiceId:      editInv.id,
+            invoiceNumber:  `INV-${editInv.id.slice(-4).toUpperCase()}`,
+            customerId:     customer.id,
+            customer:       customer.name,
+            status:         newStatus,
+            createdAt:      serverTimestamp(),
+          });
+
+          setAlert({
+            show: true, type: "success",
+            title: "Goods Return Recorded! ↩️",
+            message: `${retData.description} × ${retData.qty} returned. ${formatRs(returnAmount)} deducted from invoice. New balance: ${formatRs(newBalance)}.`,
+          });
+          setShowInvModal(false);
+          setEditInv(null);
+          setSavingInv(false);
+          return;
+        }
+
+        // update invoice details (items, discount, dates, note etc.)
+        // If a new payment is being added, we will update amountPaid/balance/status
+        // in a separate targeted update below — so exclude them from this payload update
+        const hasNewPayment = formData.newPaymentAmount && Number(formData.newPaymentAmount) > 0;
+        const detailsPayload = hasNewPayment
+          ? (({ amountPaid, balance, status, ...rest }) => rest)(payload)
+          : payload;
+
         // update in customer subcollection
         await updateDoc(
           doc(db, "users", uid, "customers", customer.id, "invoices", editInv.id),
-          { ...payload, updatedAt: serverTimestamp() }
+          { ...detailsPayload, updatedAt: serverTimestamp() }
         );
         // also update global
         await updateDoc(
           doc(db, "users", uid, "invoices", editInv.id),
-          { ...payload, updatedAt: serverTimestamp() }
+          { ...detailsPayload, updatedAt: serverTimestamp() }
         ).catch(() => {}); // ignore if not in global
         
         // ★ Handle payment collection if provided
         if (formData.newPaymentAmount && Number(formData.newPaymentAmount) > 0) {
           const paymentAmount = Number(formData.newPaymentAmount);
-          const currentPaid = Number(formData.amountPaid) || 0;
-          const newTotalPaid = currentPaid + paymentAmount;
+          // previousBalance = balance BEFORE this payment (from the original invoice data)
+          const previousBalance = Math.max(0, payload.amount - (Number(formData.amountPaid) || 0));
+          const newTotalPaid = (Number(formData.amountPaid) || 0) + paymentAmount;
           const newBalance = Math.max(0, payload.amount - newTotalPaid);
           const newStatus = newBalance === 0 ? "Paid" : newTotalPaid > 0 ? "Partial" : "Unpaid";
           
-          // Update invoice with new payment (customer subcollection)
+          // Update ONLY amountPaid/balance/status on invoice — do NOT re-apply full payload
+          // so the invoice row's items/amounts stay exactly as they were
           await updateDoc(
             doc(db, "users", uid, "customers", customer.id, "invoices", editInv.id),
             {
@@ -326,7 +616,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             }
           );
           
-          // Update global invoice too
+          // Update global invoice too (same minimal fields only)
           await updateDoc(
             doc(db, "users", uid, "invoices", editInv.id),
             {
@@ -338,10 +628,21 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             }
           ).catch(() => {});
           
-          // Create payment record
+          // Create payment record with:
+          // amount  = previousBalance (jo pehle tha)
+          // paid    = jo abhi diya
+          // balance = jo bacha
+          // status  = Partial / Paid
+          // historyBalance = balance based on actualAmount only (excludes prev balance carry-forward)
+          const invActualAmount = payload.actualAmount || actualAmountAfterDiscount;
+          const historyBalance = Math.max(0, invActualAmount - newTotalPaid);
           await addDoc(collection(db, "users", uid, "payments"), {
             type: "received",
-            amount: paymentAmount,
+            amount: previousBalance,          // pehle wala balance (Amount col)
+            paid: paymentAmount,              // jo abhi diya (Paid col)
+            balance: newBalance,              // jo bacha (Balance col) — full invoice
+            historyBalance,                   // balance for history view — only actualAmount based
+            invoiceActualAmount: invActualAmount, // actual purchase amount (no prev bal)
             invoiceId: editInv.id,
             invoiceNumber: `INV-${editInv.id.slice(-4).toUpperCase()}`,
             customerId: customer.id,
@@ -351,8 +652,8 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             receiverName: formData.receiverName || "",
             receiverContact: formData.receiverContact || "",
             description: `Payment for invoice ${editInv.id.slice(-4).toUpperCase()} from ${customer.name}`,
-            method: "cash",
-            status: "completed",
+            method: formData.paymentMethod || "cash",
+            status: newStatus,               // Partial / Paid
             createdAt: serverTimestamp(),
           });
           
@@ -374,18 +675,41 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         // add to customer subcollection first to get the id
         const ref = await addDoc(
           collection(db, "users", uid, "customers", customer.id, "invoices"),
-          { ...payload, createdAt: serverTimestamp() }
+          {
+            ...payload,
+            // Store original values at invoice creation — used in history to show
+            // the invoice row as it was when first created (payments don't touch these)
+            originalAmountPaid: payload.amountPaid,
+            originalBalance:    payload.balance,
+            originalStatus:     payload.status,
+            // originalAmount = actual sold amount without prev balance carry-forward items
+            originalAmount:     payload.actualAmount,
+            createdAt: serverTimestamp(),
+          }
         );
         // mirror to global invoices with same id
         await updateDoc(
           doc(db, "users", uid, "invoices", ref.id),
-          { ...payload, createdAt: serverTimestamp() }
+          {
+            ...payload,
+            originalAmountPaid: payload.amountPaid,
+            originalBalance:    payload.balance,
+            originalStatus:     payload.status,
+            originalAmount:     payload.actualAmount,
+            createdAt: serverTimestamp(),
+          }
         ).catch(async () => {
-          // if doesn't exist, create with setDoc
           const { setDoc } = await import("firebase/firestore");
           await setDoc(
             doc(db, "users", uid, "invoices", ref.id),
-            { ...payload, createdAt: serverTimestamp() }
+            {
+              ...payload,
+              originalAmountPaid: payload.amountPaid,
+              originalBalance:    payload.balance,
+              originalStatus:     payload.status,
+              originalAmount:     payload.actualAmount,
+              createdAt: serverTimestamp(),
+            }
           );
         });
       }
@@ -476,9 +800,9 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
               🧾 Generate Invoice
             </button>
             
-            {/* View History - NEW BUTTON */}
+            {/* View History - full customer history */}
             <button 
-              onClick={() => setShowHistoryModal(true)}
+              onClick={() => setShowHistoryModal("all")}
               className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-black transition-all hover:scale-105 shadow-lg"
               style={{ background: "linear-gradient(135deg,#8B5CF6,#7C3AED)", color: "#fff" }}>
               📊 View History
@@ -608,6 +932,18 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
                 : inv.invoiceDate || "—";
               const isOverdue = inv.dueDate && new Date(inv.dueDate) < new Date() && inv.status !== "Paid";
               const num = (inv.id || "").slice(-4).toUpperCase();
+
+              // Actual purchase amount — exclude "Previous Balance · INV-" carry-forward items
+              const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+              const displayAmount = inv.actualAmount != null
+                ? Number(inv.actualAmount)
+                : (inv.items || [])
+                    .filter(it => !isPrevBalItem(it))
+                    .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0)
+                  || Number(inv.amount) || 0;
+              const displayBalance = Math.max(0, displayAmount - (Number(inv.amountPaid) || 0));
+              // Only show real product items (no prev balance entries)
+              const realItems = (inv.items || []).filter(it => it.description && !isPrevBalItem(it));
               return (
                 <div key={inv.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.02] transition-colors">
                   <div className="flex items-center gap-3 min-w-0">
@@ -624,13 +960,19 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
                         )}
                       </div>
                       <p className="text-gray-500 text-xs">{dateStr}{inv.dueDate ? ` · Due ${inv.dueDate}` : ""}</p>
+                      {/* Product names — only real items, no prev balance entries */}
+                      {realItems.length > 0 && (
+                        <p className="text-gray-600 text-[10px] mt-0.5 truncate max-w-[220px]">
+                          📦 {realItems.map(it => it.description).join(", ")}
+                        </p>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <div className="text-right hidden sm:block">
-                      <p className="text-white text-sm font-bold">{formatRs(inv.amount)}</p>
-                      {Number(inv.balance) > 0 && (
-                        <p className="text-xs" style={{ color: "#f87171" }}>Bal: {formatRs(inv.balance)}</p>
+                      <p className="text-white text-sm font-bold">{formatRs(displayAmount)}</p>
+                      {displayBalance > 0 && (
+                        <p className="text-xs" style={{ color: "#f87171" }}>Bal: {formatRs(displayBalance)}</p>
                       )}
                     </div>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
@@ -642,6 +984,10 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
                       <button onClick={() => setPdfInv(inv)}
                         className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
                         style={{ background: "rgba(52,211,153,0.08)", color: "#34d399" }}>👁</button>
+                      <button onClick={() => setShowHistoryModal(inv.id)}
+                        title="Invoice Payment History"
+                        className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
+                        style={{ background: "rgba(139,92,246,0.1)", color: "#a78bfa" }}>📊</button>
                       <button onClick={() => { setEditInv({ id: inv.id, form: docToForm(inv) }); setShowInvModal(true); }}
                         className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
                         style={{ background: "rgba(37,99,235,0.1)", color: "#60A5FA" }}>✏️</button>
@@ -664,7 +1010,8 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         onClose={() => { setShowInvModal(false); setEditInv(null); }}
         onSave={handleSaveInv}
         saving={savingInv}
-        initial={editInv?.form || showInvModal?.prefilled || null}
+        initial={editInv ? editInv.form : null}
+        defaultValues={!editInv ? (showInvModal?.prefilled || null) : null}
         products={products}
         settingsLogo={userDoc?.logoDataUrl || ""}
       />
@@ -672,7 +1019,12 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
 
     {/* PDF Modal */}
     {pdfInv && (
-      <InvoicePDFModal inv={pdfInv} userDoc={userDoc} onClose={() => setPdfInv(null)} />
+      <InvoicePDFModal
+        inv={pdfInv}
+        userDoc={userDoc}
+        payments={customerPayments.filter(p => p.invoiceId === pdfInv.id)}
+        onClose={() => setPdfInv(null)}
+      />
     )}
 
     {/* Delete Invoice Confirm */}
@@ -700,22 +1052,25 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
       </div>
     )}
 
-    {/* ★ NEW: Customer Activity History Modal */}
+    {/* ★ Customer Activity History Modal */}
     {showHistoryModal && (
       <CustomerHistoryModal
         customer={customer}
-        invoices={custInvoices}
-        payments={customerPayments}
-        onClose={() => setShowHistoryModal(false)}
+        invoices={showHistoryModal === "all" ? custInvoices : custInvoices.filter(i => i.id === showHistoryModal)}
+        payments={showHistoryModal === "all" ? customerPayments : customerPayments.filter(p => p.invoiceId === showHistoryModal)}
+        onClose={() => setShowHistoryModal(null)}
+        userDoc={userDoc}
+        singleInvoiceId={showHistoryModal !== "all" ? showHistoryModal : null}
       />
     )}
     </>
   );
 }
 
-// ★ NEW: Customer History & Activity Report Modal ─────────────────────────────
-function CustomerHistoryModal({ customer, invoices, payments, onClose }) {
+// ★ Customer History & Activity Report Modal ──────────────────────────────────
+function CustomerHistoryModal({ customer, invoices, payments, onClose, userDoc, singleInvoiceId }) {
   const [filter, setFilter] = useState("all"); // all, invoices, payments
+  const [showPDF, setShowPDF] = useState(false);
   
   // Combine invoices and payments into timeline
   const timeline = [];
@@ -746,16 +1101,34 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose }) {
   timeline.sort((a, b) => b.timestamp - a.timestamp);
   
   // Filter timeline
-  const filtered = filter === "all" 
-    ? timeline 
-    : timeline.filter(item => item.type === filter.slice(0, -1)); // "invoices" → "invoice"
-  
-  // Calculate totals
-  const totalInvoices = invoices.length;
-  const totalPayments = payments.length;
-  const totalInvoiced = invoices.reduce((sum, inv) => sum + (Number(inv.amount) || 0), 0);
-  const totalPaid = payments.reduce((sum, pay) => sum + (Number(pay.amount) || 0), 0);
-  const totalBalance = invoices.reduce((sum, inv) => sum + (Number(inv.balance) || 0), 0);
+  const filtered = filter === "all"
+    ? timeline
+    : filter === "invoices"
+      ? timeline.filter(item => item.type === "invoice")
+      : filter === "purchases"
+        ? timeline.filter(item => item.type === "payment" && item.data?.type === "purchase")
+        : filter === "returns"
+          ? timeline.filter(item => item.type === "payment" && item.data?.type === "return")
+          : timeline.filter(item => item.type === "payment" && item.data?.type !== "purchase" && item.data?.type !== "return");
+
+  // Calculate totals — always from invoices (source of truth)
+  // For totalInvoiced: use actualAmount (excludes prev balance carry-forward items)
+  function getActualAmount(inv) {
+    if (inv.actualAmount != null) return Number(inv.actualAmount);
+    if (inv.originalAmount != null) return Number(inv.originalAmount);
+    const isPrevBal = (desc) => (desc || "").startsWith("Previous Balance · INV-");
+    return (inv.items || [])
+      .filter(it => !isPrevBal(it.description))
+      .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0)
+      || Number(inv.amount) || 0;
+  }
+  const totalInvoices  = invoices.length;
+  const totalPayments  = payments.filter(p => p.type !== "purchase" && p.type !== "return").length;
+  const totalPurchases = payments.filter(p => p.type === "purchase").length;
+  const totalReturns   = payments.filter(p => p.type === "return").length;
+  const totalInvoiced  = invoices.reduce((sum, inv) => sum + getActualAmount(inv), 0);
+  const totalPaid      = invoices.reduce((sum, inv) => sum + (Number(inv.amountPaid) || 0), 0);
+  const totalBalance   = invoices.reduce((sum, inv) => sum + (Number(inv.balance) || 0), 0);
   
   function formatDate(date) {
     return date.toLocaleDateString("en-PK", { 
@@ -783,13 +1156,21 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose }) {
           <div className="relative z-10 flex items-center justify-between">
             <div>
               <h2 className="text-white font-black text-xl mb-1">
-                📊 Activity History & Report
+                📊 {singleInvoiceId
+                  ? `INV-${singleInvoiceId.slice(-4).toUpperCase()} · Payment History`
+                  : "Activity History & Report"
+                }
               </h2>
               <p className="text-gray-400 text-xs">
                 Complete transaction history for <span className="text-purple-400 font-semibold">{customer.name}</span>
               </p>
             </div>
             <div className="flex gap-2">
+              <button onClick={() => setShowPDF(true)}
+                className="px-4 py-2 rounded-lg text-xs font-semibold transition-all hover:scale-105"
+                style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", color: "#000", fontWeight: 700 }}>
+                📄 Export PDF
+              </button>
               <button onClick={handlePrint}
                 className="px-4 py-2 rounded-lg text-xs font-semibold transition-all hover:scale-105"
                 style={{ background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }}>
@@ -804,13 +1185,14 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose }) {
         </div>
         
         {/* Summary Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-5 gap-3 p-4 border-b border-white/10">
+        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 p-4 border-b border-white/10">
           {[
-            { label: "Total Invoices", value: totalInvoices, icon: "🧾", color: "#60A5FA" },
-            { label: "Total Invoiced", value: formatRs(totalInvoiced), icon: "💼", color: "#F59E0B" },
-            { label: "Total Payments", value: totalPayments, icon: "💰", color: "#34d399" },
-            { label: "Total Paid", value: formatRs(totalPaid), icon: "✅", color: "#10b981" },
-            { label: "Balance Due", value: formatRs(totalBalance), icon: "⏳", color: totalBalance > 0 ? "#f87171" : "#34d399" },
+            { label: "Total Invoices",  value: totalInvoices,           icon: "🧾", color: "#60A5FA" },
+            { label: "Total Invoiced",  value: formatRs(totalInvoiced), icon: "💼", color: "#F59E0B" },
+            { label: "Total Purchases", value: totalPurchases,          icon: "🛍️", color: "#f59e0b" },
+            { label: "Goods Return",    value: totalReturns,            icon: "↩️", color: "#f87171" },
+            { label: "Total Paid",      value: formatRs(totalPaid),     icon: "✅", color: "#10b981" },
+            { label: "Balance Due",     value: formatRs(totalBalance),  icon: "⏳", color: totalBalance > 0 ? "#f87171" : "#34d399" },
           ].map((stat, i) => (
             <div key={i} className="rounded-lg p-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
               <div className="flex items-center gap-1.5 mb-1">
@@ -825,9 +1207,11 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose }) {
         {/* Filter Tabs */}
         <div className="flex gap-2 px-4 py-3 border-b border-white/10">
           {[
-            { id: "all", label: "All Activities", icon: "📋", count: timeline.length },
-            { id: "invoices", label: "Invoices", icon: "🧾", count: totalInvoices },
-            { id: "payments", label: "Payments", icon: "💰", count: totalPayments },
+            { id: "all",       label: "All",      icon: "📋", count: timeline.length },
+            { id: "invoices",  label: "Invoices", icon: "🧾", count: totalInvoices },
+            { id: "purchases", label: "Purchases",icon: "🛍️", count: totalPurchases },
+            { id: "returns",   label: "Returns",  icon: "↩️", count: totalReturns },
+            { id: "payments",  label: "Payments", icon: "💰", count: totalPayments },
           ].map(tab => (
             <button
               key={tab.id}
@@ -855,9 +1239,24 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose }) {
         {/* Timeline */}
         <div className="flex-1 overflow-y-auto p-4">
           {filtered.length === 0 ? (
-            <div className="text-center py-12">
-              <div className="text-4xl mb-2">📭</div>
-              <p className="text-gray-500 text-sm">No activities found</p>
+            <div className="text-center py-16">
+              <div className="text-5xl mb-3">
+                {filter === "payments" ? "💳" : filter === "invoices" ? "🧾" : "📭"}
+              </div>
+              <p className="text-white font-semibold text-base mb-1">
+                {filter === "payments"
+                  ? "No Payments Yet"
+                  : filter === "invoices"
+                  ? "No Invoices Yet"
+                  : "No History Yet"}
+              </p>
+              <p className="text-gray-500 text-sm">
+                {filter === "payments"
+                  ? `No payment records found for ${customer.name}.`
+                  : filter === "invoices"
+                  ? `No invoices have been created for ${customer.name} yet.`
+                  : `No transactions or activity found for ${customer.name} yet.`}
+              </p>
             </div>
           ) : (
             <div className="space-y-3">
@@ -865,15 +1264,27 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose }) {
                 <div key={idx} 
                   className="group relative rounded-lg p-4 transition-all duration-300 hover:scale-[1.01]"
                   style={{ 
-                    background: item.type === "invoice" 
-                      ? "rgba(37,99,235,0.05)" 
-                      : "rgba(16,185,129,0.05)",
-                    border: `1px solid ${item.type === "invoice" ? "rgba(37,99,235,0.2)" : "rgba(16,185,129,0.2)"}` 
+                    background: item.type === "invoice"
+                      ? "rgba(37,99,235,0.05)"
+                      : item.data?.type === "purchase"
+                        ? "rgba(245,158,11,0.05)"
+                        : item.data?.type === "return"
+                          ? "rgba(248,113,113,0.05)"
+                          : "rgba(16,185,129,0.05)",
+                    border: `1px solid ${
+                      item.type === "invoice"
+                        ? "rgba(37,99,235,0.2)"
+                        : item.data?.type === "purchase"
+                          ? "rgba(245,158,11,0.2)"
+                          : item.data?.type === "return"
+                            ? "rgba(248,113,113,0.2)"
+                            : "rgba(16,185,129,0.2)"
+                    }` 
                   }}>
                   
                   {/* Timeline dot */}
                   <div className="absolute left-0 top-6 w-2 h-2 rounded-full -translate-x-1/2"
-                    style={{ background: item.type === "invoice" ? "#60A5FA" : "#10b981" }} />
+                    style={{ background: item.type === "invoice" ? "#60A5FA" : item.data?.type === "purchase" ? "#f59e0b" : item.data?.type === "return" ? "#f87171" : "#10b981" }} />
                   
                   <div className="flex items-start justify-between gap-4">
                     <div className="flex items-start gap-3 flex-1 min-w-0">
@@ -882,11 +1293,15 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose }) {
                         style={{ 
                           background: item.type === "invoice" 
                             ? "rgba(37,99,235,0.15)" 
-                            : "rgba(16,185,129,0.15)",
-                          border: `1px solid ${item.type === "invoice" ? "rgba(37,99,235,0.3)" : "rgba(16,185,129,0.3)"}`,
-                          color: item.type === "invoice" ? "#60A5FA" : "#10b981"
+                            : item.data?.type === "purchase"
+                              ? "rgba(245,158,11,0.15)"
+                              : item.data?.type === "return"
+                                ? "rgba(248,113,113,0.15)"
+                                : "rgba(16,185,129,0.15)",
+                          border: `1px solid ${item.type === "invoice" ? "rgba(37,99,235,0.3)" : item.data?.type === "purchase" ? "rgba(245,158,11,0.3)" : item.data?.type === "return" ? "rgba(248,113,113,0.3)" : "rgba(16,185,129,0.3)"}`,
+                          color: item.type === "invoice" ? "#60A5FA" : item.data?.type === "purchase" ? "#f59e0b" : item.data?.type === "return" ? "#f87171" : "#10b981"
                         }}>
-                        {item.type === "invoice" ? "🧾" : "💰"}
+                        {item.type === "invoice" ? "🧾" : item.data?.type === "purchase" ? "🛍️" : item.data?.type === "return" ? "↩️" : "💰"}
                       </div>
                       
                       {/* Content */}
@@ -911,59 +1326,101 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose }) {
                             </div>
                             <p className="text-gray-400 text-xs mb-2">
                               📅 {formatDate(item.date)}
-                              {item.data.items?.length > 0 && ` · ${item.data.items.length} item(s)`}
+                              {(() => {
+                                const realItems = (item.data.items || []).filter(it => !(it.description || "").startsWith("Previous Balance · INV-"));
+                                return realItems.length > 0 ? ` · ${realItems.length} item(s)` : "";
+                              })()}
                             </p>
                             <div className="flex flex-wrap gap-3 text-xs">
                               <span className="text-white font-semibold">
-                                Amount: <span className="text-amber-400">{formatRs(item.data.amount)}</span>
+                                Purchase: <span className="text-amber-400">{formatRs(getActualAmount(item.data))}</span>
                               </span>
-                              {item.data.amountPaid > 0 && (
-                                <span className="text-white font-semibold">
-                                  Paid: <span className="text-green-400">{formatRs(item.data.amountPaid)}</span>
+                              <span className="text-white font-semibold">
+                                Paid: <span className={Number(item.data.amountPaid) > 0 ? "text-green-400" : "text-gray-500"}>
+                                  {Number(item.data.amountPaid) > 0 ? formatRs(item.data.amountPaid) : "No payment yet"}
                                 </span>
-                              )}
-                              {item.data.balance > 0 && (
-                                <span className="text-white font-semibold">
-                                  Balance: <span className="text-red-400">{formatRs(item.data.balance)}</span>
+                              </span>
+                              <span className="text-white font-semibold">
+                                Balance: <span style={{ color: Math.max(0, getActualAmount(item.data) - (Number(item.data.amountPaid) || 0)) > 0 ? "#f87171" : "#34d399" }}>
+                                  {(() => {
+                                    const actBal = Math.max(0, getActualAmount(item.data) - (Number(item.data.amountPaid) || 0));
+                                    return actBal > 0 ? formatRs(actBal) : "Cleared ✓";
+                                  })()}
                                 </span>
-                              )}
+                              </span>
                             </div>
                           </>
                         ) : (
                           <>
                             <div className="flex items-center gap-2 mb-1">
                               <p className="text-white text-sm font-bold">
-                                Payment Received
+                                {item.data.type === "purchase" ? "🛍️ Additional Purchase" : item.data.type === "return" ? "↩️ Goods Return" : "💰 Payment Received"}
                               </p>
-                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
-                                style={{ background: "rgba(52,211,153,0.1)", color: "#34d399", border: "1px solid rgba(52,211,153,0.25)" }}>
-                                {item.data.status || "Completed"}
-                              </span>
                             </div>
                             <p className="text-gray-400 text-xs mb-2">
                               📅 {formatDate(item.date)}
-                              {item.data.invoiceNumber && ` · ${item.data.invoiceNumber}`}
+                              {item.data.invoiceNumber && ` · Ref: ${item.data.invoiceNumber}`}
                             </p>
-                            <div className="flex flex-wrap gap-3 text-xs">
-                              <span className="text-white font-semibold">
-                                Amount: <span className="text-green-400">{formatRs(item.data.amount)}</span>
-                              </span>
-                              {item.data.payerName && (
-                                <span className="text-gray-400">
-                                  From: <span className="text-white">{item.data.payerName}</span>
+                            {item.data.type === "purchase" ? (
+                              <div className="flex flex-wrap gap-3 text-xs">
+                                <span className="text-white font-semibold">
+                                  Purchased: <span className="text-amber-400">{formatRs(item.data.purchaseAmount)}</span>
                                 </span>
-                              )}
-                              {item.data.receiverName && (
-                                <span className="text-gray-400">
-                                  To: <span className="text-white">{item.data.receiverName}</span>
+                                <span className="text-white font-semibold">
+                                  New Balance: <span style={{ color: Number(item.data.historyBalance ?? item.data.balance) > 0 ? "#f87171" : "#34d399" }}>
+                                    {formatRs(item.data.historyBalance ?? item.data.balance)}
+                                  </span>
                                 </span>
-                              )}
-                              {item.data.method && (
-                                <span className="text-gray-400">
-                                  Method: <span className="text-white capitalize">{item.data.method}</span>
+                                {item.data.items?.length > 0 && (
+                                  <span className="text-gray-400">
+                                    Items: <span className="text-white">{item.data.items.map(it => `${it.description} x${it.qty}`).join(", ")}</span>
+                                  </span>
+                                )}
+                              </div>
+                            ) : item.data.type === "return" ? (
+                              <div className="flex flex-wrap gap-3 text-xs">
+                                <span className="text-white font-semibold">
+                                  Item: <span className="text-red-400">{item.data.description}</span>
                                 </span>
-                              )}
-                            </div>
+                                <span className="text-white font-semibold">
+                                  Qty: <span className="text-red-400">{item.data.qty}</span>
+                                </span>
+                                <span className="text-white font-semibold">
+                                  Returned: <span className="text-red-400">- {formatRs(item.data.returnAmount)}</span>
+                                </span>
+                                <span className="text-white font-semibold">
+                                  New Balance: <span style={{ color: Number(item.data.historyBalance ?? item.data.balance) > 0 ? "#f87171" : "#34d399" }}>
+                                    {formatRs(item.data.historyBalance ?? item.data.balance)}
+                                  </span>
+                                </span>
+                              </div>
+                            ) : (
+                              <div className="flex flex-wrap gap-3 text-xs">
+                                <span className="text-white font-semibold">
+                                  Paid: <span className="text-green-400">{formatRs(item.data.paid ?? item.data.amount)}</span>
+                                </span>
+                                <span className="text-white font-semibold">
+                                  Balance After: <span style={{ color: Number(item.data.historyBalance ?? item.data.balance) > 0 ? "#f87171" : "#34d399" }}>
+                                    {(() => {
+                                      const bal = item.data.historyBalance ?? item.data.balance;
+                                      return bal != null
+                                        ? (Number(bal) > 0 ? formatRs(bal) : "Cleared ✓")
+                                        : "—";
+                                    })()}
+                                  </span>
+                                </span>
+                                {item.data.method && (
+                                  <span className="text-gray-400">
+                                    via <span className="text-white capitalize">{item.data.method}</span>
+                                  </span>
+                                )}
+                                {item.data.payerName && (
+                                  <span className="text-gray-400">
+                                    From: <span className="text-white">{item.data.payerName}</span>
+                                  </span>
+                                )}
+                              </div>
+                            )}
                           </>
                         )}
                       </div>
@@ -987,6 +1444,18 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose }) {
           </button>
         </div>
       </div>
+      
+      {/* PDF Export Modal */}
+      {showPDF && (
+        <CustomerHistoryPDFModal
+          customer={customer}
+          invoices={invoices}
+          payments={payments}
+          timeline={timeline}
+          userDoc={userDoc}
+          onClose={() => setShowPDF(false)}
+        />
+      )}
       
       <style jsx>{`
         @keyframes fadeIn {
@@ -1093,17 +1562,38 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
 
   async function handleDelete(id) {
     try {
+      // 1. Delete all invoices in customer subcollection
+      const subInvSnap = await getDocs(
+        collection(db, "users", uid, "customers", id, "invoices")
+      );
+      const subDeletes = subInvSnap.docs.map(d => deleteDoc(d.ref));
+      await Promise.all(subDeletes);
+
+      // 2. Delete matching global invoices (customerId === id)
+      const globalInvSnap = await getDocs(
+        query(collection(db, "users", uid, "invoices"), where("customerId", "==", id))
+      );
+      const globalDeletes = globalInvSnap.docs.map(d => deleteDoc(d.ref));
+      await Promise.all(globalDeletes);
+
+      // 3. Delete matching payments (customerId === id)
+      const paySnap = await getDocs(
+        query(collection(db, "users", uid, "payments"), where("customerId", "==", id))
+      );
+      const payDeletes = paySnap.docs.map(d => deleteDoc(d.ref));
+      await Promise.all(payDeletes);
+
+      // 4. Finally delete the customer document itself
       await deleteDoc(doc(db, "users", uid, "customers", id));
       if (detailCust?.id === id) setDetailCust(null);
-      
-      // Show delete success alert
+
       setAlert({
         show: true,
         type: "success",
         title: "Customer Deleted! 🗑️",
-        message: "The customer has been permanently deleted from your records.",
+        message: "The customer and all related invoices & payments have been permanently deleted.",
       });
-    } catch (err) { 
+    } catch (err) {
       setAlert({
         show: true,
         type: "error",
@@ -1114,12 +1604,30 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
     setDeleteConf(null);
   }
 
-  // stats — sirf customer-linked invoices (customerId wali)
-  const custLinkedInvoices = invoices.filter(i => i.customerId);
+  // stats — sirf existing customers ki invoices (deleted customers ki exclude)
+  const existingCustomerIds = new Set(customers.map(c => c.id));
+  const custLinkedInvoices = invoices.filter(i => i.customerId && existingCustomerIds.has(i.customerId));
   const activeCount  = customers.filter(c => c.status !== "inactive").length;
   const totalRevenue = custLinkedInvoices.filter(i => i.status === "Paid").reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const totalPaid    = custLinkedInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
-  const totalBalance = custLinkedInvoices.reduce((s, i) => s + (Number(i.balance) || 0), 0);
+
+  // Exclude carry-forward invoices from balance to avoid double-counting
+  // Group by customerId, find which invoices are already carried forward in newer ones
+  const carriedForwardGlobal = new Set();
+  custLinkedInvoices.forEach(inv => {
+    (inv.items || []).forEach(it => {
+      const desc = it.description || "";
+      if (desc.startsWith("Previous Balance · INV-")) {
+        const suffix = desc.replace("Previous Balance · INV-", "").trim().slice(0, 4).toUpperCase();
+        const matched = custLinkedInvoices.find(i => (i.id || "").slice(-4).toUpperCase() === suffix);
+        if (matched) carriedForwardGlobal.add(matched.id);
+      }
+    });
+  });
+  const totalBalance = custLinkedInvoices.reduce((s, i) => {
+    if (carriedForwardGlobal.has(i.id)) return s;
+    return s + (Number(i.balance) || 0);
+  }, 0);
 
   const filtered = customers.filter(c => {
     const matchStatus = statusFilter === "All" || c.status === statusFilter || (!c.status && statusFilter === "active");
@@ -1305,7 +1813,22 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filtered.map((c, idx) => {
             const custInv = invoices.filter(i => i.customerId === c.id);
-            const custBal = custInv.reduce((s, i) => s + (Number(i.balance) || 0), 0);
+            // Exclude carry-forward invoices from balance (avoid double-counting)
+            const custCarriedIds = new Set();
+            custInv.forEach(inv => {
+              (inv.items || []).forEach(it => {
+                const desc = it.description || "";
+                if (desc.startsWith("Previous Balance · INV-")) {
+                  const suffix = desc.replace("Previous Balance · INV-", "").trim().slice(0, 4).toUpperCase();
+                  const matched = custInv.find(i => (i.id || "").slice(-4).toUpperCase() === suffix);
+                  if (matched) custCarriedIds.add(matched.id);
+                }
+              });
+            });
+            const custBal = custInv.reduce((s, i) => {
+              if (custCarriedIds.has(i.id)) return s;
+              return s + (Number(i.balance) || 0);
+            }, 0);
             return (
               <div key={c.id}
                 onClick={() => setDetailCust(c)}

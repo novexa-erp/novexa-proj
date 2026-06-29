@@ -11,7 +11,7 @@ export function formatRs(n) {
 export const EMPTY_FORM = {
   logoDataUrl: "",
   customerName: "", address: "", phone: "", email: "",
-  items: [{ description: "", qty: 1, unitPrice: "", productId: "", variantId: "", stock: "" }],
+  items: [{ description: "", qty: 1, unitPrice: "", productId: "", variantId: "", variantLabel: "", variantUnit: "", stock: "" }],
   discountType: "percent",
   discountValue: "",
   amountPaid: "",
@@ -158,8 +158,23 @@ function ProductPickerModal({ products, onSelect, onClose }) {
   );
 }
 
+// ── Variant type config for inline use in invoice ────────────────────────────
+const VARIANT_TYPES_INV = [
+  { id: "none",   label: "No Variant",  icon: "📦", unit: "",   presets: [] },
+  { id: "weight", label: "Weight (kg)", icon: "⚖️", unit: "kg", presets: ["0.25","0.5","0.75","1","2","5","10"] },
+  { id: "volume", label: "Volume (L)",  icon: "🧴", unit: "L",  presets: ["0.25","0.5","0.75","1","2","5","10"] },
+  { id: "length", label: "Length (m)",  icon: "📏", unit: "m",  presets: ["1","2","3","5","10"] },
+  { id: "size",   label: "Size",        icon: "👕", unit: "",   presets: ["XS","S","M","L","XL","XXL"] },
+  { id: "custom", label: "Custom",      icon: "⚙️", unit: "",   presets: [] },
+];
+
 // ── Item row with autocomplete + variant support ─────────────────────────────
 function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPicker, onStockError }) {
+  // Custom variant state for non-inventory items
+  const [showVariantSetup, setShowVariantSetup] = useState(false);
+  const [customVarType,    setCustomVarType]    = useState("none");
+  const [customVarLabel,   setCustomVarLabel]   = useState("");
+  const [customVarPrice,   setCustomVarPrice]   = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [showSug, setShowSug] = useState(false);
   const rowRef = useRef(null);
@@ -194,15 +209,19 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
     
     // Check if product has variants
     if (p.variantType !== "none" && p.variants?.length > 0) {
-      // Has variants - don't fill price/stock yet, wait for variant selection
-      onChange(idx, "unitPrice", "");
-      onChange(idx, "variantId", "");
-      onChange(idx, "stock", "");
+      // Has variants - don't fill price/stock/label yet, wait for variant selection
+      onChange(idx, "unitPrice",    "");
+      onChange(idx, "variantId",    "");
+      onChange(idx, "variantLabel", "");
+      onChange(idx, "variantUnit",  "");
+      onChange(idx, "stock",        "");
     } else {
       // No variants - fill price and stock directly
-      onChange(idx, "unitPrice", String(p.price || ""));
-      onChange(idx, "stock", String(p.stock || 0));
-      onChange(idx, "variantId", "");
+      onChange(idx, "unitPrice",    String(p.price || ""));
+      onChange(idx, "stock",        String(p.stock || 0));
+      onChange(idx, "variantId",    "");
+      onChange(idx, "variantLabel", "");
+      onChange(idx, "variantUnit",  "");
     }
     
     setSuggestions([]);
@@ -224,12 +243,22 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
       }
       
       if (variant) {
-        onChange(idx, "unitPrice", String(variant.price || ""));
-        onChange(idx, "stock", String(variant.stock || 0));
+        onChange(idx, "unitPrice",    String(variant.price || ""));
+        onChange(idx, "stock",        String(variant.stock || 0));
+        // Save variant label (e.g. "0.5 L") and unit (e.g. "L") for invoice PDF
+        onChange(idx, "variantLabel", variant.label || "");
+        // Derive unit from product variantType
+        const varTypeUnit = {
+          weight: "kg", volume: "L", length: "m",
+        };
+        const unit = varTypeUnit[selectedProduct.variantType] || "";
+        onChange(idx, "variantUnit",  unit);
       }
     } else {
-      onChange(idx, "unitPrice", "");
-      onChange(idx, "stock", "");
+      onChange(idx, "unitPrice",    "");
+      onChange(idx, "stock",        "");
+      onChange(idx, "variantLabel", "");
+      onChange(idx, "variantUnit",  "");
     }
   }
 
@@ -262,6 +291,8 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
   const stock = Number(item.stock) || 0;
   const qty = Number(item.qty) || 0;
   const stockStatus = qty > stock ? "low" : "ok";
+  // Lock prev balance carry-forward rows completely
+  const isRowLocked = !!item.locked;
 
   return (
     <div ref={rowRef} className="relative flex flex-col gap-2">
@@ -272,19 +303,28 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
         {/* description + autocomplete */}
         <div className="relative">
           <input placeholder="Item / product name" value={item.description}
-            onChange={e => handleDescChange(e.target.value)}
-            onFocus={() => { if (suggestions.length > 0) setShowSug(true); }}
+            onChange={e => isRowLocked ? undefined : handleDescChange(e.target.value)}
+            onFocus={() => { if (!isRowLocked && suggestions.length > 0) setShowSug(true); }}
+            readOnly={isRowLocked}
             autoComplete="off"
-            style={{ ...base, paddingRight: 32 }} />
-          {/* browse all button */}
-          <button type="button" onClick={() => onOpenPicker(idx)}
-            title="Browse all products"
-            className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-amber-400 transition-colors text-sm">
-            📦
-          </button>
+            style={{
+              ...base, paddingRight: isRowLocked ? 12 : 32,
+              opacity: isRowLocked ? 0.65 : 1,
+              cursor: isRowLocked ? "default" : "text",
+              background: isRowLocked ? "rgba(255,255,255,0.02)" : base.background,
+              color: isRowLocked ? "#9ca3af" : "#fff",
+            }} />
+          {/* browse all button — hidden for locked rows */}
+          {!isRowLocked && (
+            <button type="button" onClick={() => onOpenPicker(idx)}
+              title="Browse all products"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-amber-400 transition-colors text-sm">
+              📦
+            </button>
+          )}
 
           {/* autocomplete dropdown */}
-          {showSug && (
+          {!isRowLocked && showSug && (
             <div className="absolute top-full left-0 right-0 mt-1 rounded-xl overflow-hidden z-30"
               style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.12)",
                 boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
@@ -315,36 +355,43 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
         </div>
 
         <input type="number" min="1" placeholder="1" value={item.qty}
-          onChange={e => handleQtyChange(e.target.value)}
+          onChange={e => isRowLocked ? undefined : handleQtyChange(e.target.value)}
+          readOnly={isRowLocked}
           max={item.stock || undefined}
           style={{ 
             ...base, 
             textAlign: "center", 
             padding: "9px 6px",
             borderColor: (qty > stock && stock > 0) ? "#f87171" : base.border,
+            opacity: isRowLocked ? 0.65 : 1,
+            cursor: isRowLocked ? "default" : "text",
+            background: isRowLocked ? "rgba(255,255,255,0.02)" : base.background,
+            color: isRowLocked ? "#9ca3af" : "#fff",
           }} />
 
         <input type="number" min="0" placeholder="Unit price" value={item.unitPrice}
-          onChange={e => onChange(idx, "unitPrice", e.target.value)}
-          disabled={hasVariants && item.variantId}
+          onChange={e => isRowLocked ? undefined : onChange(idx, "unitPrice", e.target.value)}
+          readOnly={isRowLocked}
+          disabled={!isRowLocked && (hasVariants && item.variantId)}
           style={{ 
             ...base, 
             textAlign: "right", 
             padding: "9px 10px",
-            opacity: (hasVariants && item.variantId) ? 0.6 : 1,
-            cursor: (hasVariants && item.variantId) ? "not-allowed" : "text",
-            background: (hasVariants && item.variantId) ? "rgba(255,255,255,0.02)" : base.background,
+            opacity: isRowLocked ? 0.65 : (hasVariants && item.variantId) ? 0.6 : 1,
+            cursor: isRowLocked ? "default" : (hasVariants && item.variantId) ? "not-allowed" : "text",
+            background: isRowLocked ? "rgba(255,255,255,0.02)" : (hasVariants && item.variantId) ? "rgba(255,255,255,0.02)" : base.background,
+            color: isRowLocked ? "#9ca3af" : "#fff",
           }} />
 
         {/* line total */}
         <p className="text-xs font-semibold text-right flex-shrink-0 pr-1"
-          style={{ color: lineTotal > 0 ? "#fff" : "#4b5563" }}>
+          style={{ color: lineTotal > 0 ? (isRowLocked ? "#6b7280" : "#fff") : "#4b5563" }}>
           {lineTotal > 0 ? formatRs(lineTotal) : "—"}
         </p>
 
-        <button type="button" onClick={() => onRemove(idx)} disabled={!canRemove}
+        <button type="button" onClick={() => onRemove(idx)} disabled={!canRemove || isRowLocked}
           className="w-9 h-9 rounded-xl flex items-center justify-center transition-colors flex-shrink-0"
-          style={{ color: "#f87171", background: "rgba(248,113,113,0.08)", opacity: canRemove ? 1 : 0.25 }}>
+          style={{ color: "#f87171", background: "rgba(248,113,113,0.08)", opacity: (canRemove && !isRowLocked) ? 1 : 0.15 }}>
           ✕
         </button>
       </div>
@@ -400,21 +447,158 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
           </span>
         </div>
       )}
+
+      {/* ── Custom Variant Setup (for non-inventory items only, non-locked) ── */}
+      {!item.productId && item.description && !hasVariants && !isRowLocked && (
+        <div className="pl-2">
+          {!showVariantSetup ? (
+            <button type="button"
+              onClick={() => setShowVariantSetup(true)}
+              className="text-[10px] font-semibold px-2.5 py-1 rounded-lg transition-colors"
+              style={{ color: "#a78bfa", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.2)" }}>
+              ⚙️ Add Variant (optional)
+            </button>
+          ) : (
+            <div className="rounded-xl p-3 flex flex-col gap-2"
+              style={{ background: "rgba(139,92,246,0.05)", border: "1px solid rgba(139,92,246,0.2)" }}>
+              {/* Header */}
+              <div className="flex items-center justify-between">
+                <span className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#a78bfa" }}>
+                  ⚙️ Variant Setup
+                </span>
+                <button type="button" onClick={() => {
+                  setShowVariantSetup(false);
+                  setCustomVarType("none");
+                  setCustomVarLabel("");
+                  setCustomVarPrice("");
+                  onChange(idx, "variantLabel", "");
+                  onChange(idx, "variantUnit", "");
+                }} className="text-gray-500 hover:text-white text-xs">✕</button>
+              </div>
+
+              {/* Variant type pills */}
+              <div className="flex flex-wrap gap-1.5">
+                {VARIANT_TYPES_INV.map(vt => (
+                  <button key={vt.id} type="button"
+                    onClick={() => { setCustomVarType(vt.id); setCustomVarLabel(""); }}
+                    className="text-[10px] font-semibold px-2 py-1 rounded-lg transition-all"
+                    style={{
+                      background: customVarType === vt.id ? "rgba(139,92,246,0.3)" : "rgba(255,255,255,0.04)",
+                      border: `1px solid ${customVarType === vt.id ? "rgba(139,92,246,0.6)" : "rgba(255,255,255,0.08)"}`,
+                      color: customVarType === vt.id ? "#c4b5fd" : "#9ca3af",
+                    }}>
+                    {vt.icon} {vt.label}
+                  </button>
+                ))}
+              </div>
+
+              {customVarType !== "none" && (() => {
+                const vt = VARIANT_TYPES_INV.find(v => v.id === customVarType);
+                return (
+                  <div className="flex flex-col gap-2">
+                    {/* Presets */}
+                    {vt.presets.length > 0 && (
+                      <div className="flex flex-wrap gap-1">
+                        {vt.presets.map(p => (
+                          <button key={p} type="button"
+                            onClick={() => {
+                              const lbl = vt.unit ? `${p} ${vt.unit}` : p;
+                              setCustomVarLabel(lbl);
+                              onChange(idx, "variantLabel", lbl);
+                              onChange(idx, "variantUnit", vt.unit);
+                            }}
+                            className="text-[10px] px-2 py-0.5 rounded-md font-semibold transition-all"
+                            style={{
+                              background: customVarLabel === (vt.unit ? `${p} ${vt.unit}` : p)
+                                ? "rgba(245,158,11,0.25)" : "rgba(255,255,255,0.04)",
+                              border: `1px solid ${customVarLabel === (vt.unit ? `${p} ${vt.unit}` : p)
+                                ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.08)"}`,
+                              color: "#f59e0b",
+                            }}>
+                            {p}{vt.unit ? ` ${vt.unit}` : ""}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    {/* Manual label input */}
+                    <div className="flex gap-2 items-center">
+                      <input
+                        type="text"
+                        placeholder={vt.unit ? `e.g. 1 ${vt.unit}` : "e.g. Medium"}
+                        value={customVarLabel}
+                        onChange={e => {
+                          setCustomVarLabel(e.target.value);
+                          onChange(idx, "variantLabel", e.target.value);
+                          onChange(idx, "variantUnit", vt.unit);
+                        }}
+                        style={{ ...base, fontSize: 12, padding: "6px 10px", flex: 1 }}
+                      />
+                      <input
+                        type="number" min="0" placeholder="Price per unit"
+                        value={customVarPrice}
+                        onChange={e => {
+                          setCustomVarPrice(e.target.value);
+                          onChange(idx, "unitPrice", e.target.value);
+                        }}
+                        style={{ ...base, fontSize: 12, padding: "6px 10px", width: 120, textAlign: "right" }}
+                      />
+                    </div>
+
+                    {customVarLabel && customVarPrice && (
+                      <div className="text-[10px] px-2 py-1 rounded-lg"
+                        style={{ background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.2)", color: "#34d399" }}>
+                        ✓ <strong>{item.description}</strong> · {customVarLabel} · Rs. {customVarPrice}/unit
+                        · Qty: {item.qty || 1} · Total: {formatRs((Number(item.qty) || 1) * (Number(customVarPrice) || 0))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Show saved custom variant label */}
+      {!item.productId && item.variantLabel && (
+        <div className="pl-2">
+          <span className="text-[10px] px-2 py-0.5 rounded-md font-semibold"
+            style={{ background: "rgba(139,92,246,0.1)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.2)" }}>
+            ⚙️ {item.variantLabel} · Rs. {item.unitPrice}/unit
+          </span>
+        </div>
+      )}
     </div>
   );
 }
 
 // ── Main Modal ────────────────────────────────────────────────────────────────
-export default function InvoiceModal({ onClose, onSave, saving, initial, products = [], settingsLogo = "" }) {
+export default function InvoiceModal({ onClose, onSave, saving, initial, defaultValues, products = [], settingsLogo = "" }) {
   // if no initial logo provided, use settingsLogo as default
   const defaultForm = settingsLogo
     ? { ...EMPTY_FORM, logoDataUrl: settingsLogo }
     : EMPTY_FORM;
 
-  const [form, setForm]           = useState(initial || defaultForm);
+  // new invoice: use defaultValues (prefilled) if provided, else defaultForm
+  // edit invoice: use initial (existing invoice data)
+  const startForm = initial || (defaultValues ? { ...defaultForm, ...defaultValues } : defaultForm);
+
+  const [form, setForm]           = useState(startForm);
   const [pickerIdx, setPickerIdx] = useState(null);
   const overlayRef                = useRef(null);
   const logoInputRef              = useRef(null);
+  
+  // ── Additional items for edit mode (new purchase on existing invoice) ──────
+  const [additionalItems, setAdditionalItems] = useState(
+    [{ description: "", qty: 1, unitPrice: "", productId: "", variantId: "", stock: "" }]
+  );
+  const [addPickerIdx, setAddPickerIdx] = useState(null); // picker for additional items
+  const [showAddPurchase, setShowAddPurchase] = useState(false); // toggle add more purchase row
+
+  // ── Goods Return state ───────────────────────────────────────────────────────
+  const [showReturn, setShowReturn] = useState(false);
+  const [returnItem, setReturnItem] = useState({ description: "", qty: "", rate: "" });
   
   // Sweet Alert State for stock validation
   const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
@@ -447,11 +631,54 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, product
     });
   }
   function addItem() {
-    setForm(p => ({ ...p, items: [...p.items, { description: "", qty: 1, unitPrice: "", productId: "", variantId: "", stock: "" }] }));
+    setForm(p => ({ ...p, items: [...p.items, { description: "", qty: 1, unitPrice: "", productId: "", variantId: "", variantLabel: "", variantUnit: "", stock: "" }] }));
   }
   function removeItem(idx) {
     setForm(p => ({ ...p, items: p.items.filter((_, i) => i !== idx) }));
   }
+
+  // ── additional items helpers (edit mode — new purchase on existing invoice) ─
+  function setAddItem(idx, k, v) {
+    setAdditionalItems(prev => {
+      const arr = [...prev];
+      arr[idx] = { ...arr[idx], [k]: v };
+      return arr;
+    });
+  }
+  function addMoreItem() {
+    setAdditionalItems(prev => [...prev, { description: "", qty: 1, unitPrice: "", productId: "", variantId: "", stock: "" }]);
+  }
+  function removeAddItem(idx) {
+    setAdditionalItems(prev => prev.filter((_, i) => i !== idx));
+  }
+  function handleAddPickerSelect(p) {
+    if (addPickerIdx === null) return;
+    setAddItem(addPickerIdx, "description", p.name);
+    setAddItem(addPickerIdx, "productId", p.id);
+    if (p.variantType !== "none" && p.variants?.length > 0) {
+      setAddItem(addPickerIdx, "unitPrice", "");
+      setAddItem(addPickerIdx, "variantId", "");
+      setAddItem(addPickerIdx, "stock", "");
+    } else {
+      setAddItem(addPickerIdx, "unitPrice", String(p.price || ""));
+      setAddItem(addPickerIdx, "stock", String(p.stock || 0));
+      setAddItem(addPickerIdx, "variantId", "");
+    }
+    setAddPickerIdx(null);
+  }
+
+  // Check if any additional items have been filled
+  const hasAdditionalItems = additionalItems.some(
+    it => it.description.trim() && (Number(it.qty) > 0) && (Number(it.unitPrice) >= 0)
+  );
+  // Total amount of additional items
+  const additionalTotal = additionalItems.reduce(
+    (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0
+  );
+
+  // ── goods return helpers (edit mode) ────────────────────────────────────────
+  const returnTotal = (Number(returnItem.qty) || 0) * (Number(returnItem.rate) || 0);
+  const hasReturn   = returnItem.description && Number(returnItem.qty) > 0 && Number(returnItem.rate) > 0;
 
   // Stock validation error handler
   function handleStockError(productName, availableStock) {
@@ -463,25 +690,24 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, product
     });
   }
 
-  // select from picker modal
+  // select from picker modal (existing items)
   function handlePickerSelect(p) {
     if (pickerIdx === null) return;
     setItem(pickerIdx, "description", p.name);
     setItem(pickerIdx, "productId", p.id);
-    
-    // Check if product has variants
     if (p.variantType !== "none" && p.variants?.length > 0) {
-      // Has variants - don't fill price/stock yet, wait for variant selection
-      setItem(pickerIdx, "unitPrice", "");
-      setItem(pickerIdx, "variantId", "");
-      setItem(pickerIdx, "stock", "");
+      setItem(pickerIdx, "unitPrice",    "");
+      setItem(pickerIdx, "variantId",    "");
+      setItem(pickerIdx, "variantLabel", "");
+      setItem(pickerIdx, "variantUnit",  "");
+      setItem(pickerIdx, "stock",        "");
     } else {
-      // No variants - fill price and stock directly
-      setItem(pickerIdx, "unitPrice", String(p.price || ""));
-      setItem(pickerIdx, "stock", String(p.stock || 0));
-      setItem(pickerIdx, "variantId", "");
+      setItem(pickerIdx, "unitPrice",    String(p.price || ""));
+      setItem(pickerIdx, "stock",        String(p.stock || 0));
+      setItem(pickerIdx, "variantId",    "");
+      setItem(pickerIdx, "variantLabel", "");
+      setItem(pickerIdx, "variantUnit",  "");
     }
-    
     setPickerIdx(null);
   }
 
@@ -490,7 +716,17 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, product
 
   function handleSubmit(e) {
     e.preventDefault();
-    onSave({ ...form, subtotal, discount, amount: afterDiscount, amountPaid: paid, balance, status: autoStatus });
+    // Pass additionalItems along so handleSaveInv can process them
+    onSave({
+      ...form,
+      subtotal, discount,
+      amount: afterDiscount,
+      amountPaid: paid,
+      balance,
+      status: autoStatus,
+      additionalItems: (initial && showAddPurchase) ? additionalItems : [],
+      returnItem: (initial && showReturn && hasReturn) ? returnItem : null,
+    });
   }
 
   const sect = "text-xs font-bold uppercase tracking-widest mb-3 pb-2 border-b border-white/10";
@@ -597,26 +833,236 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, product
               {/* column headers */}
               <div className="grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
                 style={{ gridTemplateColumns: "1fr 64px 110px 80px 36px" }}>
-                <span>Description <span className="text-gray-700 normal-case font-normal">(type to search)</span></span>
+                <span>Description {!initial && <span className="text-gray-700 normal-case font-normal">(type to search)</span>}</span>
                 <span className="text-center">Qty</span>
                 <span className="text-right">Unit Price</span>
                 <span className="text-right">Total</span>
                 <span />
               </div>
-              {form.items.map((item, idx) => (
-                <ItemRow key={idx} item={item} idx={idx} products={products}
-                  onChange={setItem} onRemove={removeItem}
-                  canRemove={form.items.length > 1}
-                  onOpenPicker={(i) => setPickerIdx(i)}
-                  onStockError={handleStockError} />
-              ))}
-              <button type="button" onClick={addItem}
-                className="flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl w-fit transition-colors mt-1"
-                style={{ color: "#60A5FA", background: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.2)" }}>
-                ➕ Add Another Item
-              </button>
+
+              {/* Edit mode: all existing items fully locked (read-only display rows) */}
+              {initial ? (
+                form.items.map((item, idx) => {
+                  const lineTotal = (Number(item.qty) || 0) * (Number(item.unitPrice) || 0);
+                  return (
+                    <div key={idx} className="grid gap-2 items-center"
+                      style={{ gridTemplateColumns: "1fr 64px 110px 80px 36px" }}>
+                      <div className="px-3 py-2 rounded-xl text-sm text-gray-400 truncate"
+                        style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.06)" }}>
+                        {item.description || "—"}
+                      </div>
+                      <div className="px-2 py-2 rounded-xl text-sm text-gray-400 text-center"
+                        style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.06)" }}>
+                        {item.qty}
+                      </div>
+                      <div className="px-2 py-2 rounded-xl text-sm text-gray-400 text-right"
+                        style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.06)" }}>
+                        {item.unitPrice}
+                      </div>
+                      <p className="text-xs font-semibold text-right pr-1" style={{ color: lineTotal > 0 ? "#9ca3af" : "#4b5563" }}>
+                        {lineTotal > 0 ? formatRs(lineTotal) : "—"}
+                      </p>
+                      {/* locked — no remove button */}
+                      <div className="w-9 h-9" />
+                    </div>
+                  );
+                })
+              ) : (
+                <>
+                  {form.items.map((item, idx) => (
+                    <ItemRow key={idx} item={item} idx={idx} products={products}
+                      onChange={setItem} onRemove={removeItem}
+                      canRemove={form.items.length > 1}
+                      onOpenPicker={(i) => setPickerIdx(i)}
+                      onStockError={handleStockError}
+                      locked={false} />
+                  ))}
+                  <button type="button" onClick={addItem}
+                    className="flex items-center gap-2 text-xs font-semibold px-3 py-2 rounded-xl w-fit transition-colors mt-1"
+                    style={{ color: "#60A5FA", background: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.2)" }}>
+                    ➕ Add Another Item
+                  </button>
+                </>
+              )}
             </div>
           </div>
+
+          {/* ── Add More Purchase (Edit mode only) ── */}
+          {initial && (() => {
+            // Find first real product (non prev-balance) from invoice items
+            const firstRealItem = form.items.find(
+              it => it.description && !it.description.startsWith("Previous Balance · INV-")
+            );
+            const productName = firstRealItem?.description || "";
+            const defaultRate = firstRealItem?.unitPrice || "";
+
+            return (
+              <div>
+                {!showAddPurchase ? (
+                  <button type="button"
+                    onClick={() => {
+                      setAdditionalItems([{
+                        description: productName,
+                        qty: 1,
+                        unitPrice: defaultRate,
+                        productId: firstRealItem?.productId || "",
+                        variantId: firstRealItem?.variantId || "",
+                        stock: firstRealItem?.stock || "",
+                      }]);
+                      setShowAddPurchase(true);
+                    }}
+                    className="flex items-center gap-2 text-xs font-semibold px-4 py-2.5 rounded-xl transition-all hover:scale-105"
+                    style={{ color: "#f59e0b", background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.25)" }}>
+                    ➕ Add More Purchase
+                  </button>
+                ) : (
+                  <div className="rounded-xl overflow-hidden"
+                    style={{ border: "1px solid rgba(245,158,11,0.3)", background: "rgba(245,158,11,0.04)" }}>
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-4 py-3 border-b"
+                      style={{ borderColor: "rgba(245,158,11,0.15)" }}>
+                      <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "#f59e0b" }}>
+                        ➕ Add More Purchase
+                      </p>
+                      <button type="button" onClick={() => setShowAddPurchase(false)}
+                        className="text-gray-500 hover:text-white text-sm transition-colors">✕</button>
+                    </div>
+
+                    <div className="p-4 flex flex-col gap-3">
+                      {/* Column headers */}
+                      <div className="grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
+                        style={{ gridTemplateColumns: "1fr 90px 110px 90px" }}>
+                        <span>Product</span>
+                        <span className="text-center">Qty</span>
+                        <span className="text-right">Rate</span>
+                        <span className="text-right">Total</span>
+                      </div>
+
+                      {/* Single purchase row */}
+                      <div className="grid gap-2 items-center"
+                        style={{ gridTemplateColumns: "1fr 90px 110px 90px" }}>
+                        {/* Product name — read only */}
+                        <div className="px-3 py-2 rounded-xl text-sm truncate"
+                          style={{ background: "rgba(255,255,255,0.03)", border: "1.5px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
+                          {additionalItems[0]?.description || "—"}
+                        </div>
+                        {/* Qty — editable */}
+                        <input
+                          type="number" min="1" placeholder="Qty"
+                          value={additionalItems[0]?.qty || ""}
+                          onChange={e => setAddItem(0, "qty", e.target.value)}
+                          style={{ ...{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(255,255,255,0.09)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" } }}
+                        />
+                        {/* Rate — editable */}
+                        <input
+                          type="number" min="0" placeholder="Rate"
+                          value={additionalItems[0]?.unitPrice || ""}
+                          onChange={e => setAddItem(0, "unitPrice", e.target.value)}
+                          style={{ ...{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(255,255,255,0.09)", borderRadius:10, padding:"9px 10px", color:"#fff", fontSize:13, textAlign:"right" } }}
+                        />
+                        {/* Line total */}
+                        <p className="text-xs font-bold text-right pr-1"
+                          style={{ color: (Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0 ? "#f59e0b" : "#4b5563" }}>
+                          {(Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0
+                            ? formatRs((Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0))
+                            : "—"}
+                        </p>
+                      </div>
+
+                      {/* Preview */}
+                      {hasAdditionalItems && (
+                        <div className="mt-1 px-3 py-2 rounded-lg text-xs"
+                          style={{ background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.2)", color: "#34d399" }}>
+                          ✓ Save hone par <strong>{formatRs(additionalTotal)}</strong> invoice mein add hoga — balance barh jaayega
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
+
+          {/* ── Goods Return (Edit mode only) ── */}
+          {initial && (() => {
+            const firstRealItem = form.items.find(
+              it => it.description && !it.description.startsWith("Previous Balance · INV-")
+            );
+            const productName = firstRealItem?.description || "";
+
+            return (
+              <div>
+                {!showReturn ? (
+                  <button type="button"
+                    onClick={() => {
+                      setReturnItem({ description: productName, qty: "", rate: firstRealItem?.unitPrice || "" });
+                      setShowReturn(true);
+                    }}
+                    className="flex items-center gap-2 text-xs font-semibold px-4 py-2.5 rounded-xl transition-all hover:scale-105"
+                    style={{ color: "#f87171", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)" }}>
+                    ↩️ Goods Return
+                  </button>
+                ) : (
+                  <div className="rounded-xl overflow-hidden"
+                    style={{ border: "1px solid rgba(248,113,113,0.3)", background: "rgba(248,113,113,0.04)" }}>
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-4 py-3 border-b"
+                      style={{ borderColor: "rgba(248,113,113,0.15)" }}>
+                      <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "#f87171" }}>
+                        ↩️ Goods Return
+                      </p>
+                      <button type="button" onClick={() => setShowReturn(false)}
+                        className="text-gray-500 hover:text-white text-sm transition-colors">✕</button>
+                    </div>
+
+                    <div className="p-4 flex flex-col gap-3">
+                      {/* Column headers */}
+                      <div className="grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
+                        style={{ gridTemplateColumns: "1fr 90px 110px 90px" }}>
+                        <span>Product</span>
+                        <span className="text-center">Qty Returned</span>
+                        <span className="text-right">Rate</span>
+                        <span className="text-right">Return Amount</span>
+                      </div>
+
+                      <div className="grid gap-2 items-center"
+                        style={{ gridTemplateColumns: "1fr 90px 110px 90px" }}>
+                        {/* Product — read only */}
+                        <div className="px-3 py-2 rounded-xl text-sm truncate"
+                          style={{ background: "rgba(255,255,255,0.03)", border: "1.5px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
+                          {returnItem.description || "—"}
+                        </div>
+                        {/* Qty */}
+                        <input type="number" min="1" placeholder="Qty"
+                          value={returnItem.qty}
+                          onChange={e => setReturnItem(p => ({ ...p, qty: e.target.value }))}
+                          style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(248,113,113,0.3)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" }}
+                        />
+                        {/* Rate */}
+                        <input type="number" min="0" placeholder="Rate"
+                          value={returnItem.rate}
+                          onChange={e => setReturnItem(p => ({ ...p, rate: e.target.value }))}
+                          style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(248,113,113,0.3)", borderRadius:10, padding:"9px 10px", color:"#fff", fontSize:13, textAlign:"right" }}
+                        />
+                        {/* Return total */}
+                        <p className="text-xs font-bold text-right pr-1"
+                          style={{ color: returnTotal > 0 ? "#f87171" : "#4b5563" }}>
+                          {returnTotal > 0 ? `- ${formatRs(returnTotal)}` : "—"}
+                        </p>
+                      </div>
+
+                      {hasReturn && (
+                        <div className="mt-1 px-3 py-2 rounded-lg text-xs"
+                          style={{ background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>
+                          ↩️ Save hone par <strong>{formatRs(returnTotal)}</strong> balance se minus ho jaayega
+                        </div>
+                      )}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* ── Discount ── */}
           <div>
@@ -804,12 +1250,20 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, product
       </div>
     </div>
 
-    {/* product picker modal — rendered outside main modal */}
+    {/* product picker modal — for existing items */}
     {pickerIdx !== null && (
       <ProductPickerModal
         products={products}
         onSelect={handlePickerSelect}
         onClose={() => setPickerIdx(null)}
+      />
+    )}
+    {/* product picker modal — for additional items */}
+    {addPickerIdx !== null && (
+      <ProductPickerModal
+        products={products}
+        onSelect={handleAddPickerSelect}
+        onClose={() => setAddPickerIdx(null)}
       />
     )}
     </>

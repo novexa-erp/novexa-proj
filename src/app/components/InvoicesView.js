@@ -88,20 +88,28 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
       };
 
       if (editTarget) {
-        // Update invoice
+        // If new payment is being added, exclude amountPaid/balance/status from first update
+        // They will be correctly set in the payment block below
+        const hasNewPayment = formData.newPaymentAmount && Number(formData.newPaymentAmount) > 0;
+        const detailsPayload = hasNewPayment
+          ? (({ amountPaid, balance, status, ...rest }) => rest)(payload)
+          : payload;
+
+        // Update invoice details
         await updateDoc(doc(db, "users", uid, "invoices", editTarget.id), {
-          ...payload, updatedAt: serverTimestamp(),
+          ...detailsPayload, updatedAt: serverTimestamp(),
         });
         
         // Handle payment collection if provided
         if (formData.newPaymentAmount && Number(formData.newPaymentAmount) > 0) {
           const paymentAmount = Number(formData.newPaymentAmount);
-          const currentPaid = Number(formData.amountPaid) || 0;
-          const newTotalPaid = currentPaid + paymentAmount;
+          // previousBalance = balance before this payment
+          const previousBalance = Math.max(0, payload.amount - (Number(formData.amountPaid) || 0));
+          const newTotalPaid = (Number(formData.amountPaid) || 0) + paymentAmount;
           const newBalance = Math.max(0, payload.amount - newTotalPaid);
           const newStatus = newBalance === 0 ? "Paid" : newTotalPaid > 0 ? "Partial" : "Unpaid";
           
-          // Update invoice with new payment
+          // Update ONLY payment fields on invoice — do NOT change items/amounts
           await updateDoc(doc(db, "users", uid, "invoices", editTarget.id), {
             amountPaid: newTotalPaid,
             balance: newBalance,
@@ -110,10 +118,16 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
             updatedAt: serverTimestamp(),
           });
           
-          // Create payment record
+          // Create payment record:
+          // amount  = previousBalance (Amount col — pehle ka balance)
+          // paid    = jo abhi diya (Paid col)
+          // balance = jo bacha (Balance col)
+          // status  = Partial / Paid
           await addDoc(collection(db, "users", uid, "payments"), {
             type: "received",
-            amount: paymentAmount,
+            amount: previousBalance,            // pehla balance
+            paid: paymentAmount,                // jo diya
+            balance: newBalance,                // jo bacha
             invoiceId: editTarget.id,
             invoiceNumber: `INV-${editTarget.id.slice(-4).toUpperCase()}`,
             customer: formData.customerName,
@@ -122,8 +136,8 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
             receiverName: formData.receiverName || "",
             receiverContact: formData.receiverContact || "",
             description: `Payment for invoice ${editTarget.id.slice(-4).toUpperCase()}`,
-            method: "cash",
-            status: "completed",
+            method: formData.paymentMethod || "cash",
+            status: newStatus,                  // Partial / Paid
             createdAt: serverTimestamp(),
           });
           
@@ -143,9 +157,13 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
           });
         }
       } else {
-        // Create new invoice
+        // Create new invoice — store original values so history always shows creation-time state
         await addDoc(collection(db, "users", uid, "invoices"), {
-          ...payload, createdAt: serverTimestamp(),
+          ...payload,
+          originalAmountPaid: payload.amountPaid,
+          originalBalance:    payload.balance,
+          originalStatus:     payload.status,
+          createdAt: serverTimestamp(),
         });
         
         // Update stock for each item in the invoice

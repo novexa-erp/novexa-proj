@@ -16,12 +16,35 @@ function fmtDate(str) {
   catch { return str; }
 }
 
+function fmtDateTime(ts) {
+  if (!ts) return "—";
+  try {
+    const d = ts?.toDate ? ts.toDate() : new Date(ts);
+    return d.toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })
+      + "  " + d.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit", hour12: true });
+  } catch { return "—"; }
+}
+
 function InvoiceNumber(id) {
   return "INV-" + (id || "").slice(-6).toUpperCase();
 }
 
 // ── The printable invoice template ───────────────────────────────────────────
-function InvoiceTemplate({ inv, userDoc }) {
+function InvoiceTemplate({ inv, userDoc, payments = [] }) {
+  const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+
+  // Separate items: prev balance entries, original real items, purchase additions (from payments)
+  const prevBalItems  = (inv.items || []).filter(it => isPrevBalItem(it));
+  const originalItems = (inv.items || []).filter(it => !isPrevBalItem(it));
+
+  // Purchase history records (type=purchase)
+  const purchaseRecords = payments.filter(p => p.type === "purchase");
+  // Return records (type=return)
+  const returnRecords   = payments.filter(p => p.type === "return");
+  // Payment records (type=received)
+  const paymentRecords  = payments.filter(p => p.type === "received" || (p.type !== "purchase" && p.type !== "return"));
+
+  // Subtotal only from items on the invoice (full, for display)
   const subtotal = (inv.items || []).reduce(
     (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0
   );
@@ -116,8 +139,9 @@ function InvoiceTemplate({ inv, userDoc }) {
               <span style={{ fontWeight: 600, color: "#111" }}>{r.val}</span>
             </div>
           ))}
+         
           {inv.earlyDiscountDays && inv.earlyDiscountPercent && (
-            <div style={{ marginTop: 10, padding: "6px 10px", borderRadius: 8, fontSize: 11,
+            <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 8, fontSize: 11,
               background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e" }}>
               💡 Pay within {inv.earlyDiscountDays} days → {inv.earlyDiscountPercent}% extra off
             </div>
@@ -129,33 +153,104 @@ function InvoiceTemplate({ inv, userDoc }) {
       <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 24 }}>
         <thead>
           <tr style={{ background: "#1d4ed8", color: "#fff" }}>
-            {["#", "Description", "Qty", "Unit Price", "Total"].map((h, i) => (
+            {["#", "Date & Time", "Product", "Variant", "Qty", "Rate", "Total"].map((h, i) => (
               <th key={h} style={{
-                padding: "10px 12px", textAlign: i >= 2 ? "right" : "left",
-                fontSize: 11, fontWeight: 700, letterSpacing: "0.05em", textTransform: "uppercase",
-                ...(i === 0 ? { width: 36, textAlign: "center" } : {}),
+                padding: "9px 8px",
+                textAlign: i >= 5 ? "right" : i === 0 ? "center" : "left",
+                fontSize: 9, fontWeight: 700, letterSpacing: "0.05em",
+                textTransform: "uppercase", whiteSpace: "nowrap",
+                ...(i === 0 ? { width: 24 } : {}),
               }}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
-          {(inv.items || []).map((it, idx) => {
+          {/* Previous Balance rows */}
+          {prevBalItems.map((it, idx) => {
             const lineTotal = (Number(it.qty) || 0) * (Number(it.unitPrice) || 0);
             return (
-              <tr key={idx} style={{ background: idx % 2 === 0 ? "#f9fafb" : "#fff" }}>
-                <td style={{ padding: "9px 12px", textAlign: "center", color: "#9ca3af", fontSize: 12 }}>{idx + 1}</td>
-                <td style={{ padding: "9px 12px", fontSize: 13, fontWeight: 500 }}>{it.description || "—"}</td>
-                <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 12 }}>{it.qty || 1}</td>
-                <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 12 }}>{formatRs(it.unitPrice)}</td>
-                <td style={{ padding: "9px 12px", textAlign: "right", fontSize: 13, fontWeight: 600 }}>{formatRs(lineTotal)}</td>
+              <tr key={"pb" + idx} style={{ background: "#fffbeb" }}>
+                <td style={{ padding: "7px 8px", textAlign: "center", color: "#9ca3af", fontSize: 10 }}>{idx + 1}</td>
+                <td style={{ padding: "7px 8px", fontSize: 9, color: "#b45309", whiteSpace: "nowrap" }}>{fmtDateTime(inv.createdAt)}</td>
+                <td style={{ padding: "7px 8px", fontSize: 11, color: "#b45309", fontStyle: "italic" }}>{it.description}</td>
+                <td style={{ padding: "7px 8px", fontSize: 10, color: "#9ca3af" }}>—</td>
+                <td style={{ padding: "7px 8px", fontSize: 10, color: "#9ca3af" }}>—</td>
+                <td style={{ padding: "7px 8px", textAlign: "right", fontSize: 11, color: "#b45309" }}>{it.qty}</td>
+                <td style={{ padding: "7px 8px", textAlign: "right", fontSize: 11, color: "#b45309", whiteSpace: "nowrap" }}>{formatRs(it.unitPrice)}</td>
+                <td style={{ padding: "7px 8px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "#b45309", whiteSpace: "nowrap" }}>{formatRs(lineTotal)}</td>
               </tr>
             );
           })}
+
+          {/* Original real items */}
+          {originalItems.map((it, idx) => {
+            const additionalQty = purchaseRecords.reduce((sum, pr) => {
+              const found = (pr.items || []).find(
+                pi => pi.description === it.description && (pi.productId === it.productId || !pi.productId)
+              );
+              return sum + (found ? Number(found.qty) || 0 : 0);
+            }, 0);
+            const originalQty = Math.max(1, (Number(it.qty) || 1) - additionalQty);
+            const lineTotal   = originalQty * (Number(it.unitPrice) || 0);
+            const rowNum      = prevBalItems.length + idx + 1;
+
+            // Variant info — from inventory variant or custom variantLabel
+            const variantLabel = it.variantLabel || "";
+            const variantUnit  = it.variantUnit  || "";
+
+            return (
+              <tr key={"it" + idx} style={{ background: idx % 2 === 0 ? "#f9fafb" : "#fff" }}>
+                <td style={{ padding: "8px 8px", textAlign: "center", color: "#9ca3af", fontSize: 10 }}>{rowNum}</td>
+                <td style={{ padding: "8px 8px", fontSize: 9, color: "#6b7280", whiteSpace: "nowrap" }}>{fmtDateTime(inv.createdAt)}</td>
+                <td style={{ padding: "8px 8px", fontSize: 12, fontWeight: 600 }}>{it.description || "—"}</td>
+                <td style={{ padding: "8px 8px", fontSize: 11, color: "#7c3aed", fontWeight: 600, whiteSpace: "nowrap" }}>
+                  {variantLabel || "—"}
+                </td>
+                {/* <td style={{ padding: "8px 8px", fontSize: 11, color: "#6b7280", whiteSpace: "nowrap" }}>
+                  {variantUnit ? `per ${variantUnit}` : "—"}
+                </td> */}
+                <td style={{ padding: "8px 8px", textAlign: "left", fontSize: 11 }}>{originalQty}</td>
+                <td style={{ padding: "8px 8px", textAlign: "right", fontSize: 11, whiteSpace: "nowrap" }}>{formatRs(it.unitPrice)}</td>
+                <td style={{ padding: "8px 8px", textAlign: "right", fontSize: 12, fontWeight: 600, whiteSpace: "nowrap" }}>{formatRs(lineTotal)}</td>
+              </tr>
+            );
+          })}
+
+          {/* Additional purchase rows */}
+          {purchaseRecords.map((pr, prIdx) =>
+            (pr.items || []).map((it, itIdx) => {
+              const lineTotal = (Number(it.qty) || 0) * (Number(it.unitPrice) || 0);
+              const rowNum    = prevBalItems.length + originalItems.length + prIdx + itIdx + 1;
+              const variantLabel = it.variantLabel || "";
+              const variantUnit  = it.variantUnit  || "";
+              return (
+                <tr key={"pr" + prIdx + "-" + itIdx} style={{ background: "#fffbeb" }}>
+                  <td style={{ padding: "8px 8px", textAlign: "center", color: "#9ca3af", fontSize: 10 }}>{rowNum}</td>
+                  <td style={{ padding: "8px 8px", fontSize: 9, color: "#b45309", whiteSpace: "nowrap" }}>{fmtDateTime(pr.createdAt)}</td>
+                  <td style={{ padding: "8px 8px", fontSize: 12, fontWeight: 600, color: "#b45309" }}>
+                    {it.description || "—"}
+                    <span style={{ marginLeft: 5, fontSize: 8, padding: "1px 4px", borderRadius: 4,
+                      background: "#fef3c7", color: "#92400e", fontWeight: 700 }}>+ADD</span>
+                  </td>
+                  <td style={{ padding: "8px 8px", fontSize: 11, color: "#7c3aed", fontWeight: 600, whiteSpace: "nowrap" }}>
+                    {variantLabel || "—"}
+                  </td>
+                  <td style={{ padding: "8px 8px", fontSize: 11, color: "#6b7280", whiteSpace: "nowrap" }}>
+                    {variantUnit ? `per ${variantUnit}` : "—"}
+                  </td>
+                  <td style={{ padding: "8px 8px", textAlign: "right", fontSize: 11, color: "#b45309" }}>{it.qty}</td>
+                  <td style={{ padding: "8px 8px", textAlign: "right", fontSize: 11, color: "#b45309", whiteSpace: "nowrap" }}>{formatRs(it.unitPrice)}</td>
+                  <td style={{ padding: "8px 8px", textAlign: "right", fontSize: 12, fontWeight: 600, color: "#b45309", whiteSpace: "nowrap" }}>{formatRs(lineTotal)}</td>
+                </tr>
+              );
+            })
+          )}
+
         </tbody>
       </table>
 
       {/* ── Totals ── */}
-      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 32 }}>
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 28 }}>
         <div style={{ minWidth: 260 }}>
           {[
             { label: "Subtotal",    val: formatRs(subtotal),                    bold: false, color: "#374151" },
@@ -168,16 +263,20 @@ function InvoiceTemplate({ inv, userDoc }) {
               <span style={{ fontWeight: r.bold ? 700 : 500, color: r.color }}>{r.val}</span>
             </div>
           ))}
-          {/* grand total */}
           <div style={{ display: "flex", justifyContent: "space-between", gap: 24,
             padding: "10px 0", borderBottom: "2px solid #1d4ed8", marginTop: 2 }}>
             <span style={{ fontWeight: 700, fontSize: 14, color: "#111" }}>Total</span>
             <span style={{ fontWeight: 800, fontSize: 16, color: "#1d4ed8" }}>{formatRs(inv.amount)}</span>
           </div>
-          {/* paid / balance */}
           <div style={{ display: "flex", justifyContent: "space-between", gap: 24, padding: "6px 0" }}>
             <span style={{ color: "#16a34a", fontWeight: 600, fontSize: 12 }}>Amount Paid</span>
             <span style={{ color: "#16a34a", fontWeight: 700, fontSize: 13 }}>{formatRs(inv.amountPaid || 0)}</span>
+          </div>
+           <div style={{ display: "flex", justifyContent: "space-between", gap: 24, padding: "6px 0" }}>
+            <span style={{ color: "red", fontWeight: 600, fontSize: 12 }}>Goods Return</span>
+             <span style={{ color: "#dc2626", fontWeight: 800 }}>
+                  - {formatRs(returnRecords.reduce((s, p) => s + (Number(p.returnAmount) || 0), 0))}
+                </span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 24,
             padding: "8px 12px", borderRadius: 8, marginTop: 4,
@@ -192,8 +291,97 @@ function InvoiceTemplate({ inv, userDoc }) {
         </div>
       </div>
 
-      {/* ── Note ── */}
-      {inv.note && (
+      {/* ── Return History ── */}
+      {returnRecords.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+            letterSpacing: "0.08em", color: "#dc2626", marginBottom: 8 }}>
+            Goods Return History
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#dc2626", color: "#fff" }}>
+                {["Date & Time", "Item", "Qty", "Rate", "Return Amount"].map((h, i) => (
+                  <th key={h} style={{ padding: "7px 10px", textAlign: i >= 2 ? "right" : "left",
+                    fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em", whiteSpace: "nowrap" }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+            </thead>
+            <tbody>
+              {returnRecords.map((p, idx) => (
+                <tr key={idx} style={{ background: idx % 2 === 0 ? "#fef2f2" : "#fff" }}>
+                  <td style={{ padding: "7px 10px", fontSize: 11, color: "#374151", whiteSpace: "nowrap" }}>
+                    {fmtDateTime(p.createdAt)}
+                  </td>
+                  <td style={{ padding: "7px 10px", fontSize: 11, color: "#374151" }}>
+                    {p.description || "—"}
+                  </td>
+                  <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 12, color: "#dc2626" }}>
+                    {p.qty}
+                  </td>
+                  <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 12, color: "#dc2626", whiteSpace: "nowrap" }}>
+                    {formatRs(p.rate)}
+                  </td>
+                  <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 12, fontWeight: 700, color: "#dc2626", whiteSpace: "nowrap" }}>
+                    - {formatRs(p.returnAmount)}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Payment History ── */}
+      {paymentRecords.length > 0 && (
+        <div style={{ marginBottom: 24 }}>
+          <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase",
+            letterSpacing: "0.08em", color: "#16a34a", marginBottom: 8 }}>
+            Payment History
+          </div>
+          <table style={{ width: "100%", borderCollapse: "collapse" }}>
+            <thead>
+              <tr style={{ background: "#16a34a", color: "#fff" }}>
+                {["Date & Time", "Method", "Amount Paid", "Balance After"].map((h, i) => (
+                  <th key={h} style={{ padding: "7px 10px", textAlign: i >= 2 ? "right" : "left",
+                    fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>
+                    {h}
+                  </th>
+                ))}
+              </tr>
+              
+            </thead>
+            <tbody>
+              {paymentRecords.map((p, idx) => (
+                <tr key={idx} style={{ background: idx % 2 === 0 ? "#f0fdf4" : "#fff" }}>
+                  <td style={{ padding: "7px 10px", fontSize: 11, color: "#374151", whiteSpace: "nowrap" }}>
+                    {fmtDateTime(p.createdAt)}
+                  </td>
+                  <td style={{ padding: "7px 10px", fontSize: 11, color: "#374151", textTransform: "capitalize" }}>
+                    {p.method || "cash"}
+                  </td>
+                  <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 12, fontWeight: 700, color: "#16a34a", whiteSpace: "nowrap" }}>
+                    {formatRs(p.paid ?? p.amount)}
+                  </td>
+                  <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
+                    color: Number(p.historyBalance ?? p.balance) > 0 ? "#dc2626" : "#16a34a" }}>
+                    {p.historyBalance != null || p.balance != null
+                      ? (Number(p.historyBalance ?? p.balance) > 0
+                          ? formatRs(p.historyBalance ?? p.balance)
+                          : "Cleared ✓")
+                      : "—"}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
+      {/* ── Note ── only show if note doesn't contain "previous outstanding balance" auto-text */}
+      {inv.note && !inv.note.toLowerCase().includes("previous outstanding balance") && (
         <div style={{ padding: "14px 16px", borderRadius: 10, marginBottom: 28,
           background: "#f9fafb", border: "1px solid #e5e7eb" }}>
           <div style={{ fontSize: 10, fontWeight: 700, color: "#9ca3af", textTransform: "uppercase",
@@ -216,7 +404,7 @@ function InvoiceTemplate({ inv, userDoc }) {
 }
 
 // ── InvoicePDF modal (view + download + share) ────────────────────────────────
-export default function InvoicePDFModal({ inv, userDoc, onClose }) {
+export default function InvoicePDFModal({ inv, userDoc, onClose, payments = [] }) {
   const printRef   = useRef(null);
   const [loading,  setLoading]  = useState(false);
   const [shareMsg, setShareMsg] = useState("");
@@ -347,7 +535,7 @@ export default function InvoicePDFModal({ inv, userDoc, onClose }) {
         {/* invoice preview — white card */}
         <div className="overflow-hidden rounded-xl shadow-2xl" style={{ border: "1px solid rgba(255,255,255,0.1)" }}>
           <div ref={printRef}>
-            <InvoiceTemplate inv={inv} userDoc={userDoc} />
+            <InvoiceTemplate inv={inv} userDoc={userDoc} payments={payments} />
           </div>
         </div>
 

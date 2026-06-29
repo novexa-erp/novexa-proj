@@ -377,7 +377,7 @@ export default function PaymentsView({ uid }) {
                     <div className="flex items-center gap-3 flex-shrink-0">
                       <div className="text-right">
                         <p className={`text-sm font-bold ${isReceived ? "text-green-400" : "text-red-400"}`}>
-                          {isReceived ? "+" : "-"} Rs. {Number(payment.amount || 0).toLocaleString()}
+                          {isReceived ? "+" : "-"} Rs. {Number(payment.paid ?? payment.amount ?? 0).toLocaleString()}
                         </p>
                         <p className="text-gray-600 text-[10px]">{payment.status || "Completed"}</p>
                       </div>
