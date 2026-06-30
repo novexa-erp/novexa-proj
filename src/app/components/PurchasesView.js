@@ -2,11 +2,12 @@
 import { useState, useEffect, useRef } from "react";
 import {
   collection, getDocs, addDoc, updateDoc, deleteDoc,
-  doc, serverTimestamp, onSnapshot, query, orderBy,
+  doc, serverTimestamp, onSnapshot, query, orderBy, writeBatch, where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import SweetAlert from "./SweetAlert";
 import SupplierDetailComponent from "./SupplierDetail";
+import { OrderFormModal } from "./SupplierDetail";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function formatRs(n) {
@@ -186,6 +187,12 @@ function SupplierCard({ supplier, onClick, onEdit, onDelete, index }) {
             <span className="text-gray-500 text-xs">Total Business</span>
             <span className="text-white font-bold text-sm">{formatRs(totalBusiness)}</span>
           </div>
+          {Number(supplier.totalReturns) > 0 && (
+            <div className="flex justify-between items-center">
+              <span className="text-gray-500 text-xs">Goods Return</span>
+              <span className="text-red-400 font-semibold text-sm">- {formatRs(Number(supplier.totalReturns))}</span>
+            </div>
+          )}
           <div className="flex justify-between items-center">
             <span className="text-gray-500 text-xs">Total Paid</span>
             <span className="text-green-400 font-semibold text-sm">{formatRs(totalPaid)}</span>
@@ -221,6 +228,7 @@ export default function PurchasesView({ uid, userDoc }) {
   const [deleteSupId, setDeleteSupId]     = useState(null);
   const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [searchQuery, setSearchQuery]     = useState("");
+  const [showOrderForm, setShowOrderForm]   = useState(false);
   const [alert, setAlert]                 = useState({ show: false, type: "", title: "", message: "" });
 
   // real-time suppliers listener + aggregate stats from orders subcollection
@@ -232,13 +240,53 @@ export default function PurchasesView({ uid, userDoc }) {
         const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
         const withStats = await Promise.all(list.map(async sup => {
           try {
-            const oSnap = await getDocs(collection(db, "users", uid, "suppliers", sup.id, "orders"));
-            const docs  = oSnap.docs.map(d => d.data());
+            // Fetch orders, receipts and returns — now nested under each supplier
+            const [oSnap, recSnap, retSnap] = await Promise.all([
+              getDocs(collection(db, "users", uid, "suppliers", sup.id, "orders")),
+              getDocs(collection(db, "users", uid, "suppliers", sup.id, "receipts")),
+              getDocs(collection(db, "users", uid, "suppliers", sup.id, "returns")),
+            ]);
+
+            const orders   = oSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
+            const receipts = recSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
+            const returns  = retSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
+
+            // ── DEBUG: log every document and its contributing value ──────
+            console.group(`📦 Supplier: ${sup.name} (${sup.id})`);
+            console.log("── ORDERS ──");
+            orders.forEach(o => {
+              const sub  = (o.items||[]).reduce((s,it)=>s+(Number(it.qty)||0)*(Number(it.unitPrice)||0),0);
+              const disc = o.discountType==="percent" ? sub*(Number(o.discountValue)||0)/100 : (Number(o.discountValue)||0);
+              console.log(`  Order ${o._id}: items subtotal=${sub}, disc=${disc}, origAmt=${Math.max(sub-disc,0)}, totalAmount=${o.totalAmount}, balance=${o.balance}, paidAmount=${o.paidAmount}`);
+            });
+            console.log("── RECEIPTS (supplierReceipts) ──");
+            receipts.forEach(r => console.log(`  Receipt ${r._id}: receiptTotal=${r.receiptTotal}, orderId=${r.orderId}`));
+            console.log("── RETURNS (supplierReturns) ──");
+            returns.forEach(r => console.log(`  Return ${r._id}: returnTotal=${r.returnTotal}, orderId=${r.orderId}`));
+            console.groupEnd();
+            // ─────────────────────────────────────────────────────────────
+
+            // Compute original amount from items array (frozen, never mutated)
+            const origTotal = orders.reduce((s, o) => {
+              if (!o.items?.length) return s;
+              const sub  = o.items.reduce((a, it) => a + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+              const disc = o.discountType === "percent"
+                ? sub * (Number(o.discountValue) || 0) / 100
+                : (Number(o.discountValue) || 0);
+              return s + Math.max(sub - disc, 0);
+            }, 0);
+
+            const totalReceipts = receipts.reduce((s, r) => s + (Number(r.receiptTotal) || 0), 0);
+            const totalReturns  = returns.reduce((s, r)  => s + (Number(r.returnTotal)  || 0), 0);
+
+            console.log(`  TOTALS → origTotal=${origTotal}, totalReceipts=${totalReceipts}, totalReturns=${totalReturns}, totalBusiness=${origTotal+totalReceipts}`);
+
             return {
               ...sup,
-              totalBusiness: docs.reduce((s, o) => s + (Number(o.totalAmount) || 0), 0),
-              totalPaid:     docs.reduce((s, o) => s + (Number(o.paidAmount)   || 0), 0),
-              totalBalance:  docs.reduce((s, o) => s + (Number(o.balance)      || 0), 0),
+              totalBusiness: origTotal + totalReceipts,   // gross purchasing (before returns)
+              totalReturns,
+              totalPaid:     orders.reduce((s, o) => s + (Number(o.paidAmount) || 0), 0),
+              totalBalance:  orders.reduce((s, o) => s + (Number(o.balance)    || 0), 0),
             };
           } catch { return sup; }
         }));
@@ -273,9 +321,31 @@ export default function PurchasesView({ uid, userDoc }) {
 
   async function handleDeleteSupplier(id) {
     try {
-      await deleteDoc(doc(db, "users", uid, "suppliers", id));
+      const batch = writeBatch(db);
+
+      // 1. Delete all orders for this supplier
+      const ordersSnap = await getDocs(collection(db, "users", uid, "suppliers", id, "orders"));
+      ordersSnap.docs.forEach(d => batch.delete(d.ref));
+
+      // 2. Delete all payments nested under this supplier
+      const paymentsSnap = await getDocs(collection(db, "users", uid, "suppliers", id, "payments"));
+      paymentsSnap.docs.forEach(d => batch.delete(d.ref));
+
+      // 3. Delete all receipts nested under this supplier
+      const receiptsSnap = await getDocs(collection(db, "users", uid, "suppliers", id, "receipts"));
+      receiptsSnap.docs.forEach(d => batch.delete(d.ref));
+
+      // 4. Delete all returns nested under this supplier
+      const returnsSnap = await getDocs(collection(db, "users", uid, "suppliers", id, "returns"));
+      returnsSnap.docs.forEach(d => batch.delete(d.ref));
+
+      // 5. Delete the supplier document itself
+      batch.delete(doc(db, "users", uid, "suppliers", id));
+
+      await batch.commit();
+
       if (selectedSupplier?.id === id) setSelectedSupplier(null);
-      setAlert({ show: true, type: "success", title: "Deleted! 🗑️", message: "Supplier removed." });
+      setAlert({ show: true, type: "success", title: "Deleted! 🗑️", message: "Supplier and all linked data permanently removed." });
     } catch (err) {
       setAlert({ show: true, type: "error", title: "Error", message: err.message });
     }
@@ -302,6 +372,7 @@ export default function PurchasesView({ uid, userDoc }) {
     s.phone?.includes(searchQuery)
   );
   const totalBusiness = suppliers.reduce((s, x) => s + (Number(x.totalBusiness) || 0), 0);
+  const totalReturns  = suppliers.reduce((s, x) => s + (Number(x.totalReturns)  || 0), 0);
   const totalPaid     = suppliers.reduce((s, x) => s + (Number(x.totalPaid)     || 0), 0);
   const totalBalance  = suppliers.reduce((s, x) => s + (Number(x.totalBalance)  || 0), 0);
 
@@ -335,12 +406,13 @@ export default function PurchasesView({ uid, userDoc }) {
         </div>
 
         {/* Stats */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           {[
-            { label: "Total Suppliers", value: suppliers.length,       icon: "👤", color: "from-blue-500 to-indigo-600"   },
-            { label: "Total Business",  value: formatRs(totalBusiness), icon: "💼", color: "from-purple-500 to-pink-600"  },
-            { label: "Total Paid Out",  value: formatRs(totalPaid),     icon: "💸", color: "from-green-500 to-emerald-600" },
-            { label: "Total Payable",   value: formatRs(totalBalance),  icon: "⏳", color: "from-orange-500 to-red-600"   },
+            { label: "Total Suppliers",  value: suppliers.length,        icon: "👤", color: "from-blue-500 to-indigo-600"   },
+            { label: "Total Business",   value: formatRs(totalBusiness),  icon: "💼", color: "from-purple-500 to-pink-600"  },
+            { label: "Total Paid Out",   value: formatRs(totalPaid),      icon: "💸", color: "from-green-500 to-emerald-600" },
+            { label: "Goods Return",     value: formatRs(totalReturns),   icon: "↩️", color: "from-red-500 to-rose-600"     },
+            { label: "Total Payable",    value: formatRs(totalBalance),   icon: "⏳", color: "from-orange-500 to-red-600"   },
           ].map((stat, i) => (
             <div key={i} className="group relative rounded-lg p-4 overflow-hidden hover:scale-[1.02] hover:-translate-y-1 transition-all" style={cardStyle}>
               <div className={`absolute inset-0 bg-gradient-to-br ${stat.color} opacity-5 group-hover:opacity-10 transition-opacity`} />
@@ -355,6 +427,48 @@ export default function PurchasesView({ uid, userDoc }) {
               <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${stat.color} opacity-50`} />
             </div>
           ))}
+        </div>
+
+        {/* ── Order Form Banner ───────────────────────────────────────── */}
+        <div className="relative overflow-hidden rounded-xl" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(245,158,11,0.2)" }}>
+          {/* Gradient glow bg */}
+          <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-purple-600/10" />
+          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-amber-400 via-orange-500 to-purple-500" />
+
+          <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-4 p-5">
+            {/* Left — icon + text */}
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
+                style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", boxShadow: "0 4px 20px rgba(245,158,11,0.3)" }}>
+                📋
+              </div>
+              <div>
+                <div className="text-white font-bold text-base">Blank Order Form</div>
+                <div className="text-gray-400 text-xs mt-0.5">
+                  Print &amp; fill by hand · Multi-page · Standard &amp; Variant layouts
+                </div>
+              </div>
+            </div>
+
+            {/* Right — quick page pills + open button */}
+            <div className="flex items-center gap-3 flex-wrap justify-end">
+              <div className="flex items-center gap-1.5">
+                <span className="text-gray-500 text-xs">Quick:</span>
+                {[5, 10, 25].map(pg => (
+                  <button key={pg} onClick={() => setShowOrderForm(true)}
+                    className="px-3 py-1 rounded-lg text-xs font-bold transition-all hover:scale-105"
+                    style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", color: "#f59e0b" }}>
+                    {pg}pg
+                  </button>
+                ))}
+              </div>
+              <button onClick={() => setShowOrderForm(true)}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105"
+                style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#000", boxShadow: "0 4px 16px rgba(245,158,11,0.35)" }}>
+                📥 Open Form
+              </button>
+            </div>
+          </div>
         </div>
 
         {/* Search */}
@@ -432,6 +546,14 @@ export default function PurchasesView({ uid, userDoc }) {
           label="Supplier"
           onConfirm={() => handleDeleteSupplier(deleteSupId)}
           onCancel={() => setDeleteSupId(null)}
+        />
+      )}
+
+      {/* Order Form Modal */}
+      {showOrderForm && (
+        <OrderFormModal
+          userDoc={userDoc}
+          onClose={() => setShowOrderForm(false)}
         />
       )}
 

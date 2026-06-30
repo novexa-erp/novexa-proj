@@ -18,17 +18,19 @@ import PaymentsView from "./PaymentsView";
 import PurchasesView from "./PurchasesView";
 import AnalyticsView from "./AnalyticsView";
 import SweetAlert from "./SweetAlert";
+import { OrderFormView } from "./SupplierDetail";
 
 // ── Sidebar nav items ────────────────────────────────────────────────────────
 const navItems = [
-  { icon: "📊", label: "Overview",   id: "overview"  },
-  { icon: "🧾", label: "Invoices",   id: "invoices"  },
-  { icon: "👥", label: "Customers",  id: "customers" },
-  { icon: "📦", label: "Inventory",  id: "inventory" },
-  { icon: "💳", label: "Payments",   id: "payments"  },
-  { icon: "🛒", label: "Purchases",  id: "purchases" },
-  { icon: "📈", label: "Analytics",  id: "analytics" },
-  { icon: "⚙️", label: "Settings",  id: "settings"  },
+  { icon: "📊", label: "Overview",    id: "overview"    },
+  { icon: "🧾", label: "Invoices",    id: "invoices"    },
+  { icon: "👥", label: "Customers",   id: "customers"   },
+  { icon: "📦", label: "Inventory",   id: "inventory"   },
+  { icon: "💳", label: "Payments",    id: "payments"    },
+  { icon: "🛒", label: "Purchases",   id: "purchases"   },
+  { icon: "📋", label: "Order Form",  id: "order-form"  },
+  { icon: "📈", label: "Analytics",   id: "analytics"   },
+  { icon: "⚙️", label: "Settings",   id: "settings"    },
 ];
 
 const statusStyle = {
@@ -449,6 +451,8 @@ function DashboardContent() {
             <PaymentsView uid={user?.uid} />
           ) : activeNav === "purchases" ? (
             <PurchasesView uid={user?.uid} userDoc={userDoc} />
+          ) : activeNav === "order-form" ? (
+            <OrderFormView userDoc={userDoc} />
           ) : activeNav === "analytics" ? (
             <AnalyticsView uid={user?.uid} />
           ) : activeNav === "settings" ? (

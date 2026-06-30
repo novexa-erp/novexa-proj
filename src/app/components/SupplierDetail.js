@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   collection, addDoc, updateDoc, deleteDoc,
   doc, serverTimestamp, onSnapshot, query, orderBy,
+  getDocs, writeBatch, where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import SweetAlert from "./SweetAlert";
@@ -60,8 +61,219 @@ const STATUS_STYLE = {
 };
 
 // ── Purchase Order Modal (items table, like InvoiceModal) ─────────────────────
+const VARIANT_TYPES = [
+  { value: "none",   label: "No Variant",  unit: "",      qtys: [] },
+  { value: "kg",     label: "Kg",          unit: "kg",    qtys: [0.25, 0.5, 0.75, 1, 2, 5, 10, 20, 50] },
+  { value: "meter",  label: "Meter",       unit: "mtr",   qtys: [0.5, 1, 2, 5, 10, 20, 50, 100] },
+  { value: "liter",  label: "Liter",       unit: "ltr",   qtys: [0.25, 0.5, 1, 2, 5, 10, 20] },
+  { value: "length", label: "Length (ft)", unit: "ft",    qtys: [1, 2, 3, 5, 10, 20, 50, 100] },
+  { value: "piece",  label: "Piece / Pcs", unit: "pcs",   qtys: [1, 5, 10, 25, 50, 100, 200, 500] },
+];
+
+function emptyItem() {
+  return { description: "", hasVariant: false, variantType: "none", variantQty: "", unitPrice: "", qty: 1 };
+}
+
+// Compute effective qty for an item:
+// - No variant: just qty (pieces)
+// - Variant with qty: variantQty (size per unit) × qty (number of units)
+//   e.g. 0.25 kg × 100 units = 25 kg total
+function itemEffectiveQty(item) {
+  if (!item.hasVariant || item.variantType === "none") return Number(item.qty) || 1;
+  const unitSize = Number(item.variantQty) || 0;
+  const units    = Number(item.qty) || 1;
+  return unitSize * units;
+}
+
+// Variant Item Row — used in PurchaseOrderModal
+function VariantItemRow({ item, idx, locked, newLocked, isEdit, onChange, onRemove, canRemove }) {
+  const [showVariantPicker, setShowVariantPicker] = useState(false);
+  const variantMeta = VARIANT_TYPES.find(v => v.value === (item.variantType || "none")) || VARIANT_TYPES[0];
+  const effectiveQty = itemEffectiveQty(item);
+  const lineTotal = effectiveQty * (Number(item.unitPrice) || 0);
+
+  const disabledStyle = { opacity: 0.45, cursor: "not-allowed", background: "rgba(255,255,255,0.02)", borderColor: "rgba(245,158,11,0.15)" };
+  const isLocked = locked || newLocked;
+
+  // In edit mode for new rows: must choose variant before proceeding
+  const needsVariant = isEdit && item.isNew && !item.variantType;
+
+  return (
+    <div className="flex flex-col gap-1.5 p-2 rounded-xl mb-1" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
+      {/* Row 1: Description + remove */}
+      <div className="flex items-center gap-2">
+        <div className="relative flex-1">
+          <input
+            placeholder={isLocked ? "" : "e.g. Cotton Fabric"}
+            value={item.description}
+            onChange={e => onChange("description", e.target.value)}
+            required
+            readOnly={isLocked}
+            style={{ ...base, padding: "7px 10px", fontSize: 12, width: "100%", ...(isLocked ? disabledStyle : {}) }} />
+          {isLocked && <span style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "#f59e0b", pointerEvents: "none" }}>🔒</span>}
+        </div>
+        <button type="button" onClick={onRemove} disabled={!canRemove || locked}
+          className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+          style={{ color: "#f87171", background: "rgba(248,113,113,0.08)", opacity: (!canRemove || locked) ? 0.15 : 1, cursor: (!canRemove || locked) ? "not-allowed" : "pointer" }}>✕</button>
+      </div>
+
+      {/* Row 2: Variant toggle (only in create mode, or show variant info if already set) */}
+      {!isLocked && !item.hasVariant && item.variantType === "none" && (
+        <div className="flex items-center gap-2">
+          <span className="text-[11px] text-gray-500">Has variant?</span>
+          <button type="button" onClick={() => { onChange("hasVariant", true); setShowVariantPicker(true); }}
+            className="text-[11px] font-semibold px-2.5 py-1 rounded-lg transition-all hover:scale-105"
+            style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.25)", color: "#60A5FA" }}>
+            + Add Variant
+          </button>
+        </div>
+      )}
+
+      {/* Variant Type Picker */}
+      {(item.hasVariant || (item.variantType && item.variantType !== "none")) && !isLocked && (
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <span className="text-[11px] text-gray-500 mr-1">Type:</span>
+          {VARIANT_TYPES.filter(v => v.value !== "none").map(v => (
+            <button key={v.value} type="button"
+              onClick={() => { onChange("variantType", v.value); onChange("variantQty", ""); }}
+              className="text-[11px] font-semibold px-2 py-0.5 rounded-full transition-all"
+              style={{
+                background: item.variantType === v.value ? "rgba(245,158,11,0.2)" : "rgba(255,255,255,0.05)",
+                border: `1px solid ${item.variantType === v.value ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.1)"}`,
+                color: item.variantType === v.value ? "#f59e0b" : "#9ca3af",
+              }}>
+              {v.label}
+            </button>
+          ))}
+          <button type="button" onClick={() => { onChange("hasVariant", false); onChange("variantType", "none"); onChange("variantQty", ""); }}
+            className="text-[11px] px-2 py-0.5 rounded-full ml-1"
+            style={{ color: "#6b7280", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            ✕ Remove
+          </button>
+        </div>
+      )}
+
+      {/* Edit mode: must pick variant for new rows */}
+      {isEdit && item.isNew && !isLocked && (
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <span className="text-[11px] text-gray-500 mr-1">Variant <span style={{color:"#f87171"}}>*</span>:</span>
+          {VARIANT_TYPES.map(v => (
+            <button key={v.value} type="button"
+              onClick={() => { onChange("variantType", v.value); onChange("variantQty", ""); onChange("hasVariant", v.value !== "none"); }}
+              className="text-[11px] font-semibold px-2 py-0.5 rounded-full transition-all"
+              style={{
+                background: item.variantType === v.value ? "rgba(245,158,11,0.2)" : "rgba(255,255,255,0.05)",
+                border: `1px solid ${item.variantType === v.value ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.1)"}`,
+                color: item.variantType === v.value ? "#f59e0b" : "#9ca3af",
+              }}>
+              {v.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Variant Qty Chips — shown when variant type selected */}
+      {item.variantType && item.variantType !== "none" && !isLocked && (
+        <div className="flex flex-wrap gap-1.5 items-center">
+          <span className="text-[11px] text-gray-500 mr-1">{variantMeta.label}:</span>
+          {variantMeta.qtys.map(q => (
+            <button key={q} type="button"
+              onClick={() => onChange("variantQty", String(q))}
+              className="text-[11px] font-bold px-2 py-0.5 rounded-full transition-all hover:scale-105"
+              style={{
+                background: String(item.variantQty) === String(q) ? "rgba(16,185,129,0.2)" : "rgba(255,255,255,0.05)",
+                border: `1px solid ${String(item.variantQty) === String(q) ? "rgba(16,185,129,0.5)" : "rgba(255,255,255,0.1)"}`,
+                color: String(item.variantQty) === String(q) ? "#34d399" : "#9ca3af",
+              }}>
+              {q} {variantMeta.unit}
+            </button>
+          ))}
+          <input type="number" min="0" step="any" placeholder="custom"
+            value={item.variantQty}
+            onChange={e => onChange("variantQty", e.target.value)}
+            style={{ ...base, width: 72, padding: "4px 8px", fontSize: 11 }} />
+        </div>
+      )}
+
+      {/* Row 3: Qty / Units + Price + Total */}
+      <div className="flex items-center gap-2 flex-wrap">
+
+        {/* No variant: plain qty */}
+        {(!item.variantType || item.variantType === "none") && !isLocked && (
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-gray-500">Qty</span>
+            <input type="number" min="1" placeholder="1" value={item.qty}
+              onChange={e => onChange("qty", e.target.value)}
+              style={{ ...base, width: 64, padding: "6px 6px", fontSize: 12, textAlign: "center" }} />
+          </div>
+        )}
+
+        {/* Variant selected: variantQty (size) × qty (units) */}
+        {item.variantType && item.variantType !== "none" && !isLocked && (
+          <div className="flex items-center gap-1.5 flex-wrap">
+            {/* Size badge */}
+            <span className="text-[11px] font-bold px-2 py-0.5 rounded-full"
+              style={{ background: "rgba(16,185,129,0.15)", border: "1px solid rgba(16,185,129,0.35)", color: "#34d399", whiteSpace: "nowrap" }}>
+              {item.variantQty || "—"} {variantMeta.unit}
+            </span>
+            <span className="text-[10px] text-gray-600">×</span>
+            {/* Number of units */}
+            <div className="flex items-center gap-1">
+              <span className="text-[10px] text-gray-500">Units</span>
+              <input type="number" min="1" placeholder="1" value={item.qty}
+                onChange={e => onChange("qty", e.target.value)}
+                style={{ ...base, width: 64, padding: "6px 6px", fontSize: 12, textAlign: "center" }} />
+            </div>
+            {/* Effective total qty */}
+            {item.variantQty && Number(item.qty) > 0 && (
+              <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.25)", color: "#f59e0b", whiteSpace: "nowrap" }}>
+                = {itemEffectiveQty(item)} {variantMeta.unit} total
+              </span>
+            )}
+          </div>
+        )}
+
+        {/* Locked display */}
+        {isLocked && (
+          <div className="flex items-center gap-1">
+            <span className="text-[10px] text-gray-600">
+              {item.variantType && item.variantType !== "none"
+                ? `${item.variantQty} ${variantMeta.unit} × ${item.qty} units`
+                : `Qty: ${item.qty}`}
+            </span>
+          </div>
+        )}
+
+        {/* Per-unit price */}
+        <div className="flex items-center gap-1 flex-1 min-w-[140px]">
+          <span className="text-[10px] text-gray-500 whitespace-nowrap">
+            {item.variantType && item.variantType !== "none" ? `Per ${variantMeta.unit}` : "Price"}
+          </span>
+          <input type="number" min="0" placeholder="0" value={item.unitPrice}
+            onChange={e => onChange("unitPrice", e.target.value)}
+            readOnly={locked}
+            style={{ ...base, flex: 1, padding: "6px 8px", fontSize: 12, textAlign: "right", ...(locked ? disabledStyle : {}) }} />
+        </div>
+
+        {/* Total */}
+        <div className="text-right flex-shrink-0 min-w-[90px]">
+          <p className="text-xs font-bold" style={{ color: lineTotal > 0 ? "#fff" : "#4b5563" }}>
+            {lineTotal > 0 ? formatRs(lineTotal) : "—"}
+          </p>
+          {item.variantType && item.variantType !== "none" && lineTotal > 0 && (
+            <p className="text-[9px]" style={{ color: "#6b7280" }}>
+              {itemEffectiveQty(item)} {variantMeta.unit} × {formatRs(Number(item.unitPrice))}
+            </p>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
 const PO_EMPTY = {
-  items: [{ description: "", qty: 1, unitPrice: "" }],
+  items: [emptyItem()],
   discountType: "percent",
   discountValue: "",
   amountPaid: "",
@@ -72,7 +284,7 @@ const PO_EMPTY = {
 
 function calcPOTotals(form) {
   const subtotal = (form.items || []).reduce(
-    (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0
+    (s, it) => s + itemEffectiveQty(it) * (Number(it.unitPrice) || 0), 0
   );
   const discount = form.discountType === "percent"
     ? subtotal * (Number(form.discountValue) || 0) / 100
@@ -90,29 +302,65 @@ function SInput({ type = "text", placeholder, value, onChange, req, readOnly }) 
     <input type={type} placeholder={placeholder} value={value} onChange={onChange}
       required={req} autoComplete="off" readOnly={readOnly}
       onFocus={() => setF(true)} onBlur={() => setF(false)}
-      style={{ ...base, ...(f && !readOnly ? focused : {}), ...(readOnly ? { opacity: 0.6, cursor: "not-allowed", background: "rgba(255,255,255,0.02)" } : {}) }} />
+      style={{ ...base, ...(f && !readOnly ? focused : {}), ...(readOnly ? { opacity: 0.55, cursor: "not-allowed", background: "rgba(255,255,255,0.02)" } : {}) }} />
   );
 }
 
-function PurchaseOrderModal({ initial, supplier, onClose, onSave, saving }) {
+// isEdit = true when editing an existing order
+// originalItemCount = number of items that existed before editing (those are locked)
+function PurchaseOrderModal({ initial, supplier, onClose, onSave, saving, isEdit, originalItemCount }) {
   const [form, setForm] = useState(initial || PO_EMPTY);
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
-  const { subtotal, discount, afterDiscount, paid, balance } = calcPOTotals(form);
+
+  // In edit mode: items at index < lockedCount are fully locked (all fields disabled)
+  const lockedCount = isEdit ? (originalItemCount ?? (initial?.items?.length ?? 0)) : 0;
+  // The original item descriptions (used to pre-fill new rows on "Add Item" in edit mode)
+  const originalItems = isEdit ? (initial?.items || []).slice(0, lockedCount) : [];
+
+  // Totals — only count NEW (unlocked) items when in edit mode so discount/total reflect the new delivery
+  const { subtotal, discount, afterDiscount, paid, balance } = calcPOTotals(
+    isEdit
+      ? { ...form, items: form.items.filter((_, i) => i >= lockedCount) }
+      : form
+  );
 
   function setItem(idx, k, v) {
+    // In edit mode, locked items are fully read-only
+    if (isEdit && idx < lockedCount) return;
     setForm(p => {
       const items = [...p.items];
       items[idx] = { ...items[idx], [k]: v };
       return { ...p, items };
     });
   }
+
   function addItem() {
-    setForm(p => ({ ...p, items: [...p.items, { description: "", qty: 1, unitPrice: "" }] }));
+    if (isEdit) {
+      const newRows = originalItems.map(it => ({
+        ...emptyItem(),
+        description: it.description || "",
+        variantType: it.variantType || "none",
+        hasVariant:  it.hasVariant  || false,
+        isNew: true,
+      }));
+      const alreadyHasNew = form.items.some(it => it.isNew);
+      if (alreadyHasNew) return;
+      setForm(p => ({ ...p, items: [...p.items, ...newRows] }));
+    } else {
+      setForm(p => ({ ...p, items: [...p.items, emptyItem()] }));
+    }
   }
+
   function removeItem(idx) {
-    if (form.items.length <= 1) return;
+    // Locked items cannot be removed; new items can be removed one by one
+    if (isEdit && idx < lockedCount) return;
+    const newItems = form.items.filter((it, i) => i >= lockedCount);
+    if (newItems.length <= 1) return; // keep at least one new row
     setForm(p => ({ ...p, items: p.items.filter((_, i) => i !== idx) }));
   }
+
+  // Whether any new (unlocked) rows have been added in edit mode
+  const hasNewItems = isEdit && form.items.some(it => it.isNew);
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto"
@@ -122,7 +370,7 @@ function PurchaseOrderModal({ initial, supplier, onClose, onSave, saving }) {
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.07]">
           <div>
-            <h2 className="text-white font-black text-xl">{initial ? "Edit Purchase Order" : "New Purchase Order"}</h2>
+            <h2 className="text-white font-black text-xl">{isEdit ? "Edit Purchase Order" : "New Purchase Order"}</h2>
             <p className="text-gray-500 text-xs mt-0.5">Supplier: <span className="text-amber-400 font-semibold">{supplier.name}</span></p>
           </div>
           <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 transition-colors">✕</button>
@@ -143,60 +391,68 @@ function PurchaseOrderModal({ initial, supplier, onClose, onSave, saving }) {
 
           {/* Items Table */}
           <div>
-            <label style={lbl}>Items <span style={{ color: "#f87171" }}>*</span></label>
+            <div className="flex items-center justify-between mb-1">
+              <label style={lbl}>Items <span style={{ color: "#f87171" }}>*</span></label>
+              {isEdit && (
+                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                  style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", color: "#f59e0b" }}>
+                  🔒 Original items locked
+                </span>
+              )}
+            </div>
             <div className="rounded-xl overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
-              {/* Header */}
-              <div className="grid gap-2 px-3 py-2" style={{ gridTemplateColumns: "1fr 70px 110px 80px 32px", background: "rgba(255,255,255,0.03)" }}>
-                {["Item / Description", "Qty", "Unit Price", "Total", ""].map((h, i) => (
-                  <span key={i} className="text-[10px] font-bold uppercase tracking-widest text-gray-500" style={{ textAlign: i >= 3 ? "right" : "left" }}>{h}</span>
-                ))}
-              </div>
-              <div className="flex flex-col gap-1 p-2">
+            <div className="flex flex-col gap-0 p-1">
                 {form.items.map((item, idx) => {
-                  const lineTotal = (Number(item.qty) || 0) * (Number(item.unitPrice) || 0);
+                  const locked    = isEdit && idx < lockedCount;
+                  const newLocked = isEdit && idx >= lockedCount && item.isNew && !item.isNew; // never lock description on new rows
                   return (
-                    <div key={idx} className="grid gap-2 items-center" style={{ gridTemplateColumns: "1fr 70px 110px 80px 32px" }}>
-                      <input placeholder="e.g. Cotton Fabric" value={item.description}
-                        onChange={e => setItem(idx, "description", e.target.value)} required
-                        style={{ ...base, padding: "7px 10px", fontSize: 12 }} />
-                      <input type="number" min="1" placeholder="1" value={item.qty}
-                        onChange={e => setItem(idx, "qty", e.target.value)}
-                        style={{ ...base, padding: "7px 6px", fontSize: 12, textAlign: "center" }} />
-                      <input type="number" min="0" placeholder="0" value={item.unitPrice}
-                        onChange={e => setItem(idx, "unitPrice", e.target.value)}
-                        style={{ ...base, padding: "7px 8px", fontSize: 12, textAlign: "right" }} />
-                      <p className="text-xs font-semibold text-right pr-1" style={{ color: lineTotal > 0 ? "#fff" : "#4b5563" }}>
-                        {lineTotal > 0 ? formatRs(lineTotal) : "—"}
-                      </p>
-                      <button type="button" onClick={() => removeItem(idx)} disabled={form.items.length <= 1}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-                        style={{ color: "#f87171", background: "rgba(248,113,113,0.08)", opacity: form.items.length <= 1 ? 0.15 : 1 }}>
-                        ✕
-                      </button>
-                    </div>
+                    <VariantItemRow
+                      key={idx}
+                      item={item}
+                      idx={idx}
+                      locked={locked}
+                      newLocked={false}
+                      isEdit={isEdit}
+                      onChange={(k, v) => setItem(idx, k, v)}
+                      onRemove={() => removeItem(idx)}
+                      canRemove={!locked && (isEdit ? true : form.items.length > 1)}
+                    />
                   );
                 })}
               </div>
             </div>
-            <button type="button" onClick={addItem}
-              className="mt-2 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:scale-105"
-              style={{ background: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>
-              + Add Item
-            </button>
+            {/* Add Item: in edit mode only show if no new rows added yet */}
+            {(!isEdit || !hasNewItems) && (
+              <button type="button" onClick={addItem}
+                className="mt-2 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:scale-105"
+                style={{ background: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>
+                + Add Item
+              </button>
+            )}
+            {isEdit && hasNewItems && (
+              <p className="mt-2 text-[10px]" style={{ color: "#f59e0b" }}>
+                ✏️ Enter qty &amp; unit price for each item above
+              </p>
+            )}
           </div>
 
-          {/* Discount */}
+          {/* Discount — readonly in edit mode */}
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label style={lbl}>Discount Type</label>
-              <select value={form.discountType} onChange={set("discountType")} style={{ ...base }}>
+              <select
+                value={form.discountType}
+                onChange={isEdit ? undefined : set("discountType")}
+                disabled={isEdit}
+                style={{ ...base, ...(isEdit ? { opacity: 0.45, cursor: "not-allowed" } : {}) }}>
                 <option value="percent" style={{ background: "#0d1117" }}>Percentage (%)</option>
                 <option value="fixed"   style={{ background: "#0d1117" }}>Fixed Amount (Rs.)</option>
               </select>
             </div>
             <div>
               <label style={lbl}>Discount Value</label>
-              <SInput type="number" min="0" placeholder="0" value={form.discountValue} onChange={set("discountValue")} />
+              <SInput type="number" min="0" placeholder="0" value={form.discountValue}
+                onChange={set("discountValue")} readOnly={isEdit} />
             </div>
           </div>
 
@@ -211,16 +467,28 @@ function PurchaseOrderModal({ initial, supplier, onClose, onSave, saving }) {
               </div>
             )}
             <div className="flex justify-between text-sm font-bold border-t border-white/10 pt-2 mt-1">
-              <span className="text-white">Total Payable</span><span className="text-white">{formatRs(afterDiscount)}</span>
+              <span className="text-white">{isEdit ? "New Items Total" : "Total Payable"}</span>
+              <span className="text-white">{formatRs(afterDiscount)}</span>
             </div>
-            <div>
-              <label style={{ ...lbl, marginTop: 8 }}>Amount Paid Now (Rs.)</label>
-              <SInput type="number" min="0" placeholder="0" value={form.amountPaid} onChange={set("amountPaid")} />
-            </div>
-            <div className="flex justify-between text-sm font-bold mt-1">
-              <span className="text-gray-400">Balance Remaining</span>
-              <span style={{ color: balance > 0 ? "#f87171" : "#34d399", fontWeight: 800, fontSize: 16 }}>{formatRs(balance)}</span>
-            </div>
+            {/* Amount Paid: only shown in create mode — in edit mode payment is done separately */}
+            {!isEdit && (
+              <>
+                <div>
+                  <label style={{ ...lbl, marginTop: 8 }}>Amount Paid Now (Rs.)</label>
+                  <SInput type="number" min="0" placeholder="0" value={form.amountPaid}
+                    onChange={set("amountPaid")} />
+                </div>
+                <div className="flex justify-between text-sm font-bold mt-1">
+                  <span className="text-gray-400">Balance Remaining</span>
+                  <span style={{ color: balance > 0 ? "#f87171" : "#34d399", fontWeight: 800, fontSize: 16 }}>{formatRs(balance)}</span>
+                </div>
+              </>
+            )}
+            {isEdit && (
+              <p className="text-[11px] mt-1" style={{ color: "#9ca3af" }}>
+                💡 This amount will be added to the order balance. Pay via the 💸 button on the order.
+              </p>
+            )}
           </div>
 
           {/* Note */}
@@ -241,7 +509,7 @@ function PurchaseOrderModal({ initial, supplier, onClose, onSave, saving }) {
               className="flex-1 py-3 rounded-2xl text-sm font-black"
               style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", color: "#000",
                 opacity: saving ? 0.7 : 1, cursor: saving ? "not-allowed" : "pointer" }}>
-              {saving ? "Saving..." : initial ? "Update Order →" : "Create Purchase Order →"}
+              {saving ? "Saving..." : isEdit ? "Update Order →" : "Create Purchase Order →"}
             </button>
           </div>
         </form>
@@ -353,6 +621,141 @@ function PaySupplierModal({ order, supplier, onClose, onSave, saving }) {
   );
 }
 
+// ── Return Goods Modal ────────────────────────────────────────────────────────
+function ReturnGoodsModal({ order, supplier, onClose, onSave, saving }) {
+  const [items, setItems] = useState([{ description: "", qty: "", unitPrice: "" }]);
+  const [returnDate, setReturnDate] = useState(new Date().toISOString().slice(0, 10));
+  const [note, setNote] = useState("");
+
+  const returnTotal = items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+  const maxReturnable = Number(order.totalAmount) || 0;
+
+  function setItem(idx, k, v) {
+    setItems(p => { const arr = [...p]; arr[idx] = { ...arr[idx], [k]: v }; return arr; });
+  }
+  function addItem() { setItems(p => [...p, { description: "", qty: "", unitPrice: "" }]); }
+  function removeItem(idx) { if (items.length <= 1) return; setItems(p => p.filter((_, i) => i !== idx)); }
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 overflow-y-auto"
+      style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)" }}>
+      <div className="w-full max-w-lg my-6 rounded-2xl"
+        style={{ background: "#0d1117", border: "1px solid rgba(239,68,68,0.3)" }}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.07]">
+          <div>
+            <h2 className="text-white font-black text-xl">📦 Return Goods</h2>
+            <p className="text-gray-500 text-xs mt-0.5">
+              Order: <span className="text-amber-400 font-semibold">PO-{(order.id || "").slice(-4).toUpperCase()}</span>
+              &nbsp;· Balance: <span className="text-red-400 font-semibold">{formatRs(Number(order.balance) || 0)}</span>
+            </p>
+          </div>
+          <button onClick={onClose} className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10">✕</button>
+        </div>
+
+        <form onSubmit={e => {
+          e.preventDefault();
+          const validItems = items.filter(it => it.description?.trim() && Number(it.qty) > 0 && Number(it.unitPrice) > 0);
+          if (validItems.length === 0) return;
+          if (returnTotal > maxReturnable) { alert(`Return amount (${formatRs(returnTotal)}) cannot exceed order total (${formatRs(maxReturnable)})`); return; }
+          onSave({ items: validItems, returnTotal, returnDate, note });
+        }} className="flex flex-col gap-4 p-6">
+
+          {/* Return Date */}
+          <div>
+            <label style={lbl}>Return Date</label>
+            <input type="date" value={returnDate} onChange={e => setReturnDate(e.target.value)}
+              style={{ ...base }} />
+          </div>
+
+          {/* Items Table */}
+          <div>
+            <label style={lbl}>Return Items <span style={{ color: "#f87171" }}>*</span></label>
+            <div className="rounded-xl overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div className="grid gap-2 px-3 py-2" style={{ gridTemplateColumns: "1fr 70px 110px 80px 32px", background: "rgba(255,255,255,0.03)" }}>
+                {["Item / Description", "Qty", "Unit Price", "Total", ""].map((h, i) => (
+                  <span key={i} className="text-[10px] font-bold uppercase tracking-widest text-gray-500"
+                    style={{ textAlign: i >= 3 ? "right" : "left" }}>{h}</span>
+                ))}
+              </div>
+              <div className="flex flex-col gap-1 p-2">
+                {items.map((item, idx) => {
+                  const lineTotal = (Number(item.qty) || 0) * (Number(item.unitPrice) || 0);
+                  return (
+                    <div key={idx} className="grid gap-2 items-center" style={{ gridTemplateColumns: "1fr 70px 110px 80px 32px" }}>
+                      <input placeholder="e.g. Night Suit" value={item.description}
+                        onChange={e => setItem(idx, "description", e.target.value)} required
+                        style={{ ...base, padding: "7px 10px", fontSize: 12 }} />
+                      <input type="number" min="1" placeholder="1" value={item.qty}
+                        onChange={e => setItem(idx, "qty", e.target.value)}
+                        style={{ ...base, padding: "7px 6px", fontSize: 12, textAlign: "center" }} />
+                      <input type="number" min="0" placeholder="0" value={item.unitPrice}
+                        onChange={e => setItem(idx, "unitPrice", e.target.value)}
+                        style={{ ...base, padding: "7px 8px", fontSize: 12, textAlign: "right" }} />
+                      <p className="text-xs font-semibold text-right pr-1" style={{ color: lineTotal > 0 ? "#fff" : "#4b5563" }}>
+                        {lineTotal > 0 ? formatRs(lineTotal) : "—"}
+                      </p>
+                      <button type="button" onClick={() => removeItem(idx)}
+                        disabled={items.length <= 1}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
+                        style={{ color: "#f87171", background: "rgba(248,113,113,0.08)", opacity: items.length <= 1 ? 0.2 : 1 }}>
+                        ✕
+                      </button>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+            <button type="button" onClick={addItem}
+              className="mt-2 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:scale-105"
+              style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171" }}>
+              + Add Item
+            </button>
+          </div>
+
+          {/* Summary */}
+          <div className="rounded-xl p-4 flex flex-col gap-2"
+            style={{ background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.15)" }}>
+            <div className="flex justify-between text-sm font-bold">
+              <span className="text-gray-400">Total Return Amount</span>
+              <span style={{ color: returnTotal > 0 ? "#f87171" : "#6b7280", fontSize: 16, fontWeight: 800 }}>
+                - {formatRs(returnTotal)}
+              </span>
+            </div>
+            <div className="flex justify-between text-xs text-gray-500 border-t border-white/10 pt-2 mt-1">
+              <span>Balance after return</span>
+              <span style={{ color: Math.max(0, (Number(order.balance) || 0) - returnTotal) > 0 ? "#f87171" : "#34d399", fontWeight: 700 }}>
+                {formatRs(Math.max(0, (Number(order.balance) || 0) - returnTotal))}
+              </span>
+            </div>
+          </div>
+
+          {/* Note */}
+          <div>
+            <label style={lbl}>Notes / Reason</label>
+            <textarea rows={2} placeholder="Reason for return..." value={note} onChange={e => setNote(e.target.value)}
+              style={{ ...base, resize: "vertical" }} />
+          </div>
+
+          {/* Actions */}
+          <div className="flex gap-3">
+            <button type="button" onClick={onClose} className="flex-1 py-3 rounded-2xl text-sm font-semibold"
+              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+              Cancel
+            </button>
+            <button type="submit" disabled={saving || returnTotal <= 0}
+              className="flex-1 py-3 rounded-2xl text-sm font-black"
+              style={{ background: "linear-gradient(135deg,#ef4444,#dc2626)", color: "#fff",
+                opacity: (saving || returnTotal <= 0) ? 0.5 : 1, cursor: (saving || returnTotal <= 0) ? "not-allowed" : "pointer" }}>
+              {saving ? "Processing..." : "📦 Confirm Return →"}
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  );
+}
+
 // ── Delete Confirm ────────────────────────────────────────────────────────────
 function DeleteConfirmSD({ name, label, onConfirm, onCancel }) {
   return (
@@ -374,8 +777,1124 @@ function DeleteConfirmSD({ name, label, onConfirm, onCancel }) {
   );
 }
 
+// ── Purchase Order PDF Template ───────────────────────────────────────────────
+function PurchaseOrderPDFTemplate({ order, supplier, userDoc = {}, receipts, returns, payments }) {
+  const num = `PO-${(order.id || "").slice(-4).toUpperCase()}`;
+  const generatedOn = new Date().toLocaleDateString("en-PK", { day: "2-digit", month: "long", year: "numeric" });
+
+  // Helper
+  function fmtD(ts) {
+    if (!ts) return "—";
+    try {
+      const d = ts?.toDate ? ts.toDate() : new Date(ts);
+      return d.toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" });
+    } catch { return "—"; }
+  }
+
+  // Variant meta
+  const VTYPES = { kg:"kg", meter:"mtr", liter:"ltr", length:"ft", piece:"pcs" };
+
+  function itemLabel(it) {
+    if (!it.hasVariant || !it.variantType || it.variantType === "none") {
+      return `${it.description}  ×${it.qty || 1}`;
+    }
+    const unit = VTYPES[it.variantType] || it.variantType;
+    const effQty = (Number(it.variantQty) || 0) * (Number(it.qty) || 1);
+    return `${it.description}  (${it.variantQty}${unit} × ${it.qty} = ${effQty}${unit})`;
+  }
+
+  function itemQtyDisplay(it) {
+    if (!it.hasVariant || !it.variantType || it.variantType === "none") return `${it.qty || 1} pcs`;
+    const unit = VTYPES[it.variantType] || it.variantType;
+    return `${(Number(it.variantQty) || 0) * (Number(it.qty) || 1)} ${unit}`;
+  }
+
+  function itemTotal(it) {
+    if (!it.hasVariant || !it.variantType || it.variantType === "none")
+      return (Number(it.qty) || 1) * (Number(it.unitPrice) || 0);
+    return (Number(it.variantQty) || 0) * (Number(it.qty) || 1) * (Number(it.unitPrice) || 0);
+  }
+
+  // Build full timeline: original items + receipts + returns + payments
+  const origTotal = (order.items || []).reduce((s, it) => s + itemTotal(it), 0);
+  const disc = order.discountType === "percent"
+    ? origTotal * (Number(order.discountValue) || 0) / 100
+    : (Number(order.discountValue) || 0);
+  const orderAmt = Math.max(origTotal - disc, 0);
+
+  const totalReceipts = (receipts || []).reduce((s, r) => s + (Number(r.receiptTotal) || 0), 0);
+  const totalReturns  = (returns  || []).reduce((s, r) => s + (Number(r.returnTotal)  || 0), 0);
+  const totalPaid     = Number(order.paidAmount) || 0;
+  const grossTotal    = orderAmt + totalReceipts;
+  const balance       = Number(order.balance) || 0;
+
+  const statusKey = balance <= 0 ? "Paid" : totalPaid > 0 ? "Partial" : "Pending";
+  const sColor = { Paid: "#16a34a", Partial: "#d97706", Pending: "#dc2626" }[statusKey];
+  const sBg    = { Paid: "#dcfce7", Partial: "#fef3c7", Pending: "#fee2e2" }[statusKey];
+
+  return (
+    <div style={{ width: 794, minHeight: 1123, background: "#fff", color: "#111",
+      fontFamily: "'Segoe UI', Arial, sans-serif", fontSize: 13,
+      padding: "44px 52px", boxSizing: "border-box", position: "relative" }}>
+
+      {/* Top accent */}
+      <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 6,
+        background: "linear-gradient(to right,#f59e0b,#d97706,#92400e)" }} />
+
+      {/* Header */}
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 28 }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 14 }}>
+          {userDoc?.logoDataUrl && (
+            <img src={userDoc.logoDataUrl} alt="Logo"
+              style={{ width: 56, height: 56, objectFit: "contain", borderRadius: 8 }} />
+          )}
+          <div>
+            <div style={{ fontWeight: 900, fontSize: 20, color: "#111" }}>
+              {userDoc?.business || userDoc?.name || "Your Business"}
+            </div>
+            {userDoc?.address && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>{userDoc.address}</div>}
+            {userDoc?.phone   && <div style={{ fontSize: 11, color: "#6b7280" }}>{userDoc.phone}</div>}
+            {userDoc?.email   && <div style={{ fontSize: 11, color: "#6b7280" }}>{userDoc.email}</div>}
+          </div>
+        </div>
+        <div style={{ textAlign: "right" }}>
+          <div style={{ fontSize: 28, fontWeight: 900, color: "#d97706", letterSpacing: "-1px" }}>
+            PURCHASE ORDER
+          </div>
+          <div style={{ fontSize: 16, fontWeight: 800, color: "#111", marginTop: 4 }}>{num}</div>
+          <div style={{ marginTop: 8, display: "inline-block", padding: "3px 14px", borderRadius: 20,
+            fontSize: 11, fontWeight: 700, background: sBg, color: sColor, border: `1px solid ${sColor}33` }}>
+            {statusKey.toUpperCase()}
+          </div>
+        </div>
+      </div>
+
+      <div style={{ height: 1, background: "#e5e7eb", marginBottom: 22 }} />
+
+      {/* Supplier + Order Info */}
+      <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16, marginBottom: 24 }}>
+        {/* Supplier */}
+        <div style={{ padding: "14px 16px", background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em",
+            color: "#92400e", marginBottom: 8 }}>SUPPLIER</div>
+          <div style={{ fontWeight: 800, fontSize: 15 }}>{supplier.name}</div>
+          {supplier.shopName && <div style={{ fontSize: 12, color: "#d97706", fontWeight: 600, marginTop: 2 }}>{supplier.shopName}</div>}
+          {supplier.phone && <div style={{ fontSize: 11, color: "#4b5563", marginTop: 4 }}>📞 {supplier.phone}</div>}
+          {supplier.email && <div style={{ fontSize: 11, color: "#4b5563" }}>✉️ {supplier.email}</div>}
+          {supplier.city  && <div style={{ fontSize: 11, color: "#4b5563" }}>📍 {supplier.city}{supplier.address ? `, ${supplier.address}` : ""}</div>}
+        </div>
+        {/* Order details */}
+        <div style={{ padding: "14px 16px", background: "#f9fafb", border: "1px solid #e5e7eb", borderRadius: 10 }}>
+          <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em",
+            color: "#6b7280", marginBottom: 8 }}>ORDER DETAILS</div>
+          {[
+            ["Order Date",    fmtD(order.orderDate || order.createdAt)],
+            ["Created At",    (() => { try { const d = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt || 0); return d.toLocaleDateString("en-PK",{day:"2-digit",month:"short",year:"numeric"}) + "  " + d.toLocaleTimeString("en-PK",{hour:"2-digit",minute:"2-digit",hour12:true}); } catch { return "—"; }})()],
+            ["Due Date",      order.dueDate ? fmtD(order.dueDate) : "—"],
+            ["Reference",     num],
+            ["Generated",     generatedOn],
+          ].map(([k, v]) => (
+            <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 4, fontSize: 11 }}>
+              <span style={{ color: "#6b7280" }}>{k}</span>
+              <span style={{ fontWeight: 600, color: "#111" }}>{v}</span>
+            </div>
+          ))}
+        </div>
+      </div>
+
+      {/* Items Table */}
+      <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 20 }}>
+        <thead>
+          <tr style={{ background: "#d97706", color: "#fff" }}>
+            {["Date & Time", "Type", "Item / Description", "Qty", "Unit Price", "Total"].map((h, i) => (
+              <th key={h} style={{
+                padding: "9px 10px", fontSize: 9, fontWeight: 700,
+                textTransform: "uppercase", letterSpacing: "0.05em",
+                textAlign: i >= 3 ? "right" : "left",
+              }}>{h}</th>
+            ))}
+          </tr>
+        </thead>
+        <tbody>
+          {/* ── Original Order Items ── */}
+          {(order.items || []).map((it, i) => {
+            const tot = itemTotal(it);
+            const ts  = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt || 0);
+            const dtStr = ts.toLocaleDateString("en-PK", { day:"2-digit", month:"short", year:"numeric" })
+              + "  " + ts.toLocaleTimeString("en-PK", { hour:"2-digit", minute:"2-digit", hour12:true });
+            return (
+              <tr key={`orig-${i}`} style={{ background: i % 2 === 0 ? "#f9fafb" : "#fff" }}>
+                <td style={{ padding: "8px 10px", fontSize: 10, color: "#4b5563", whiteSpace: "nowrap" }}>{dtStr}</td>
+                <td style={{ padding: "8px 10px" }}>
+                  <span style={{ display: "inline-block", padding: "1px 7px", borderRadius: 10,
+                    fontSize: 8, fontWeight: 700, background: "#fffbeb", color: "#b45309",
+                    border: "1px solid #fde68a" }}>Order</span>
+                </td>
+                <td style={{ padding: "8px 10px", fontSize: 11, fontWeight: 600 }}>
+                  {it.description}
+                  {it.hasVariant && it.variantType && it.variantType !== "none" && (
+                    <div style={{ fontSize: 9, color: "#9ca3af", marginTop: 1 }}>
+                      {it.variantQty} {VTYPES[it.variantType] || it.variantType} × {it.qty} units
+                    </div>
+                  )}
+                </td>
+                <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11 }}>{itemQtyDisplay(it)}</td>
+                <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11 }}>Rs. {Number(it.unitPrice || 0).toLocaleString("en-PK")}</td>
+                <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 700 }}>
+                  Rs. {tot.toLocaleString("en-PK")}
+                </td>
+              </tr>
+            );
+          })}
+
+          {/* ── Additional Purchases (receipts) ── */}
+          {(receipts || []).map((r, ri) =>
+            (r.items || []).map((it, ii) => {
+              const effQty = (!it.hasVariant || !it.variantType || it.variantType === "none")
+                ? (Number(it.qty) || 1)
+                : (Number(it.variantQty) || 0) * (Number(it.qty) || 1);
+              const unit = it.hasVariant && it.variantType && it.variantType !== "none"
+                ? (VTYPES[it.variantType] || it.variantType) : "pcs";
+              const tot = effQty * (Number(it.unitPrice) || 0);
+              const ts = r.createdAt?.toDate ? r.createdAt.toDate() : new Date(r.createdAt || 0);
+              const dtStr = ts.toLocaleDateString("en-PK", { day:"2-digit", month:"short", year:"numeric" })
+                + "  " + ts.toLocaleTimeString("en-PK", { hour:"2-digit", minute:"2-digit", hour12:true });
+              return (
+                <tr key={`rec-${ri}-${ii}`} style={{ background: "#f0fdf4" }}>
+                  <td style={{ padding: "8px 10px", fontSize: 10, color: "#4b5563", whiteSpace: "nowrap" }}>{dtStr}</td>
+                  <td style={{ padding: "8px 10px" }}>
+                    <span style={{ display: "inline-block", padding: "1px 7px", borderRadius: 10,
+                      fontSize: 8, fontWeight: 700, background: "#dcfce7", color: "#15803d",
+                      border: "1px solid #86efac" }}>Purchased</span>
+                  </td>
+                  <td style={{ padding: "8px 10px", fontSize: 11, fontWeight: 600 }}>
+                    {it.description}
+                    {it.hasVariant && it.variantType && it.variantType !== "none" && (
+                      <span style={{ fontSize: 9, color: "#9ca3af", marginLeft: 4 }}>
+                        ({it.variantQty}{unit} × {it.qty})
+                      </span>
+                    )}
+                  </td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11 }}>{effQty} {unit}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11 }}>Rs. {Number(it.unitPrice || 0).toLocaleString("en-PK")}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 700, color: "#15803d" }}>
+                    + Rs. {tot.toLocaleString("en-PK")}
+                  </td>
+                </tr>
+              );
+            })
+          )}
+
+          {/* ── Goods Returned ── */}
+          {(returns || []).map((r, ri) =>
+            (r.items || []).map((it, ii) => {
+              const lineTotal = (Number(it.qty) || 0) * (Number(it.unitPrice) || 0);
+              const ts = r.createdAt?.toDate ? r.createdAt.toDate() : new Date(r.createdAt || 0);
+              const dtStr = ts.toLocaleDateString("en-PK", { day:"2-digit", month:"short", year:"numeric" })
+                + "  " + ts.toLocaleTimeString("en-PK", { hour:"2-digit", minute:"2-digit", hour12:true });
+              return (
+                <tr key={`ret-${ri}-${ii}`} style={{ background: "#fef2f2" }}>
+                  <td style={{ padding: "8px 10px", fontSize: 10, color: "#4b5563", whiteSpace: "nowrap" }}>{dtStr}</td>
+                  <td style={{ padding: "8px 10px" }}>
+                    <span style={{ display: "inline-block", padding: "1px 7px", borderRadius: 10,
+                      fontSize: 8, fontWeight: 700, background: "#fee2e2", color: "#dc2626",
+                      border: "1px solid #fca5a5" }}>Return</span>
+                  </td>
+                  <td style={{ padding: "8px 10px", fontSize: 11, fontWeight: 600 }}>{it.description}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11 }}>{it.qty} pcs</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11 }}>Rs. {Number(it.unitPrice || 0).toLocaleString("en-PK")}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 700, color: "#dc2626" }}>
+                    - Rs. {lineTotal.toLocaleString("en-PK")}
+                  </td>
+                </tr>
+              );
+            })
+          )}
+
+          {/* ── Payments ── */}
+          {(payments || []).map((p, pi) => {
+            const ts = p.createdAt?.toDate ? p.createdAt.toDate() : new Date(p.createdAt || 0);
+            const dtStr = ts.toLocaleDateString("en-PK", { day:"2-digit", month:"short", year:"numeric" })
+              + "  " + ts.toLocaleTimeString("en-PK", { hour:"2-digit", minute:"2-digit", hour12:true });
+            const methodLabel = { cash:"💵 Cash", bank:"🏦 Bank", cheque:"📄 Cheque", easypaisa:"📱 EasyPaisa", jazzcash:"📱 JazzCash" }[p.method] || p.method || "Cash";
+            const detail = [p.payerName && `By: ${p.payerName}`, p.receiverName && `To: ${p.receiverName}`, p.payerContact && p.payerContact].filter(Boolean).join("  ·  ");
+            return (
+              <tr key={`pay-${pi}`} style={{ background: "#eff6ff" }}>
+                <td style={{ padding: "8px 10px", fontSize: 10, color: "#4b5563", whiteSpace: "nowrap" }}>{dtStr}</td>
+                <td style={{ padding: "8px 10px" }}>
+                  <span style={{ display: "inline-block", padding: "1px 7px", borderRadius: 10,
+                    fontSize: 8, fontWeight: 700, background: "#dbeafe", color: "#1d4ed8",
+                    border: "1px solid #bfdbfe" }}>Payment</span>
+                </td>
+                <td style={{ padding: "8px 10px", fontSize: 11, fontWeight: 600 }}>
+                  {methodLabel}
+                  {detail && <div style={{ fontSize: 9, color: "#6b7280", marginTop: 1 }}>{detail}</div>}
+                  {p.note && <div style={{ fontSize: 9, color: "#9ca3af", marginTop: 1 }}>{p.note}</div>}
+                </td>
+                <td colSpan={2} style={{ padding: "8px 10px", textAlign: "right", fontSize: 10, color: "#6b7280" }}>
+                  {p.payDate || ""}
+                </td>
+                <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 700, color: "#1d4ed8" }}>
+                  - Rs. {(Number(p.amount) || 0).toLocaleString("en-PK")}
+                </td>
+              </tr>
+            );
+          })}
+        </tbody>
+      </table>
+
+      {/* Totals Summary */}
+      <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 24 }}>
+        <div style={{ minWidth: 300, background: "#fffbeb", border: "1px solid #fde68a", borderRadius: 10, padding: "14px 18px" }}>
+          {[
+            ["Order Amount",         `Rs. ${orderAmt.toLocaleString("en-PK")}`,          "#111"],
+            ...(totalReceipts > 0 ? [["+ Additional Purchases", `Rs. ${totalReceipts.toLocaleString("en-PK")}`, "#15803d"]] : []),
+            ...(totalReturns  > 0 ? [["− Goods Return",         `Rs. ${totalReturns.toLocaleString("en-PK")}`,  "#dc2626"]] : []),
+          ].map(([k, v, c]) => (
+            <div key={k} style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 11 }}>
+              <span style={{ color: "#6b7280" }}>{k}</span>
+              <span style={{ fontWeight: 700, color: c }}>{v}</span>
+            </div>
+          ))}
+          <div style={{ height: 1, background: "#e5e7eb", margin: "7px 0" }} />
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13, fontWeight: 900, marginBottom: 8 }}>
+            <span style={{ color: "#92400e" }}>GROSS TOTAL</span>
+            <span style={{ color: "#d97706" }}>Rs. {grossTotal.toLocaleString("en-PK")}</span>
+          </div>
+          {totalPaid > 0 && (
+            <div style={{ display: "flex", justifyContent: "space-between", fontSize: 11, marginBottom: 5 }}>
+              <span style={{ color: "#6b7280" }}>− Amount Paid</span>
+              <span style={{ fontWeight: 700, color: "#16a34a" }}>Rs. {totalPaid.toLocaleString("en-PK")}</span>
+            </div>
+          )}
+          <div style={{ height: 1, background: "#e5e7eb", margin: "7px 0" }} />
+          <div style={{ display: "flex", justifyContent: "space-between", fontSize: 14, fontWeight: 900 }}>
+            <span style={{ color: balance > 0 ? "#dc2626" : "#16a34a" }}>
+              {balance > 0 ? "BALANCE DUE" : "CLEARED ✓"}
+            </span>
+            <span style={{ color: balance > 0 ? "#dc2626" : "#16a34a" }}>
+              Rs. {balance.toLocaleString("en-PK")}
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* Note */}
+      {order.note && (
+        <div style={{ padding: "10px 14px", background: "#f9fafb", border: "1px solid #e5e7eb",
+          borderRadius: 8, marginBottom: 20, fontSize: 11, color: "#4b5563" }}>
+          <span style={{ fontWeight: 700 }}>Note: </span>{order.note}
+        </div>
+      )}
+
+      {/* Footer */}
+      <div style={{ position: "absolute", bottom: 32, left: 52, right: 52 }}>
+        <div style={{ height: 1, background: "linear-gradient(to right,#f59e0b,#d97706,#92400e)", marginBottom: 12 }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", fontSize: 10, color: "#9ca3af" }}>
+          <div>
+            <div style={{ color: "#d97706", fontWeight: 800, fontSize: 12 }}>Novexa ERP</div>
+            <div style={{ marginTop: 1 }}>Smart Business Management</div>
+          </div>
+          <div style={{ textAlign: "center" }}>Purchase Order · {num}</div>
+          <div style={{ textAlign: "right" }}>
+            <div>Generated: {generatedOn}</div>
+            <div style={{ marginTop: 1 }}>Powered by Novexa ERP</div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── Purchase Order View Modal ─────────────────────────────────────────────────
+function PurchaseOrderViewModal({ order, supplier, userDoc = {}, receipts, returns, payments, onClose }) {
+  const printRef = useRef(null);
+  const [loading, setLoading] = useState(false);
+
+  async function downloadPDF() {
+    if (!printRef.current || loading) return;
+    setLoading(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const jsPDF       = (await import("jspdf")).default;
+      const canvas = await html2canvas(printRef.current, {
+        scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false, width: 794,
+      });
+      const imgData = canvas.toDataURL("image/jpeg", 0.95);
+      const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+      const pdfW = pdf.internal.pageSize.getWidth();
+      const pdfH = (canvas.height / canvas.width) * pdfW;
+      const pageH = pdf.internal.pageSize.getHeight();
+      if (pdfH <= pageH) {
+        pdf.addImage(imgData, "JPEG", 0, 0, pdfW, pdfH);
+      } else {
+        let yPos = 0, remaining = pdfH;
+        while (remaining > 0) {
+          pdf.addImage(imgData, "JPEG", 0, -yPos, pdfW, pdfH);
+          remaining -= pageH; yPos += pageH;
+          if (remaining > 0) pdf.addPage();
+        }
+      }
+      const num = `PO-${(order.id || "").slice(-4).toUpperCase()}`;
+      pdf.save(`${num}-${supplier.name.replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`);
+    } catch (err) { alert("PDF failed: " + err.message); }
+    setLoading(false);
+  }
+
+  function printOrder() {
+    const content = printRef.current?.innerHTML;
+    if (!content) return;
+    const w = window.open("", "_blank", "width=900,height=700");
+    w.document.write(`<!DOCTYPE html><html><head><title>Purchase Order</title>
+      <style>body{margin:0;padding:0;background:#fff;}</style>
+      </head><body>${content}</body></html>`);
+    w.document.close(); w.focus();
+    setTimeout(() => { w.print(); w.close(); }, 400);
+  }
+
+  function shareWhatsApp() {
+    const num       = `PO-${(order.id || "").slice(-4).toUpperCase()}`;
+    const balance   = Number(order.balance) || 0;
+    const totalPaid = Number(order.paidAmount) || 0;
+    const receiptsTotal = (receipts || []).reduce((s, r) => s + (Number(r.receiptTotal) || 0), 0);
+    const returnsTotal  = (returns  || []).reduce((s, r) => s + (Number(r.returnTotal)  || 0), 0);
+    const origItems = (order.items || []).reduce((s, it) => {
+      const effQty = (!it.hasVariant || it.variantType === "none")
+        ? (Number(it.qty) || 1)
+        : (Number(it.variantQty) || 0) * (Number(it.qty) || 1);
+      return s + effQty * (Number(it.unitPrice) || 0);
+    }, 0);
+    const grossTotal = origItems + receiptsTotal;
+    const text = encodeURIComponent(
+      `*Purchase Order ${num}*\nSupplier: ${supplier.name}\n\n` +
+      `📦 Items:\n${(order.items || []).map(it => `  • ${it.description}`).join("\n")}\n\n` +
+      `💰 Gross Total: *Rs. ${grossTotal.toLocaleString("en-PK")}*\n` +
+      (totalPaid > 0 ? `✅ Paid: *Rs. ${totalPaid.toLocaleString("en-PK")}*\n` : "") +
+      (returnsTotal > 0 ? `↩ Returns: *Rs. ${returnsTotal.toLocaleString("en-PK")}*\n` : "") +
+      `⏳ Balance: *Rs. ${balance.toLocaleString("en-PK")}*\n\n` +
+      `— ${userDoc?.business || userDoc?.name || "Novexa ERP"}`
+    );
+    window.open(`https://wa.me/${(supplier.phone || "").replace(/[^0-9]/g, "")}?text=${text}`, "_blank");
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto"
+      style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)" }}>
+      <div className="w-full max-w-[860px] my-4">
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4 px-1">
+          <h3 className="text-white font-bold text-base">
+            📄 PO-{(order.id || "").slice(-4).toUpperCase()} · {supplier.name}
+          </h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={shareWhatsApp}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold hover:scale-105 transition-all"
+              style={{ background: "rgba(37,211,102,0.1)", border: "1px solid rgba(37,211,102,0.3)", color: "#25D366" }}>
+              💬 WhatsApp
+            </button>
+            <button onClick={printOrder}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold hover:scale-105 transition-all"
+              style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }}>
+              🖨️ Print
+            </button>
+            <button onClick={downloadPDF} disabled={loading}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold hover:scale-105 transition-all"
+              style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#000", opacity: loading ? 0.7 : 1 }}>
+              {loading ? "⏳ Generating..." : "⬇️ Download PDF"}
+            </button>
+            <button onClick={onClose}
+              className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 text-lg">✕</button>
+          </div>
+        </div>
+
+        {/* PDF Preview */}
+        <div className="overflow-hidden rounded-xl shadow-2xl" style={{ border: "1px solid rgba(245,158,11,0.3)" }}>
+          <div ref={printRef}>
+            <PurchaseOrderPDFTemplate
+              order={order}
+              supplier={supplier}
+              userDoc={userDoc}
+              receipts={receipts}
+              returns={returns}
+              payments={payments}
+            />
+          </div>
+        </div>
+        <p className="text-center text-gray-600 text-xs mt-3">Scroll to preview · Download PDF or share via WhatsApp</p>
+      </div>
+    </div>
+  );
+}
+
+// ── Blank Order Form — multi-page, printable ────────────────────────────────
+function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
+  const hasVariant  = formType === "variant";
+  const generatedOn = new Date().toLocaleDateString("en-PK", { day:"2-digit", month:"long", year:"numeric" });
+  const cols = hasVariant
+    ? ["Item / Description", "Variant Type", "Size / Unit", "Units", "Total Qty", "Unit Price", "Total Amount"]
+    : ["Item / Description", "Qty", "Unit Price", "Total Amount"];
+
+  // How many item rows fit per page
+  // Page total height: 1123px
+  // Padding top: 0, bottom: 28px
+  // Header: accent(6) + gap(14) + header-row(~72) + divider(2) + gap(12) = ~106px
+  // Footer: paddingTop(10) + line(1) + gap(8) + footer-row(~32) = ~51px
+  // Table thead: ~30px
+  // PageSubtotal row: ~30px
+  // Each item row: padding 8px top+bottom = 16px + content ~24px = ~40px
+  // Available for rows (page1): 1123 - 28 - 106 - 51 - 30 - 30 - meta(~160) = ~718 → 8 rows (320px) safe
+  // Available for rows (mid/last): 1123 - 28 - 106 - 51 - 30 - 30 = ~878 → floor(878/40) = 21, use 13 to be safe
+  const rowsP1   = 8;
+  const rowsMid  = 13;
+  const rowsLast = 10;
+
+  // Header component (rendered on every page)
+  function PageHeader({ pageNum }) {
+    return (
+      <div>
+        {/* Top accent */}
+        <div style={{ height: 6, background: "linear-gradient(to right,#f59e0b,#d97706,#92400e)", marginBottom: 14 }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+            {userDoc?.logoDataUrl && (
+              <img src={userDoc.logoDataUrl} alt="Logo"
+                style={{ width: 52, height: 52, objectFit: "contain", borderRadius: 8, border: "1px solid #e5e7eb" }} />
+            )}
+            <div>
+              <div style={{ fontWeight: 900, fontSize: 20, color: "#111", lineHeight: 1.1 }}>
+                {userDoc?.business || userDoc?.name || "Your Business"}
+              </div>
+              {userDoc?.phone   && <div style={{ fontSize: 10, color: "#6b7280", marginTop: 2 }}>📞 {userDoc.phone}</div>}
+              {userDoc?.email   && <div style={{ fontSize: 10, color: "#6b7280" }}>✉️ {userDoc.email}</div>}
+              {userDoc?.website && <div style={{ fontSize: 10, color: "#6b7280" }}>🌐 {userDoc.website}</div>}
+              {userDoc?.address && <div style={{ fontSize: 10, color: "#6b7280" }}>📍 {userDoc.address}</div>}
+            </div>
+          </div>
+          <div style={{ textAlign: "right" }}>
+            <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: "-1.5px", color: "#d97706", lineHeight: 1.1 }}>ORDER FORM</div>
+            <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 3 }}>
+              {hasVariant ? "Variant / Measurement Order" : "Standard Order Form"}
+            </div>
+            <div style={{ marginTop: 5, display: "flex", justifyContent: "flex-end", gap: 8, alignItems: "center" }}>
+              <span style={{ padding: "2px 12px", borderRadius: 20, background: "#fffbeb",
+                border: "1px solid #fde68a", fontSize: 9, color: "#92400e", fontWeight: 700 }}>
+                {hasVariant ? "📦 WITH VARIANTS" : "📋 STANDARD"}
+              </span>
+              <span style={{ fontSize: 10, color: "#9ca3af" }}>Page {pageNum} / {totalPages}</span>
+            </div>
+          </div>
+        </div>
+        <div style={{ height: 2, background: "linear-gradient(to right,#f59e0b,#e5e7eb)", marginBottom: 12 }} />
+      </div>
+    );
+  }
+
+  // Footer component — absolutely pinned to page bottom, always visible
+  function PageFooter({ pageNum }) {
+    return (
+      <div style={{
+        position: "absolute", bottom: 20, left: 52, right: 52,
+      }}>
+        <div style={{ height: 1, background: "linear-gradient(to right,#f59e0b,#d97706,#e5e7eb)", marginBottom: 8 }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 11, fontWeight: 900, color: "#d97706" }}>Novexa ERP</div>
+            <div style={{ fontSize: 9, color: "#9ca3af" }}>Smart Business Management — novexa.app</div>
+          </div>
+          <div style={{ textAlign: "center", fontSize: 9, color: "#9ca3af" }}>
+            <div>This form was generated by Novexa ERP</div>
+            <div>Print · Fill · Sign · File</div>
+          </div>
+          <div style={{ textAlign: "right", fontSize: 9, color: "#9ca3af" }}>
+            <div>Generated: {generatedOn}</div>
+            <div>Page {pageNum} of {totalPages} · © Novexa</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Table header row
+  function TableHead() {
+    return (
+      <tr style={{ background: "#d97706", color: "#fff" }}>
+        <th style={{ padding: "7px 8px", fontSize: 9, fontWeight: 700, textTransform: "uppercase",
+          letterSpacing: "0.04em", textAlign: "center", width: 22 }}>#</th>
+        {cols.map((h, i) => (
+          <th key={h} style={{ padding: "7px 8px", fontSize: 9, fontWeight: 700, textTransform: "uppercase",
+            letterSpacing: "0.04em", textAlign: i === 0 ? "left" : "right" }}>{h}</th>
+        ))}
+      </tr>
+    );
+  }
+
+  // Blank item rows
+  function ItemRows({ from, count, shade }) {
+    return Array.from({ length: count }).map((_, i) => (
+      <tr key={i} style={{ background: (from + i) % 2 === 0 ? "#fafafa" : "#fff", borderBottom: "1px solid #e5e7eb" }}>
+        <td style={{ padding: "10px 8px", textAlign: "center", fontSize: 11, color: "#d1d5db", fontWeight: 700 }}>{from + i + 1}</td>
+        {cols.map((_, ci) => (
+          <td key={ci} style={{ padding: "10px 8px", borderLeft: "1px solid #e5e7eb" }} />
+        ))}
+      </tr>
+    ));
+  }
+
+  // Page subtotal row (on every page)
+  function PageSubtotal() {
+    return (
+      <tr style={{ background: "#fafafa", borderTop: "2px solid #e5e7eb" }}>
+        <td colSpan={cols.length} style={{ padding: "7px 8px", textAlign: "right",
+          fontSize: 9, fontWeight: 700, color: "#6b7280", textTransform: "uppercase",
+          letterSpacing: "0.05em", borderLeft: "1px solid #e5e7eb" }}>
+          Page Subtotal
+        </td>
+        <td style={{ padding: "7px 8px", borderLeft: "1.5px solid #d97706", width: 110 }} />
+      </tr>
+    );
+  }
+
+  // Build pages array
+  const pages = [];
+  for (let p = 0; p < totalPages; p++) {
+    pages.push(p + 1);
+  }
+
+  const pageStyle = {
+    width: 794, height: 1123, background: "#fff", color: "#111",
+    fontFamily: "'Segoe UI', Arial, sans-serif", fontSize: 13,
+    padding: "0 52px 0 52px", boxSizing: "border-box",
+    display: "flex", flexDirection: "column",
+    overflow: "hidden",
+    position: "relative",
+  };
+
+  // Gradient border wrapper — screen only, stripped on print
+  const pageBorderStyle = {
+    background: "linear-gradient(135deg, #f59e0b, #6366f1, #8b5cf6, #f59e0b)",
+    padding: "3px",
+    borderRadius: 6,
+    marginBottom: 12,
+  };
+
+  return (
+    <div>
+      {pages.map(pageNum => {
+        const isFirst = pageNum === 1;
+        const isLast  = pageNum === totalPages;
+        const isMid   = !isFirst && !isLast;
+        const rowCount = isFirst ? rowsP1 : isLast ? rowsLast : rowsMid;
+        const rowStart = isFirst ? 0
+          : rowsP1 + (pageNum - 2) * rowsMid;
+
+        return (
+          <div key={pageNum} style={pageBorderStyle}>
+            <div style={{
+              ...pageStyle,
+              pageBreakAfter: isLast ? "avoid" : "always",
+              breakAfter: isLast ? "avoid" : "page",
+            }}>
+            <PageHeader pageNum={pageNum} />
+
+            {/* ── First page only: meta + supplier section ── */}
+            {isFirst && (
+              <>
+                {/* Order meta */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 14 }}>
+                  {[["ORDER DATE","DD / MM / YYYY"],["ORDER REF #",""],["DELIVERY DATE","DD / MM / YYYY"]].map(([lbl, ph]) => (
+                    <div key={lbl}>
+                      <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", color: "#9ca3af",
+                        letterSpacing: "0.06em", marginBottom: 3 }}>{lbl}</div>
+                      <div style={{ borderBottom: "1.5px solid #d1d5db", height: 26, display: "flex",
+                        alignItems: "flex-end", paddingBottom: 3, fontSize: 11, color: "#d1d5db" }}>{ph}</div>
+                    </div>
+                  ))}
+                </div>
+                {/* Supplier + Notes */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14,
+                  padding: "12px 16px", background: "#fafafa", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+                  <div>
+                    <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#d97706",
+                      letterSpacing: "0.07em", marginBottom: 8 }}>SUPPLIER / PARTY DETAILS</div>
+                    {["Name","Shop / Company","Phone","Email","Address"].map(lbl => (
+                      <div key={lbl} style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 6 }}>
+                        <span style={{ fontSize: 10, color: "#6b7280", minWidth: 80, flexShrink: 0 }}>{lbl}:</span>
+                        <div style={{ flex: 1, borderBottom: "1.5px solid #d1d5db", height: 20 }} />
+                      </div>
+                    ))}
+                  </div>
+                  <div>
+                    <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#6b7280",
+                      letterSpacing: "0.07em", marginBottom: 8 }}>NOTES / SPECIAL INSTRUCTIONS</div>
+                    {[1,2,3,4,5,6].map(i => (
+                      <div key={i} style={{ borderBottom: "1px solid #e5e7eb", height: 20, marginBottom: 4 }} />
+                    ))}
+                  </div>
+                </div>
+              </>
+            )}
+
+            {/* ── Items table (all pages) ── */}
+            <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 0, flex: isLast ? undefined : 1 }}>
+              <thead><TableHead /></thead>
+              <tbody>
+                <ItemRows from={rowStart} count={rowCount} />
+                <PageSubtotal />
+              </tbody>
+            </table>
+
+            {/* ── Last page only: grand total + payment + signatures ── */}
+            {isLast && (
+              <>
+                {/* Grand total rows */}
+                <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 14 }}>
+                  <tbody>
+                    {[["SUBTOTAL",""],["DISCOUNT",""],["GRAND TOTAL","grand"]].map(([lbl, type]) => (
+                      <tr key={lbl} style={{ background: type === "grand" ? "#fffbeb" : "#fff",
+                        borderBottom: "1px solid #e5e7eb" }}>
+                        <td colSpan={cols.length} style={{ padding: "8px 8px", textAlign: "right",
+                          fontSize: type === "grand" ? 12 : 10, fontWeight: type === "grand" ? 900 : 600,
+                          color: type === "grand" ? "#d97706" : "#374151",
+                          borderLeft: "1px solid " + (type === "grand" ? "#d97706" : "#e5e7eb") }}>
+                          {lbl}
+                        </td>
+                        <td style={{ padding: "8px 8px", width: 110,
+                          borderLeft: "1.5px solid " + (type === "grand" ? "#d97706" : "#d1d5db"),
+                          borderBottom: type === "grand" ? "2px solid #d97706" : undefined }} />
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+
+                {/* Payment + Terms */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
+                  <div style={{ padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8 }}>
+                    <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#15803d",
+                      letterSpacing: "0.07em", marginBottom: 8 }}>PAYMENT DETAILS</div>
+                    {["Payment Method","Amount Paid","Remaining Balance","Payment Date"].map(lbl => (
+                      <div key={lbl} style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 6 }}>
+                        <span style={{ fontSize: 10, color: "#6b7280", minWidth: 110, flexShrink: 0 }}>{lbl}:</span>
+                        <div style={{ flex: 1, borderBottom: "1.5px solid #bbf7d0", height: 20 }} />
+                      </div>
+                    ))}
+                  </div>
+                  <div style={{ padding: "10px 14px", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+                    <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#6b7280",
+                      letterSpacing: "0.07em", marginBottom: 8 }}>TERMS & CONDITIONS</div>
+                    {[1,2,3,4].map(i => (
+                      <div key={i} style={{ borderBottom: "1px solid #e5e7eb", height: 22, marginBottom: 4 }} />
+                    ))}
+                  </div>
+                </div>
+
+                {/* Signatures */}
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20, marginBottom: 16 }}>
+                  {["Ordered By","Authorized By","Received By"].map(lbl => (
+                    <div key={lbl} style={{ textAlign: "center" }}>
+                      <div style={{ borderBottom: "1.5px solid #374151", height: 40, marginBottom: 6 }} />
+                      <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 600 }}>{lbl}</div>
+                      <div style={{ fontSize: 9, color: "#d1d5db", marginTop: 2 }}>Signature / Name / Date</div>
+                    </div>
+                  ))}
+                </div>
+              </>
+            )}
+
+            <PageFooter pageNum={pageNum} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Order Form View (full dashboard page — no modal) ─────────────────────────
+export function OrderFormView({ userDoc = {} }) {
+  const printRef     = useRef(null);
+  const containerRef = useRef(null);
+  const [formType, setFormType] = useState("plain");
+  const [pages,    setPages]    = useState(5);
+  const [loading,  setLoading]  = useState(false);
+  const [scale,    setScale]    = useState(1);
+
+  const PAGE_OPTIONS = [5, 10, 25, 50];
+
+  // Scale preview to fit container
+  useEffect(() => {
+    function updateScale() {
+      if (!containerRef.current) return;
+      const available = containerRef.current.clientWidth - 4; // minus border
+      setScale(Math.min(1, available / 794));
+    }
+    updateScale();
+    const ro = new ResizeObserver(updateScale);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  async function downloadPDF() {
+    if (!printRef.current || loading) return;
+    setLoading(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const jsPDF       = (await import("jspdf")).default;
+      const pageWrappers = printRef.current.children;
+      const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+      const pdfW = pdf.internal.pageSize.getWidth();
+      const pdfH = pdf.internal.pageSize.getHeight();
+      for (let i = 0; i < pageWrappers.length; i++) {
+        const pageEl = pageWrappers[i].firstElementChild || pageWrappers[i];
+        const canvas = await html2canvas(pageEl, {
+          scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false, width: 794,
+        });
+        const imgData = canvas.toDataURL("image/jpeg", 0.95);
+        const imgH = (canvas.height / canvas.width) * pdfW;
+        if (i > 0) pdf.addPage();
+        pdf.addImage(imgData, "JPEG", 0, 0, pdfW, Math.min(imgH, pdfH));
+      }
+      pdf.save(`Order-Form-${pages}pg-${new Date().toISOString().slice(0,10)}.pdf`);
+    } catch (err) { alert("PDF failed: " + err.message); }
+    setLoading(false);
+  }
+
+  function printForm() {
+    if (!printRef.current) return;
+    const rawHtml = printRef.current.innerHTML;
+    const w = window.open("", "_blank", "width=900,height=900");
+    w.document.write(`<!DOCTYPE html>
+<html><head><title>Order Form</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  @page { size: A4 portrait; margin: 0; }
+  .pg-wrap { display: contents !important; }
+  .pg-page {
+    position: relative !important;
+    width: 794px !important; height: 1123px !important;
+    max-height: 1123px !important; overflow: hidden !important;
+    page-break-after: always !important; break-after: page !important;
+  }
+  .pg-page:last-of-type { page-break-after: avoid !important; break-after: avoid !important; }
+</style>
+</head><body>${rawHtml}</body></html>`);
+    const doc = w.document;
+    doc.close();
+    Array.from(doc.body.children).forEach(wrapper => {
+      wrapper.classList.add("pg-wrap");
+      wrapper.style.cssText = "display:contents;padding:0;margin:0;background:none;border-radius:0;";
+      const page = wrapper.firstElementChild;
+      if (page) page.classList.add("pg-page");
+    });
+    w.focus();
+    setTimeout(() => { w.print(); w.close(); }, 800);
+  }
+
+  return (
+    <div className="flex flex-col gap-5 w-full">
+      {/* ── Header ── */}
+      <div className="relative overflow-hidden rounded-xl p-6"
+        style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(245,158,11,0.2)" }}>
+        <div className="absolute inset-0 bg-gradient-to-r from-amber-500/8 via-orange-500/5 to-purple-600/8" />
+        <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-amber-400 via-orange-500 to-purple-500" />
+        <div className="relative z-10 flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div>
+            <h2 className="text-2xl font-bold mb-1" style={{
+              background: "linear-gradient(135deg,#f59e0b,#d97706,#a78bfa)",
+              WebkitBackgroundClip: "text", WebkitTextFillColor: "transparent"
+            }}>📋 Order Form</h2>
+            <p className="text-gray-400 text-xs">Generate blank order forms to print, fill by hand, sign &amp; file</p>
+          </div>
+          {/* Controls */}
+          <div className="flex flex-wrap items-center gap-3">
+            {/* Form type */}
+            <div className="flex gap-1 p-1 rounded-xl" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
+              {[["plain","📋 Standard"],["variant","📦 Variants"]].map(([v, lbl]) => (
+                <button key={v} onClick={() => setFormType(v)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                  style={{
+                    background: formType === v ? "linear-gradient(135deg,#f59e0b,#d97706)" : "transparent",
+                    color: formType === v ? "#000" : "#9ca3af"
+                  }}>{lbl}</button>
+              ))}
+            </div>
+            {/* Pages */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-500 text-xs">Pages:</span>
+              <div className="flex gap-1">
+                {PAGE_OPTIONS.map(p => (
+                  <button key={p} onClick={() => setPages(p)}
+                    className="w-8 h-7 rounded-lg text-xs font-bold transition-all"
+                    style={{
+                      background: pages === p ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "rgba(255,255,255,0.05)",
+                      color: pages === p ? "#fff" : "#9ca3af",
+                      border: `1px solid ${pages === p ? "rgba(99,102,241,0.5)" : "rgba(255,255,255,0.08)"}`
+                    }}>{p}</button>
+                ))}
+                <input type="number" min="1" max="100" value={pages}
+                  onChange={e => setPages(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
+                  className="w-14 h-7 rounded-lg text-xs text-center text-white outline-none"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }} />
+              </div>
+            </div>
+            {/* Action buttons */}
+            <button onClick={printForm}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold hover:scale-105 transition-all"
+              style={{ background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }}>
+              🖨️ Print
+            </button>
+            <button onClick={downloadPDF} disabled={loading}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold hover:scale-105 transition-all"
+              style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#000", opacity: loading ? 0.7 : 1 }}>
+              {loading ? "⏳ Generating..." : "⬇️ Download PDF"}
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Info chips ── */}
+      <div className="flex flex-wrap gap-2">
+        {[
+          { icon: "📄", text: `${pages} pages` },
+          { icon: "✏️", text: "Fill by hand" },
+          { icon: "🖊️", text: "Sign & file" },
+          { icon: formType === "variant" ? "📦" : "📋", text: formType === "variant" ? "With Variants" : "Standard" },
+        ].map((chip, i) => (
+          <span key={i} className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium"
+            style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", color: "#d97706" }}>
+            {chip.icon} {chip.text}
+          </span>
+        ))}
+      </div>
+
+      {/* ── Form Preview ── */}
+      <div style={{ background: "linear-gradient(135deg,#f59e0b,#6366f1,#8b5cf6)", padding: "2px", borderRadius: 14 }}>
+        <div style={{ background: "#0d1117", borderRadius: 12, overflow: "hidden" }}>
+          <div ref={containerRef} style={{ width: "100%", overflow: "hidden" }}>
+            <div style={{
+              width: 794,
+              transformOrigin: "top left",
+              transform: `scale(${scale})`,
+              marginBottom: scale < 1 ? `${1123 * pages * (scale - 1)}px` : 0,
+            }}>
+              <div ref={printRef}>
+                <BlankOrderFormTemplate userDoc={userDoc} formType={formType} totalPages={pages} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <p className="text-center text-gray-600 text-xs pb-4">
+        {pages} page form · Print &amp; fill by hand · Sign &amp; file
+      </p>
+    </div>
+  );
+}
+
+// ── Order Form Modal ──────────────────────────────────────────────────────────
+export function OrderFormModal({ order, userDoc = {}, onClose }) {
+  const printRef      = useRef(null);
+  const containerRef  = useRef(null);
+  const innerRef      = useRef(null);
+  const [formType, setFormType] = useState("plain");
+  const [pages,    setPages]    = useState(5);
+  const [loading,  setLoading]  = useState(false);
+  const [scale,    setScale]    = useState(1);
+
+  const PAGE_OPTIONS = [5, 10, 25, 50];
+
+  // Scale the 794px-wide page to fit the container width
+  useEffect(() => {
+    function updateScale() {
+      if (!containerRef.current) return;
+      const available = containerRef.current.clientWidth;
+      const s = Math.min(1, available / 794);
+      setScale(s);
+    }
+    updateScale();
+    const ro = new ResizeObserver(updateScale);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
+
+  async function downloadPDF() {
+    if (!printRef.current || loading) return;
+    setLoading(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const jsPDF       = (await import("jspdf")).default;
+      // Render each page separately to handle multi-page correctly
+      // Each child is the gradient border wrapper; inner div (firstElementChild) is the actual page
+      const pageWrappers = printRef.current.children;
+      const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+      const pdfW = pdf.internal.pageSize.getWidth();
+      const pdfH = pdf.internal.pageSize.getHeight();
+      for (let i = 0; i < pageWrappers.length; i++) {
+        const pageEl = pageWrappers[i].firstElementChild || pageWrappers[i];
+        const canvas = await html2canvas(pageEl, {
+          scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false, width: 794,
+        });
+        const imgData = canvas.toDataURL("image/jpeg", 0.95);
+        const imgH = (canvas.height / canvas.width) * pdfW;
+        if (i > 0) pdf.addPage();
+        pdf.addImage(imgData, "JPEG", 0, 0, pdfW, Math.min(imgH, pdfH));
+      }
+      pdf.save(`Order-Form-${pages}pg-${new Date().toISOString().slice(0,10)}.pdf`);
+    } catch (err) { alert("PDF failed: " + err.message); }
+    setLoading(false);
+  }
+
+  function printForm() {
+    if (!printRef.current) return;
+
+    // Use full innerHTML but fix it with targeted CSS:
+    // 1. Gradient wrappers → display:contents (transparent in layout)
+    // 2. Each white A4 page div → exact height, overflow hidden
+    // 3. Last page → no break-after
+    const rawHtml = printRef.current.innerHTML;
+
+    const w = window.open("", "_blank", "width=900,height=900");
+    w.document.write(`<!DOCTYPE html>
+<html><head><title>Order Form</title>
+<style>
+  *, *::before, *::after { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; background: #fff; }
+  @page { size: A4 portrait; margin: 0; }
+
+  /* ── Gradient border wrappers: make invisible to layout ── */
+  .pg-wrap {
+    display: contents !important;
+  }
+
+  /* ── Each A4 page div ── */
+  .pg-page {
+    position: relative !important;
+    width: 794px !important;
+    height: 1123px !important;
+    max-height: 1123px !important;
+    overflow: hidden !important;
+    page-break-after: always !important;
+    break-after: page !important;
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Last page: no extra blank page */
+  .pg-page:last-of-type {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+</style>
+</head><body>${rawHtml}</body></html>`);
+
+    // Add classes after writing so DOM is ready
+    const doc = w.document;
+    doc.close();
+
+    // Tag gradient wrappers and inner pages with classes
+    const allChildren = Array.from(doc.body.children);
+    allChildren.forEach(wrapper => {
+      wrapper.classList.add("pg-wrap");
+      // Also force style to override inline gradient
+      wrapper.style.cssText = "display:contents;padding:0;margin:0;background:none;border-radius:0;";
+      const page = wrapper.firstElementChild;
+      if (page) page.classList.add("pg-page");
+    });
+
+    w.focus();
+    setTimeout(() => { w.print(); w.close(); }, 800);
+  }
+
+  return (
+    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto"
+      style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)" }}>
+      <div className="w-full my-4" style={{ maxWidth: 820 }}>
+        {/* Toolbar */}
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4 px-1">
+          <div className="flex flex-wrap items-center gap-3">
+            <h3 className="text-white font-bold text-base">📋 Order Form</h3>
+            {/* Form type */}
+            <div className="flex gap-1 p-1 rounded-xl" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}>
+              {[["plain","📋 Standard"],["variant","📦 Variants"]].map(([v, lbl]) => (
+                <button key={v} onClick={() => setFormType(v)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                  style={{ background: formType === v ? "linear-gradient(135deg,#f59e0b,#d97706)" : "transparent",
+                    color: formType === v ? "#000" : "#9ca3af" }}>{lbl}</button>
+              ))}
+            </div>
+            {/* Pages selector */}
+            <div className="flex items-center gap-1.5">
+              <span className="text-gray-500 text-xs">Pages:</span>
+              <div className="flex gap-1">
+                {PAGE_OPTIONS.map(p => (
+                  <button key={p} onClick={() => setPages(p)}
+                    className="w-8 h-7 rounded-lg text-xs font-bold transition-all"
+                    style={{ background: pages === p ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "rgba(255,255,255,0.06)",
+                      color: pages === p ? "#fff" : "#9ca3af",
+                      border: `1px solid ${pages === p ? "rgba(99,102,241,0.5)" : "rgba(255,255,255,0.08)"}` }}>
+                    {p}
+                  </button>
+                ))}
+                {/* Custom input */}
+                <input type="number" min="1" max="100" value={pages}
+                  onChange={e => setPages(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
+                  className="w-14 h-7 rounded-lg text-xs text-center text-white outline-none"
+                  style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }} />
+              </div>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button onClick={printForm}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold hover:scale-105 transition-all"
+              style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }}>
+              🖨️ Print
+            </button>
+            <button onClick={downloadPDF} disabled={loading}
+              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold hover:scale-105 transition-all"
+              style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#000", opacity: loading ? 0.7 : 1 }}>
+              {loading ? "⏳ Generating..." : "⬇️ Download PDF"}
+            </button>
+            <button onClick={onClose}
+              className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 text-lg">✕</button>
+          </div>
+        </div>
+
+        {/* Form Preview */}
+        <div style={{
+          background: "linear-gradient(135deg,#f59e0b,#6366f1,#8b5cf6)",
+          padding: "2px", borderRadius: 14, overflow: "hidden"
+        }}>
+          <div style={{ background: "#111", borderRadius: 12, overflow: "hidden" }}>
+            {/* Measure available width, then scale 794px pages to fit */}
+            <div ref={containerRef} style={{ width: "100%", overflow: "hidden" }}>
+              <div style={{
+                width: 794,
+                transformOrigin: "top left",
+                transform: `scale(${scale})`,
+                // Collapse the extra whitespace caused by scaling
+                marginBottom: scale < 1 ? `${(1123 * (scale - 1))}px` : 0,
+              }}>
+                <div ref={printRef}>
+                  <BlankOrderFormTemplate userDoc={userDoc} formType={formType} totalPages={pages} />
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <p className="text-center text-gray-600 text-xs mt-3">
+          {pages} page form · Print &amp; fill by hand · Sign &amp; file
+        </p>
+      </div>
+    </div>
+  );
+}
+
 // ── Supplier History PDF Template ─────────────────────────────────────────────
-function SupplierHistoryTemplate({ supplier, orders, payments, userDoc }) {
+// NOTE: This function is defined later in the file at line 1801
+
+// ── Supplier History PDF Template ─────────────────────────────────────────────
+function SupplierHistoryTemplate({ supplier, orders, payments, receipts, returns, userDoc = {} }) {
   const timeline = [];
   orders.forEach(o => {
     const date = o.createdAt?.toDate ? o.createdAt.toDate() : new Date(o.createdAt || 0);
@@ -384,6 +1903,14 @@ function SupplierHistoryTemplate({ supplier, orders, payments, userDoc }) {
   payments.forEach(p => {
     const date = p.createdAt?.toDate ? p.createdAt.toDate() : new Date(p.createdAt || 0);
     timeline.push({ type: "payment", date, data: p });
+  });
+  (receipts || []).forEach(r => {
+    const date = r.createdAt?.toDate ? r.createdAt.toDate() : new Date(r.createdAt || 0);
+    timeline.push({ type: "receipt", date, data: r });
+  });
+  (returns || []).forEach(r => {
+    const date = r.createdAt?.toDate ? r.createdAt.toDate() : new Date(r.createdAt || 0);
+    timeline.push({ type: "return", date, data: r });
   });
   timeline.sort((a, b) => b.date - a.date);
 
@@ -454,60 +1981,153 @@ function SupplierHistoryTemplate({ supplier, orders, payments, userDoc }) {
           </div>
         ))}
       </div>
-      {/* Timeline Table */}
-      <table style={{ width: "100%", borderCollapse: "collapse" }}>
+      {/* Timeline Table — same ledger flow as CustomerHistoryPDF */}
+      <table style={{ width: "100%", borderCollapse: "collapse", tableLayout: "fixed" }}>
+        <colgroup>
+          <col style={{ width: "24px" }} />
+          <col style={{ width: "110px" }} />
+          <col style={{ width: "72px" }} />
+          <col style={{ width: "auto" }} />
+          <col style={{ width: "80px" }} />
+          <col style={{ width: "70px" }} />
+          <col style={{ width: "78px" }} />
+          <col style={{ width: "68px" }} />
+          <col style={{ width: "78px" }} />
+          <col style={{ width: "62px" }} />
+        </colgroup>
         <thead>
           <tr style={{ background: "#d97706", color: "#fff" }}>
-            {["#", "Date & Time", "Type", "Reference / Items", "Total", "Paid", "Balance", "Status"].map((h, i) => (
-              <th key={h} style={{ padding: "9px 7px", textAlign: i >= 4 ? "right" : i === 0 ? "center" : "left",
-                fontSize: 9, fontWeight: 700, letterSpacing: "0.04em", textTransform: "uppercase", whiteSpace: "nowrap" }}>{h}</th>
+            {["#", "Date & Time", "Type", "Reference / Items", "Amount", "Paid", "Purchased", "Return", "Balance", "Status"].map((h, i) => (
+              <th key={h} style={{
+                padding: "9px 7px",
+                textAlign: i === 0 ? "center" : i >= 4 ? "right" : "left",
+                fontSize: 9, fontWeight: 700, letterSpacing: "0.04em",
+                textTransform: "uppercase", whiteSpace: "nowrap",
+              }}>{h}</th>
             ))}
           </tr>
         </thead>
         <tbody>
           {timeline.map((item, idx) => {
             const isOrder   = item.type === "order";
+            const isReceipt = item.type === "receipt";
+            const isReturn  = item.type === "return";
+            const isPayment = item.type === "payment";
             const d         = item.data;
-            const ref       = isOrder ? `PO-${(d.id || "").slice(-4).toUpperCase()}` : `PO-${(d.orderId || "").slice(-4).toUpperCase()}`;
-            const total     = isOrder ? Number(d.totalAmount) || 0 : null;
-            const paid      = isOrder ? Number(d.paidAmount) || 0 : Number(d.amount) || 0;
-            const balance   = isOrder ? Number(d.balance) || 0 : Number(d.balanceAfter) || 0;
-            const status    = isOrder ? (Number(d.balance) <= 0 ? "Paid" : Number(d.paidAmount) > 0 ? "Partial" : "Pending") : "Payment";
-            const sBg    = { Paid: "#dcfce7", Partial: "#fef3c7", Pending: "#fee2e2", Payment: "#eff6ff" }[status];
-            const sColor = { Paid: "#16a34a", Partial: "#d97706", Pending: "#dc2626", Payment: "#1d4ed8" }[status];
-            const typeLabel = isOrder ? "🛒 Order" : "💸 Payment";
-            const typeBg    = isOrder ? "#fffbeb" : "#f0fdf4";
-            const typeColor = isOrder ? "#b45309" : "#15803d";
-            const typeBdr   = isOrder ? "#fde68a" : "#86efac";
-            const itemsStr  = isOrder && d.items?.length > 0
+
+            const ref = isOrder
+              ? `PO-${(d.id || "").slice(-4).toUpperCase()}`
+              : `PO-${(d.orderId || "").slice(-4).toUpperCase()}`;
+
+            const itemsStr = isOrder && d.items?.length > 0
               ? d.items.map(it => `${it.description} ×${it.qty}`).join(", ")
-              : (!isOrder && d.method ? `via ${d.method}` : "");
+              : isReceipt && d.items?.length > 0
+                ? d.items.map(it => `${it.description} ×${it.qty}`).join(", ")
+                : isReturn && d.items?.length > 0
+                  ? d.items.map(it => `${it.description} ×${it.qty}`).join(", ")
+                  : isPayment && d.method ? `via ${d.method}` : "";
+
+            // AMOUNT — for order rows: always compute from the frozen items array (ignores any
+            // mutated totalAmount/initialAmount fields from old data).
+            const orderOriginalAmount = (() => {
+              if (!isOrder) return null;
+              if (!d.items?.length) return Number(d.initialAmount ?? d.totalAmount) || 0;
+              const sub  = d.items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+              const disc = d.discountType === "percent"
+                ? sub * (Number(d.discountValue) || 0) / 100
+                : (Number(d.discountValue) || 0);
+              return Math.max(sub - disc, 0);
+            })();
+
+            const amountVal = isOrder   ? orderOriginalAmount
+                            : isReceipt ? (Number(d.balanceBefore) || 0)
+                            : isReturn  ? (Number(d.balanceBefore) || 0)
+                            : (d.balanceBefore != null ? Number(d.balanceBefore) : null);
+
+            // PAID column
+            const paidVal = isOrder   ? (d.initialPaidAmount != null ? Number(d.initialPaidAmount) : 0)
+                          : isPayment ? (Number(d.amount) || 0)
+                          : null;
+
+            // PURCHASED column (receipt only)
+            const purchasedVal = isReceipt ? (Number(d.receiptTotal) || 0) : null;
+
+            // RETURN column (return only, shown in Purchased cell with minus)
+            const returnVal = isReturn ? (Number(d.returnTotal) || 0) : null;
+
+            // BALANCE = closing balance after this event
+            // For order rows: use the frozen original amount minus initial payment
+            const initPaid = d.initialPaidAmount != null ? Number(d.initialPaidAmount) : 0;
+            const balVal = isOrder   ? Math.max(0, (orderOriginalAmount ?? 0) - initPaid)
+                         : isReceipt ? (Number(d.balanceAfter) || 0)
+                         : isReturn  ? (Number(d.balanceAfter) || 0)
+                         : isPayment ? (Number(d.balanceAfter) || 0)
+                         : null;
+
+            // STATUS
+            const orderStatus = isOrder
+              ? (balVal <= 0 ? "Paid" : initPaid > 0 ? "Partial" : "Pending")
+              : null;
+            const rowStatus = isOrder   ? orderStatus
+                            : isReceipt ? "Purchased"
+                            : isReturn  ? "Return"
+                            : "Payment";
+
+            const sBg    = { Paid: "#dcfce7", Partial: "#fef3c7", Pending: "#fee2e2", Payment: "#eff6ff", Purchased: "#f0fdf4", Return: "#fef2f2" }[rowStatus] || "#f3f4f6";
+            const sColor = { Paid: "#16a34a", Partial: "#d97706", Pending: "#dc2626", Payment: "#1d4ed8", Purchased: "#15803d", Return: "#dc2626" }[rowStatus] || "#374151";
+
+            const typeLabel = isOrder ? "🛒 Order" : isReceipt ? "Purchased" : isReturn ? "↩ Return" : "Payment";
+            const typeBg    = isOrder ? "#fffbeb" : isReceipt ? "#f0fdf4" : isReturn ? "#fef2f2" : "#eff6ff";
+            const typeColor = isOrder ? "#b45309" : isReceipt ? "#15803d" : isReturn ? "#dc2626" : "#1d4ed8";
+            const typeBdr   = isOrder ? "#fde68a" : isReceipt ? "#86efac" : isReturn ? "#fca5a5" : "#bfdbfe";
+
             return (
               <tr key={idx} style={{ background: idx % 2 === 0 ? "#f9fafb" : "#fff" }}>
-                <td style={{ padding: "8px 8px", textAlign: "center", color: "#9ca3af", fontSize: 11 }}>{idx + 1}</td>
-                <td style={{ padding: "8px 8px", fontSize: 10, color: "#374151", whiteSpace: "nowrap" }}>{fmtDateTime(item.date)}</td>
-                <td style={{ padding: "8px 8px" }}>
+                <td style={{ padding: "8px 7px", textAlign: "center", color: "#9ca3af", fontSize: 11, verticalAlign: "middle" }}>{idx + 1}</td>
+                <td style={{ padding: "8px 7px", fontSize: 10, color: "#374151", whiteSpace: "nowrap", verticalAlign: "middle" }}>{fmtDateTime(item.date)}</td>
+                <td style={{ padding: "8px 7px", verticalAlign: "middle" }}>
                   <span style={{ display: "inline-block", padding: "2px 7px", borderRadius: 12, fontSize: 9, fontWeight: 700,
-                    background: typeBg, color: typeColor, border: `1px solid ${typeBdr}` }}>{typeLabel}</span>
+                    background: typeBg, color: typeColor, border: `1px solid ${typeBdr}`, whiteSpace: "nowrap" }}>{typeLabel}</span>
                 </td>
-                <td style={{ padding: "8px 8px", fontSize: 10, fontWeight: 600, color: "#111" }}>
-                  {ref}
-                  {itemsStr && <div style={{ fontSize: 9, color: "#9ca3af", fontWeight: 400, marginTop: 1 }}>{itemsStr}</div>}
+                <td style={{ padding: "8px 7px", fontSize: 10, fontWeight: 600, color: "#111", verticalAlign: "middle", overflow: "hidden" }}>
+                  <div style={{ whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{ref}</div>
+                  {itemsStr && <div style={{ fontSize: 9, color: "#9ca3af", fontWeight: 400, marginTop: 1, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>{itemsStr}</div>}
                 </td>
-                <td style={{ padding: "8px 7px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "#111", whiteSpace: "nowrap" }}>
-                  {total != null ? formatRs(total) : "—"}
+                {/* AMOUNT — opening balance before this event */}
+                <td style={{ padding: "8px 7px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "#111", whiteSpace: "nowrap", verticalAlign: "middle" }}>
+                  {amountVal != null ? formatRs(amountVal) : <span style={{ color: "#9ca3af" }}>—</span>}
                 </td>
-                <td style={{ padding: "8px 7px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "#16a34a", whiteSpace: "nowrap" }}>
-                  {paid > 0 ? formatRs(paid) : "—"}
+                {/* PAID */}
+                <td style={{ padding: "8px 7px", textAlign: "right", fontSize: 11, fontWeight: 600, whiteSpace: "nowrap", verticalAlign: "middle" }}>
+                  {paidVal != null && paidVal > 0
+                    ? <span style={{ color: "#16a34a" }}>{formatRs(paidVal)}</span>
+                    : <span style={{ color: "#9ca3af" }}>—</span>}
                 </td>
-                <td style={{ padding: "8px 7px", textAlign: "right", fontSize: 11, fontWeight: 700,
-                  color: balance > 0 ? "#dc2626" : "#16a34a", whiteSpace: "nowrap" }}>
-                  {balance > 0 ? formatRs(balance) : <span style={{ color: "#16a34a" }}>Cleared ✓</span>}
+                {/* PURCHASED — green, only for receipt rows */}
+                <td style={{ padding: "8px 7px", textAlign: "right", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", verticalAlign: "middle" }}>
+                  {purchasedVal != null && purchasedVal > 0
+                    ? <span style={{ color: "#15803d" }}>{formatRs(purchasedVal)}</span>
+                    : <span style={{ color: "#9ca3af" }}>—</span>}
                 </td>
-                <td style={{ padding: "8px 7px", textAlign: "right" }}>
+                {/* RETURN — red, only for return rows */}
+                <td style={{ padding: "8px 7px", textAlign: "right", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", verticalAlign: "middle" }}>
+                  {returnVal != null && returnVal > 0
+                    ? <span style={{ color: "#dc2626" }}>- {formatRs(returnVal)}</span>
+                    : <span style={{ color: "#9ca3af" }}>—</span>}
+                </td>
+                {/* BALANCE — closing balance after this event */}
+                <td style={{ padding: "8px 7px", textAlign: "right", fontSize: 11, fontWeight: 700, whiteSpace: "nowrap", verticalAlign: "middle" }}>
+                  {balVal != null
+                    ? (balVal > 0
+                        ? <span style={{ color: "#dc2626" }}>{formatRs(balVal)}</span>
+                        : <span style={{ color: "#16a34a" }}>Cleared ✓</span>)
+                    : <span style={{ color: "#9ca3af" }}>—</span>}
+                </td>
+                {/* STATUS */}
+                <td style={{ padding: "8px 7px", textAlign: "right", verticalAlign: "middle" }}>
                   <span style={{ display: "inline-block", padding: "2px 8px", borderRadius: 12,
-                    fontSize: 10, fontWeight: 700, background: sBg, color: sColor }}>
-                    {status}
+                    fontSize: 9, fontWeight: 700, background: sBg, color: sColor, whiteSpace: "nowrap" }}>
+                    {rowStatus}
                   </span>
                 </td>
               </tr>
@@ -532,7 +2152,7 @@ function SupplierHistoryTemplate({ supplier, orders, payments, userDoc }) {
 }
 
 // ── Supplier History Modal ────────────────────────────────────────────────────
-function SupplierHistoryModal({ supplier, orders, payments, userDoc, onClose }) {
+function SupplierHistoryModal({ supplier, orders, payments, receipts, returns, userDoc = {}, onClose }) {
   const printRef = useRef(null);
   const [loading, setLoading] = useState(false);
 
@@ -617,7 +2237,7 @@ function SupplierHistoryModal({ supplier, orders, payments, userDoc, onClose }) 
         </div>
         <div className="overflow-hidden rounded-xl shadow-2xl" style={{ border: "1px solid rgba(245,158,11,0.3)" }}>
           <div ref={printRef}>
-            <SupplierHistoryTemplate supplier={supplier} orders={orders} payments={payments} userDoc={userDoc} />
+            <SupplierHistoryTemplate supplier={supplier} orders={orders} payments={payments} receipts={receipts || []} returns={returns || []} userDoc={userDoc} />
           </div>
         </div>
         <p className="text-center text-gray-600 text-xs mt-3">Scroll to see full report · Click &quot;Download PDF&quot; to save</p>
@@ -627,7 +2247,7 @@ function SupplierHistoryModal({ supplier, orders, payments, userDoc, onClose }) 
 }
 
 // ── Main SupplierDetail Export ────────────────────────────────────────────────
-export default function SupplierDetail({ supplier, uid, userDoc, onBack, onEdit, onDelete }) {
+export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, onEdit, onDelete }) {
   const [orders, setOrders]           = useState([]);
   const [loading, setLoading]         = useState(true);
   const [showOrderModal, setShowOrderModal] = useState(false);
@@ -636,8 +2256,15 @@ export default function SupplierDetail({ supplier, uid, userDoc, onBack, onEdit,
   const [deleteOrderId, setDeleteOrderId] = useState(null);
   const [payOrder, setPayOrder]       = useState(null);  // order to pay
   const [savingPay, setSavingPay]     = useState(false);
-  const [showHistory, setShowHistory] = useState(false);
+  const [returnOrder, setReturnOrder] = useState(null); // order to return goods
+  const [savingReturn, setSavingReturn] = useState(false);
+  const [showHistory, setShowHistory] = useState(false);   // true = full supplier history
+  const [historyOrder, setHistoryOrder] = useState(null);  // specific order history
+  const [viewOrder, setViewOrder]       = useState(null);  // order to view as PDF
+  const [orderFormOrder, setOrderFormOrder] = useState(null); // order to show blank form
   const [supplierPayments, setSupplierPayments] = useState([]);
+  const [supplierReceipts, setSupplierReceipts] = useState([]);
+  const [supplierReturns, setSupplierReturns]   = useState([]);
   const [alert, setAlert]             = useState({ show: false, type: "", title: "", message: "" });
 
   // real-time orders listener
@@ -655,18 +2282,54 @@ export default function SupplierDetail({ supplier, uid, userDoc, onBack, onEdit,
   useEffect(() => {
     if (!uid || !supplier.id) return;
     const unsub = onSnapshot(
-      query(collection(db, "users", uid, "supplierPayments"), orderBy("createdAt", "desc")),
-      snap => {
-        const all = snap.docs.map(d => ({ id: d.id, ...d.data() }));
-        setSupplierPayments(all.filter(p => p.supplierId === supplier.id));
-      },
+      query(collection(db, "users", uid, "suppliers", supplier.id, "payments")),
+      snap => { setSupplierPayments(snap.docs.map(d => ({ id: d.id, ...d.data() }))); },
       () => {}
     );
     return () => unsub();
   }, [uid, supplier.id]);
 
-  // stats
-  const totalOrdered  = orders.reduce((s, o) => s + (Number(o.totalAmount) || 0), 0);
+  // real-time supplier receipts (new items added via order edit)
+  useEffect(() => {
+    if (!uid || !supplier.id) return;
+    const unsub = onSnapshot(
+      query(collection(db, "users", uid, "suppliers", supplier.id, "receipts")),
+      snap => { setSupplierReceipts(snap.docs.map(d => ({ id: d.id, ...d.data() }))); },
+      () => {}
+    );
+    return () => unsub();
+  }, [uid, supplier.id]);
+
+  // real-time supplier returns
+  useEffect(() => {
+    if (!uid || !supplier.id) return;
+    const unsub = onSnapshot(
+      query(collection(db, "users", uid, "suppliers", supplier.id, "returns")),
+      snap => { setSupplierReturns(snap.docs.map(d => ({ id: d.id, ...d.data() }))); },
+      () => {}
+    );
+    return () => unsub();
+  }, [uid, supplier.id]);
+
+  // Compute the true original order amount from its items array + discount.
+  // This is always correct — items array is frozen at creation, never mutated.
+  // We never trust totalAmount or initialAmount fields which may be stale from old data.
+  function orderOriginalAmt(o) {
+    if (!o.items?.length) return 0;
+    const sub  = o.items.reduce((s, it) => s + itemEffectiveQty(it) * (Number(it.unitPrice) || 0), 0);
+    const disc = o.discountType === "percent"
+      ? sub * (Number(o.discountValue) || 0) / 100
+      : (Number(o.discountValue) || 0);
+    return Math.max(sub - disc, 0);
+  }
+
+  // stats — totalOrdered = original amounts (from items) + all receipts - all returns
+  const totalOrdered  = orders.reduce((s, o) => {
+    const orig     = orderOriginalAmt(o);
+    const receipts = supplierReceipts.filter(r => r.orderId === o.id).reduce((a, r) => a + (Number(r.receiptTotal) || 0), 0);
+    const returns  = supplierReturns.filter(r => r.orderId === o.id).reduce((a, r) => a + (Number(r.returnTotal) || 0), 0);
+    return s + orig + receipts - returns;
+  }, 0);
   const totalPaid     = orders.reduce((s, o) => s + (Number(o.paidAmount) || 0), 0);
   const totalBalance  = orders.reduce((s, o) => s + (Number(o.balance) || 0), 0);
   const paidCount     = orders.filter(o => Number(o.balance) <= 0).length;
@@ -676,48 +2339,103 @@ export default function SupplierDetail({ supplier, uid, userDoc, onBack, onEdit,
     if (savingOrder) return;
     setSavingOrder(true);
     try {
-      const { subtotal, discount, afterDiscount, paid, balance } = calcPOTotals(formData);
-      const payload = {
-        supplierId:    supplier.id,
-        supplierName:  supplier.name,
-        items:         formData.items,
-        discountType:  formData.discountType,
-        discountValue: Number(formData.discountValue) || 0,
-        subtotal,
-        totalAmount:   afterDiscount,
-        paidAmount:    paid,
-        balance,
-        status:        balance <= 0 ? "Paid" : paid > 0 ? "Partial" : "Pending",
-        orderDate:     formData.orderDate,
-        dueDate:       formData.dueDate || "",
-        note:          formData.note || "",
-      };
+      // Separate items: truly original order items | past receipt rows (locked, skip on save) | new rows to save
+      const originalItems = (formData.items || []).filter(it => !it.isNew && !it.isReceipt);
+      const newItems      = (formData.items || []).filter(it => it.isNew && it.description?.trim());
 
       if (editOrder) {
-        await updateDoc(doc(db, "users", uid, "suppliers", supplier.id, "orders", editOrder.id),
-          { ...payload, updatedAt: serverTimestamp() });
-        setAlert({ show: true, type: "success", title: "Order Updated! ✓", message: "Purchase order updated." });
+        // ── EDIT MODE ─────────────────────────────────────────────────────
+        // Order totals stay UNCHANGED — we only update dates/note on the order doc
+        // New items go into a separate supplierReceipts record
+        const cleanOriginalItems = originalItems.map(({ isNew, isReceipt, ...rest }) => rest);
+
+        await updateDoc(doc(db, "users", uid, "suppliers", supplier.id, "orders", editOrder.id), {
+          items:     cleanOriginalItems,   // original items only, unchanged
+          orderDate: formData.orderDate,
+          dueDate:   formData.dueDate || "",
+          note:      formData.note || "",
+          updatedAt: serverTimestamp(),
+        });
+
+        // Save new items as a receipt record (shows as "Received" row in history)
+        if (newItems.length > 0) {
+          const receiptTotal = newItems.reduce(
+            (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0
+          );
+          const currentOrder  = orders.find(o => o.id === editOrder.id);
+          // Use the stored balance field — it's always kept accurate by payment/return/receipt updates
+          const balanceBefore = Number(currentOrder?.balance) || 0;
+          const balanceAfter  = balanceBefore + receiptTotal;
+
+          await addDoc(collection(db, "users", uid, "suppliers", supplier.id, "receipts"), {
+            supplierId:    supplier.id,
+            supplierName:  supplier.name,
+            orderId:       editOrder.id,
+            orderRef:      `PO-${editOrder.id.slice(-4).toUpperCase()}`,
+            items:         newItems.map(({ isNew, isReceipt, ...rest }) => rest),
+            receiptTotal,
+            balanceBefore,
+            balanceAfter,
+            createdAt:     serverTimestamp(),
+          });
+
+          // Update order balance/status ONLY — totalAmount stays frozen (original order amount never changes)
+          const newStatus = balanceAfter <= 0 ? "Paid" : (Number(currentOrder?.paidAmount) || 0) > 0 ? "Partial" : "Pending";
+          await updateDoc(doc(db, "users", uid, "suppliers", supplier.id, "orders", editOrder.id), {
+            balance:   balanceAfter,
+            status:    newStatus,
+            updatedAt: serverTimestamp(),
+          });
+        }
+
+        setAlert({ show: true, type: "success", title: "Order Updated! ✓", message: newItems.length > 0 ? `Order updated & ${newItems.length} new receipt(s) recorded.` : "Purchase order updated." });
+
       } else {
+        // ── CREATE MODE ───────────────────────────────────────────────────
+        const cleanItems = originalItems.map(({ isNew, isReceipt, ...rest }) => rest);
+        const { subtotal, discount, afterDiscount, paid, balance } = calcPOTotals(formData);
+
+        const payload = {
+          supplierId:        supplier.id,
+          supplierName:      supplier.name,
+          items:             cleanItems,
+          discountType:      formData.discountType,
+          discountValue:     Number(formData.discountValue) || 0,
+          subtotal,
+          totalAmount:       afterDiscount,
+          initialAmount:     afterDiscount,   // ← frozen forever, never updated
+          paidAmount:        paid,
+          balance,
+          status:            balance <= 0 ? "Paid" : paid > 0 ? "Partial" : "Pending",
+          orderDate:         formData.orderDate,
+          dueDate:           formData.dueDate || "",
+          note:              formData.note || "",
+          initialPaidAmount: paid,
+        };
+
         const ref = await addDoc(
           collection(db, "users", uid, "suppliers", supplier.id, "orders"),
           { ...payload, createdAt: serverTimestamp() }
         );
+
         // If initial payment was made, record it
         if (paid > 0) {
-          await addDoc(collection(db, "users", uid, "supplierPayments"), {
-            supplierId:      supplier.id,
-            supplierName:    supplier.name,
-            orderId:         ref.id,
-            orderRef:        `PO-${ref.id.slice(-4).toUpperCase()}`,
-            amount:          paid,
-            balanceAfter:    balance,
-            method:          "cash",
-            description:     `Initial payment for PO-${ref.id.slice(-4).toUpperCase()}`,
-            createdAt:       serverTimestamp(),
+          await addDoc(collection(db, "users", uid, "suppliers", supplier.id, "payments"), {
+            supplierId:    supplier.id,
+            supplierName:  supplier.name,
+            orderId:       ref.id,
+            orderRef:      `PO-${ref.id.slice(-4).toUpperCase()}`,
+            amount:        paid,
+            balanceBefore: afterDiscount,
+            balanceAfter:  balance,
+            method:        "cash",
+            description:   `Initial payment for PO-${ref.id.slice(-4).toUpperCase()}`,
+            createdAt:     serverTimestamp(),
           });
         }
         setAlert({ show: true, type: "success", title: "Order Created! 🛒", message: "New purchase order recorded." });
       }
+
       setShowOrderModal(false);
       setEditOrder(null);
     } catch (err) {
@@ -732,7 +2450,7 @@ export default function SupplierDetail({ supplier, uid, userDoc, onBack, onEdit,
     setSavingPay(true);
     try {
       const newPaid    = (Number(payOrder.paidAmount) || 0) + amount;
-      const newBalance = Math.max(0, (Number(payOrder.totalAmount) || 0) - newPaid);
+      const newBalance = Math.max(0, (Number(payOrder.balance) || 0) - amount);
       const newStatus  = newBalance <= 0 ? "Paid" : "Partial";
 
       // Update order
@@ -745,7 +2463,7 @@ export default function SupplierDetail({ supplier, uid, userDoc, onBack, onEdit,
       });
 
       // Record payment
-      await addDoc(collection(db, "users", uid, "supplierPayments"), {
+      await addDoc(collection(db, "users", uid, "suppliers", supplier.id, "payments"), {
         supplierId:      supplier.id,
         supplierName:    supplier.name,
         orderId:         payOrder.id,
@@ -779,23 +2497,111 @@ export default function SupplierDetail({ supplier, uid, userDoc, onBack, onEdit,
   // ── Delete Order ──────────────────────────────────────────────────────────
   async function handleDeleteOrder(id) {
     try {
-      await deleteDoc(doc(db, "users", uid, "suppliers", supplier.id, "orders", id));
-      setAlert({ show: true, type: "success", title: "Deleted! 🗑️", message: "Order removed." });
+      const batch = writeBatch(db);
+
+      // 1. Delete the order document itself
+      batch.delete(doc(db, "users", uid, "suppliers", supplier.id, "orders", id));
+
+      // 2. Delete all payments linked to this order
+      const paymentsSnap = await getDocs(
+        query(collection(db, "users", uid, "suppliers", supplier.id, "payments"), where("orderId", "==", id))
+      );
+      paymentsSnap.docs.forEach(d => batch.delete(d.ref));
+
+      // 3. Delete all receipts (purchased) linked to this order
+      const receiptsSnap = await getDocs(
+        query(collection(db, "users", uid, "suppliers", supplier.id, "receipts"), where("orderId", "==", id))
+      );
+      receiptsSnap.docs.forEach(d => batch.delete(d.ref));
+
+      // 4. Delete all returns linked to this order
+      const returnsSnap = await getDocs(
+        query(collection(db, "users", uid, "suppliers", supplier.id, "returns"), where("orderId", "==", id))
+      );
+      returnsSnap.docs.forEach(d => batch.delete(d.ref));
+
+      // Commit all deletes in one atomic batch
+      await batch.commit();
+
+      setAlert({ show: true, type: "success", title: "Deleted! 🗑️", message: "Order and all linked records permanently removed." });
     } catch (err) {
       setAlert({ show: true, type: "error", title: "Error", message: err.message });
     }
     setDeleteOrderId(null);
   }
 
+  // ── Return Goods ──────────────────────────────────────────────────────────
+  async function handleReturnGoods({ items, returnTotal, returnDate, note }) {
+    if (!returnOrder || savingReturn) return;
+    setSavingReturn(true);
+    try {
+      // balanceBefore = the stored balance field (kept accurate by payment/receipt/return updates)
+      const balanceBefore = Number(returnOrder.balance) || 0;
+      const newBalance    = Math.max(0, balanceBefore - returnTotal);
+      const newStatus     = newBalance <= 0 ? "Paid" : (Number(returnOrder.paidAmount) || 0) > 0 ? "Partial" : "Pending";
+
+      // Save return record
+      await addDoc(collection(db, "users", uid, "suppliers", supplier.id, "returns"), {
+        supplierId:   supplier.id,
+        supplierName: supplier.name,
+        orderId:      returnOrder.id,
+        orderRef:     `PO-${returnOrder.id.slice(-4).toUpperCase()}`,
+        items,
+        returnTotal,
+        balanceBefore,
+        balanceAfter:  newBalance,
+        returnDate,
+        note: note || "",
+        createdAt: serverTimestamp(),
+      });
+
+      // Update order balance/status ONLY — totalAmount stays frozen (original order amount never changes)
+      await updateDoc(doc(db, "users", uid, "suppliers", supplier.id, "orders", returnOrder.id), {
+        balance:   newBalance,
+        status:    newStatus,
+        updatedAt: serverTimestamp(),
+      });
+
+      setAlert({
+        show: true, type: "success",
+        title: "Return Recorded! 📦",
+        message: `${formatRs(returnTotal)} deducted. New balance: ${formatRs(newBalance)}.`,
+      });
+      setReturnOrder(null);
+    } catch (err) {
+      setAlert({ show: true, type: "error", title: "Error", message: err.message });
+    }
+    setSavingReturn(false);
+  }
+
   function orderToForm(o) {
+    // Collect all receipt rows for this order (previous "Add Item" purchases), sorted oldest first
+    const receiptRows = supplierReceipts
+      .filter(r => r.orderId === o.id)
+      .slice()
+      .sort((a, b) => {
+        const da = a.createdAt?.toDate ? a.createdAt.toDate() : new Date(a.createdAt || 0);
+        const db2 = b.createdAt?.toDate ? b.createdAt.toDate() : new Date(b.createdAt || 0);
+        return da - db2;
+      })
+      .flatMap(r => (r.items || []).map(it => ({
+        ...it,
+        isNew: false,       // treat as locked — already purchased
+        isReceipt: true,    // flag so modal knows it's a receipt row
+      })));
+
+    const originalItems = o.items?.length ? o.items : [{ description: "", qty: 1, unitPrice: "" }];
+
     return {
-      items:         o.items?.length ? o.items : [{ description: "", qty: 1, unitPrice: "" }],
-      discountType:  o.discountType  || "percent",
-      discountValue: o.discountValue != null ? String(o.discountValue) : "",
-      amountPaid:    o.paidAmount    != null ? String(o.paidAmount) : "",
-      orderDate:     o.orderDate     || new Date().toISOString().slice(0, 10),
-      dueDate:       o.dueDate       || "",
-      note:          o.note          || "",
+      items:             [...originalItems, ...receiptRows],
+      discountType:      o.discountType  || "percent",
+      discountValue:     o.discountValue != null ? String(o.discountValue) : "",
+      amountPaid:        o.paidAmount    != null ? String(o.paidAmount) : "",
+      orderDate:         o.orderDate     || new Date().toISOString().slice(0, 10),
+      dueDate:           o.dueDate       || "",
+      note:              o.note          || "",
+      // lock ALL existing rows (original + receipts), only newly added rows are editable
+      _originalItemCount: originalItems.length + receiptRows.length,
     };
   }
 
@@ -933,7 +2739,16 @@ export default function SupplierDetail({ supplier, uid, userDoc, onBack, onEdit,
               {orders.map(o => {
                 const bal   = Number(o.balance) || 0;
                 const paid  = Number(o.paidAmount) || 0;
-                const total = Number(o.totalAmount) || 0;
+
+                // Gross purchasing = original + receipts (returns shown separately below, NOT deducted from total)
+                const receiptsTotal = supplierReceipts
+                  .filter(r => r.orderId === o.id)
+                  .reduce((s, r) => s + (Number(r.receiptTotal) || 0), 0);
+                const returnsTotal  = supplierReturns
+                  .filter(r => r.orderId === o.id)
+                  .reduce((s, r) => s + (Number(r.returnTotal) || 0), 0);
+                const total = orderOriginalAmt(o) + receiptsTotal; // gross, returns shown separately
+
                 const statusKey = bal <= 0 ? "Paid" : paid > 0 ? "Partial" : "Pending";
                 const st = STATUS_STYLE[statusKey];
                 const num = (o.id || "").slice(-4).toUpperCase();
@@ -964,19 +2779,42 @@ export default function SupplierDetail({ supplier, uid, userDoc, onBack, onEdit,
                     <div className="flex items-center gap-3 flex-shrink-0">
                       <div className="text-right hidden sm:block">
                         <p className="text-white text-sm font-bold">{formatRs(total)}</p>
-                        {bal > 0 && <p className="text-xs" style={{ color: "#f87171" }}>Bal: {formatRs(bal)}</p>}
+                        {paid > 0 && (
+                          <p className="text-[11px] font-semibold" style={{ color: "#34d399" }}>
+                            Paid: {formatRs(paid)}
+                          </p>
+                        )}
+                        {returnsTotal > 0 && (
+                          <p className="text-[11px] font-semibold" style={{ color: "#f87171" }}>
+                            Goods Return: - {formatRs(returnsTotal)}
+                          </p>
+                        )}
+                        {bal > 0 && (
+                          <p className="text-xs font-bold" style={{ color: "#f87171" }}>
+                            Bal: {formatRs(bal)}
+                          </p>
+                        )}
                       </div>
                       <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                         style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
                         {statusKey}
                       </span>
                       <div className="flex gap-1">
+                        <button onClick={() => setViewOrder(o)} title="View Order"
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
+                          style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b" }}>👁</button>
+                        <button onClick={() => setOrderFormOrder(o)} title="Order Form"
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
+                          style={{ background: "rgba(99,102,241,0.1)", color: "#818cf8" }}>📋</button>
                         {bal > 0 && (
                           <button onClick={() => setPayOrder(o)} title="Pay Supplier"
                             className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
                             style={{ background: "rgba(16,185,129,0.1)", color: "#34d399" }}>💸</button>
                         )}
-                        <button onClick={() => setShowHistory(true)} title="View History"
+                        <button onClick={() => setReturnOrder(o)} title="Return Goods"
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
+                          style={{ background: "rgba(239,68,68,0.1)", color: "#f87171" }}>↩</button>
+                        <button onClick={() => setHistoryOrder(o)} title="View History"
                           className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
                           style={{ background: "rgba(139,92,246,0.1)", color: "#a78bfa" }}>📊</button>
                         <button onClick={() => { setEditOrder({ id: o.id, form: orderToForm(o) }); setShowOrderModal(true); }}
@@ -999,6 +2837,8 @@ export default function SupplierDetail({ supplier, uid, userDoc, onBack, onEdit,
       {showOrderModal && (
         <PurchaseOrderModal
           initial={editOrder ? editOrder.form : null}
+          isEdit={!!editOrder}
+          originalItemCount={editOrder ? (editOrder.form._originalItemCount ?? 0) : 0}
           supplier={supplier}
           onClose={() => { setShowOrderModal(false); setEditOrder(null); }}
           onSave={handleSaveOrder}
@@ -1017,14 +2857,62 @@ export default function SupplierDetail({ supplier, uid, userDoc, onBack, onEdit,
         />
       )}
 
-      {/* History Modal */}
+      {/* Purchase Order View Modal — 👁 button */}
+      {viewOrder && (
+        <PurchaseOrderViewModal
+          order={viewOrder}
+          supplier={supplier}
+          userDoc={userDoc}
+          receipts={supplierReceipts.filter(r => r.orderId === viewOrder.id)}
+          returns={supplierReturns.filter(r => r.orderId === viewOrder.id)}
+          payments={supplierPayments.filter(p => p.orderId === viewOrder.id)}
+          onClose={() => setViewOrder(null)}
+        />
+      )}
+
+      {/* Blank Order Form Modal — 📋 button */}
+      {orderFormOrder && (
+        <OrderFormModal
+          order={orderFormOrder}
+          userDoc={userDoc}
+          onClose={() => setOrderFormOrder(null)}
+        />
+      )}
+
+      {/* Full Supplier History Modal — "View History" button in top nav */}
       {showHistory && (
         <SupplierHistoryModal
           supplier={supplier}
           orders={orders}
           payments={supplierPayments}
+          receipts={supplierReceipts}
+          returns={supplierReturns}
           userDoc={userDoc}
           onClose={() => setShowHistory(false)}
+        />
+      )}
+
+      {/* Per-Order History Modal — 📊 button on each order row */}
+      {historyOrder && (
+        <SupplierHistoryModal
+          supplier={supplier}
+          orders={[historyOrder]}
+          payments={supplierPayments.filter(p => p.orderId === historyOrder.id)}
+          receipts={supplierReceipts.filter(r => r.orderId === historyOrder.id)}
+          returns={supplierReturns.filter(r => r.orderId === historyOrder.id)}
+          userDoc={userDoc}
+          onClose={() => setHistoryOrder(null)}
+        />
+      )}
+
+      {/* Return Goods Modal */}
+      {returnOrder && (
+        <ReturnGoodsModal
+          order={returnOrder}
+          supplier={supplier}
+          onClose={() => setReturnOrder(null)}
+          onSave={handleReturnGoods}
+          saving={savingReturn}
         />
       )}
 
