@@ -365,8 +365,8 @@ function PurchaseOrderModal({ initial, supplier, onClose, onSave, saving, isEdit
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto"
       style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)" }}>
-      <div className="w-full max-w-2xl my-6 rounded-2xl"
-        style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.1)" }}>
+      <div className="w-full max-w-3xl mx-auto my-6 rounded-2xl"
+        style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.1)", maxWidth: "900px" }}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.07]">
           <div>
@@ -834,7 +834,7 @@ function PurchaseOrderPDFTemplate({ order, supplier, userDoc = {}, receipts, ret
 
   return (
     <div style={{ width: 794, minHeight: 1123, background: "#fff", color: "#111",
-      fontFamily: "'Segoe UI', Arial, sans-serif", fontSize: 13,
+      fontSize: 13,
       padding: "44px 52px", boxSizing: "border-box", position: "relative" }}>
 
       {/* Top accent */}
@@ -1180,7 +1180,7 @@ function PurchaseOrderViewModal({ order, supplier, userDoc = {}, receipts, retur
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto"
       style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)" }}>
-      <div className="w-full max-w-[860px] my-4">
+      <div className="w-full max-w-[820px] mx-auto my-4">
         {/* Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4 px-1">
           <h3 className="text-white font-bold text-base">
@@ -1236,55 +1236,55 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
 
   // How many item rows fit per page
   // Page total height: 1123px
-  // Padding top: 0, bottom: 28px
+  // Padding top: 0, bottom: 70px (for footer space)
   // Header: accent(6) + gap(14) + header-row(~72) + divider(2) + gap(12) = ~106px
-  // Footer: paddingTop(10) + line(1) + gap(8) + footer-row(~32) = ~51px
-  // Table thead: ~30px
-  // PageSubtotal row: ~30px
-  // Each item row: padding 8px top+bottom = 16px + content ~24px = ~40px
-  // Available for rows (page1): 1123 - 28 - 106 - 51 - 30 - 30 - meta(~160) = ~718 → 8 rows (320px) safe
-  // Available for rows (mid/last): 1123 - 28 - 106 - 51 - 30 - 30 = ~878 → floor(878/40) = 21, use 13 to be safe
-  const rowsP1   = 8;
-  const rowsMid  = 13;
-  const rowsLast = 10;
+  // Footer: absolutely positioned at bottom 20px, needs ~70px space reserved
+  // Table thead: ~28px
+  // PageSubtotal row: ~28px
+  // Each item row: reduced padding 6px top+bottom = 12px + content ~18px = ~30px
+  // Available for rows (page1): 1123 - 70 - 106 - 28 - 28 - meta(~160) = ~731 → floor(731/30) = 24, use 8 rows safe
+  // Available for rows (mid/last): 1123 - 70 - 106 - 28 - 28 = ~891 → floor(891/30) = 29, use 14 to be safe
+  const rowsP1   = 15;
+  const rowsMid  = 20;
+  const rowsLast = 11;
 
   // Header component (rendered on every page)
   function PageHeader({ pageNum }) {
     return (
       <div>
         {/* Top accent */}
-        <div style={{ height: 6, background: "linear-gradient(to right,#f59e0b,#d97706,#92400e)", marginBottom: 14 }} />
-        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 }}>
-          <div style={{ display: "flex", alignItems: "flex-start", gap: 12 }}>
+        <div style={{ height: 5, marginBottom: 10, }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
             {userDoc?.logoDataUrl && (
               <img src={userDoc.logoDataUrl} alt="Logo"
-                style={{ width: 52, height: 52, objectFit: "contain", borderRadius: 8, border: "1px solid #e5e7eb" }} />
+                style={{ width: 48, height: 48, objectFit: "contain", borderRadius: 8, border: "1px solid #e5e7eb" }} />
             )}
             <div>
-              <div style={{ fontWeight: 900, fontSize: 20, color: "#111", lineHeight: 1.1 }}>
+              <div style={{ fontWeight: 900, fontSize: 18, color: "#111", lineHeight: 1.1 }}>
                 {userDoc?.business || userDoc?.name || "Your Business"}
               </div>
-              {userDoc?.phone   && <div style={{ fontSize: 10, color: "#6b7280", marginTop: 2 }}>📞 {userDoc.phone}</div>}
-              {userDoc?.email   && <div style={{ fontSize: 10, color: "#6b7280" }}>✉️ {userDoc.email}</div>}
-              {userDoc?.website && <div style={{ fontSize: 10, color: "#6b7280" }}>🌐 {userDoc.website}</div>}
-              {userDoc?.address && <div style={{ fontSize: 10, color: "#6b7280" }}>📍 {userDoc.address}</div>}
+              {userDoc?.phone   && <div style={{ fontSize: 9, color: "#6b7280", marginTop: 1 }}>📞 {userDoc.phone}</div>}
+              {userDoc?.email   && <div style={{ fontSize: 9, color: "#6b7280" }}>✉️ {userDoc.email}</div>}
+              {userDoc?.website && <div style={{ fontSize: 9, color: "#6b7280" }}>🌐 {userDoc.website}</div>}
+              {userDoc?.address && <div style={{ fontSize: 9, color: "#6b7280" }}>📍 {userDoc.address}</div>}
             </div>
           </div>
-          <div style={{ textAlign: "right" }}>
-            <div style={{ fontSize: 30, fontWeight: 900, letterSpacing: "-1.5px", color: "#d97706", lineHeight: 1.1 }}>ORDER FORM</div>
-            <div style={{ fontSize: 10, color: "#9ca3af", marginTop: 3 }}>
+          <div style={{ textAlign: "right", paddingRight: "10px" }}>
+            <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: "-1.5px", color: "#d97706", lineHeight: 1.1 }}>ORDER FORM</div>
+            <div style={{ fontSize: 9, color: "#9ca3af", marginTop: 2 }}>
               {hasVariant ? "Variant / Measurement Order" : "Standard Order Form"}
             </div>
-            <div style={{ marginTop: 5, display: "flex", justifyContent: "flex-end", gap: 8, alignItems: "center" }}>
-              <span style={{ padding: "2px 12px", borderRadius: 20, background: "#fffbeb",
-                border: "1px solid #fde68a", fontSize: 9, color: "#92400e", fontWeight: 700 }}>
+            <div style={{ marginTop: 4, display: "flex", justifyContent: "flex-end", gap: 6, alignItems: "center" }}>
+              <span style={{ padding: "2px 10px", borderRadius: 20, background: "#fffbeb",
+                border: "1px solid #fde68a", fontSize: 8, color: "#92400e", fontWeight: 700 }}>
                 {hasVariant ? "📦 WITH VARIANTS" : "📋 STANDARD"}
               </span>
-              <span style={{ fontSize: 10, color: "#9ca3af" }}>Page {pageNum} / {totalPages}</span>
+              <span style={{ fontSize: 9, color: "#9ca3af" }}>Page {pageNum} / {totalPages}</span>
             </div>
           </div>
         </div>
-        <div style={{ height: 2, background: "linear-gradient(to right,#f59e0b,#e5e7eb)", marginBottom: 12 }} />
+        <div style={{ height: 2, background: "linear-gradient(to right,#f59e0b,#e5e7eb)", marginBottom: 10 }} />
       </div>
     );
   }
@@ -1318,10 +1318,10 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
   function TableHead() {
     return (
       <tr style={{ background: "#d97706", color: "#fff" }}>
-        <th style={{ padding: "7px 8px", fontSize: 9, fontWeight: 700, textTransform: "uppercase",
+        <th style={{ padding: "5px 5px", fontSize: 9, fontWeight: 700, textTransform: "uppercase",
           letterSpacing: "0.04em", textAlign: "center", width: 22 }}>#</th>
         {cols.map((h, i) => (
-          <th key={h} style={{ padding: "7px 8px", fontSize: 9, fontWeight: 700, textTransform: "uppercase",
+          <th key={h} style={{ padding: "5px 7px", fontSize: 9, fontWeight: 700, textTransform: "uppercase",
             letterSpacing: "0.04em", textAlign: i === 0 ? "left" : "right" }}>{h}</th>
         ))}
       </tr>
@@ -1331,10 +1331,10 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
   // Blank item rows
   function ItemRows({ from, count, shade }) {
     return Array.from({ length: count }).map((_, i) => (
-      <tr key={i} style={{ background: (from + i) % 2 === 0 ? "#fafafa" : "#fff", borderBottom: "1px solid #e5e7eb" }}>
-        <td style={{ padding: "10px 8px", textAlign: "center", fontSize: 11, color: "#d1d5db", fontWeight: 700 }}>{from + i + 1}</td>
+      <tr key={i} style={{ background: (from + i) % 2 === 0 ? "#fff" : "#fff", borderBottom: "1px solid #e5e7eb" }}>
+        <td style={{ padding: "6px 5px", textAlign: "center", fontSize: 10, color: "#000", fontWeight: 600 }}>{from + i + 1}</td>
         {cols.map((_, ci) => (
-          <td key={ci} style={{ padding: "10px 8px", borderLeft: "1px solid #e5e7eb" }} />
+          <td key={ci} style={{ padding: "6px 5px", borderLeft: "1px solid #e5e7eb" }} />
         ))}
       </tr>
     ));
@@ -1344,12 +1344,12 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
   function PageSubtotal() {
     return (
       <tr style={{ background: "#fafafa", borderTop: "2px solid #e5e7eb" }}>
-        <td colSpan={cols.length} style={{ padding: "7px 8px", textAlign: "right",
+        <td colSpan={cols.length} style={{ padding: "5px 7px", textAlign: "right",
           fontSize: 9, fontWeight: 700, color: "#6b7280", textTransform: "uppercase",
           letterSpacing: "0.05em", borderLeft: "1px solid #e5e7eb" }}>
           Page Subtotal
         </td>
-        <td style={{ padding: "7px 8px", borderLeft: "1.5px solid #d97706", width: 110 }} />
+        <td style={{ padding: "5px 7px", borderLeft: "1.5px solid #d97706", width: 110 }} />
       </tr>
     );
   }
@@ -1361,9 +1361,9 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
   }
 
   const pageStyle = {
-    width: 794, height: 1123, background: "#fff", color: "#111",
-    fontFamily: "'Segoe UI', Arial, sans-serif", fontSize: 13,
-    padding: "0 52px 0 52px", boxSizing: "border-box",
+    width: 794, height: 1123, minHeight: 1123, background: "#fff", color: "#111",
+     fontSize: 13,
+    padding: "0 25px 70px 10px", boxSizing: "border-box",
     display: "flex", flexDirection: "column",
     overflow: "hidden",
     position: "relative",
@@ -1374,7 +1374,7 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
     background: "linear-gradient(135deg, #f59e0b, #6366f1, #8b5cf6, #f59e0b)",
     padding: "3px",
     borderRadius: 6,
-    marginBottom: 12,
+    // marginBottom: 6,
   };
 
   return (
@@ -1400,34 +1400,34 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
             {isFirst && (
               <>
                 {/* Order meta */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 14, marginBottom: 14 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
                   {[["ORDER DATE","DD / MM / YYYY"],["ORDER REF #",""],["DELIVERY DATE","DD / MM / YYYY"]].map(([lbl, ph]) => (
                     <div key={lbl}>
                       <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", color: "#9ca3af",
-                        letterSpacing: "0.06em", marginBottom: 3 }}>{lbl}</div>
-                      <div style={{ borderBottom: "1.5px solid #d1d5db", height: 26, display: "flex",
-                        alignItems: "flex-end", paddingBottom: 3, fontSize: 11, color: "#d1d5db" }}>{ph}</div>
+                        letterSpacing: "0.06em", marginBottom: 2 }}>{lbl}</div>
+                      <div style={{ borderBottom: "1.5px solid #d1d5db", height: 24, display: "flex",
+                        alignItems: "flex-end", paddingBottom: 2, fontSize: 10, color: "#d1d5db" }}>{ph}</div>
                     </div>
                   ))}
                 </div>
                 {/* Supplier + Notes */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 14,
-                  padding: "12px 16px", background: "#fafafa", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12,
+                  padding: "10px 14px", background: "#fafafa", border: "1px solid #e5e7eb", borderRadius: 8 }}>
                   <div>
                     <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#d97706",
-                      letterSpacing: "0.07em", marginBottom: 8 }}>SUPPLIER / PARTY DETAILS</div>
+                      letterSpacing: "0.07em", marginBottom: 6 }}>SUPPLIER / PARTY DETAILS</div>
                     {["Name","Shop / Company","Phone","Email","Address"].map(lbl => (
-                      <div key={lbl} style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 6 }}>
+                      <div key={lbl} style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 5 }}>
                         <span style={{ fontSize: 10, color: "#6b7280", minWidth: 80, flexShrink: 0 }}>{lbl}:</span>
-                        <div style={{ flex: 1, borderBottom: "1.5px solid #d1d5db", height: 20 }} />
+                        <div style={{ flex: 1, borderBottom: "1.5px solid #d1d5db", height: 18 }} />
                       </div>
                     ))}
                   </div>
                   <div>
                     <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#6b7280",
-                      letterSpacing: "0.07em", marginBottom: 8 }}>NOTES / SPECIAL INSTRUCTIONS</div>
+                      letterSpacing: "0.07em", marginBottom: 6 }}>NOTES / SPECIAL INSTRUCTIONS</div>
                     {[1,2,3,4,5,6].map(i => (
-                      <div key={i} style={{ borderBottom: "1px solid #e5e7eb", height: 20, marginBottom: 4 }} />
+                      <div key={i} style={{ borderBottom: "1px solid #e5e7eb", height: 18, marginBottom: 3 }} />
                     ))}
                   </div>
                 </div>
@@ -1447,18 +1447,18 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
             {isLast && (
               <>
                 {/* Grand total rows */}
-                <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 14 }}>
+                <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
                   <tbody>
                     {[["SUBTOTAL",""],["DISCOUNT",""],["GRAND TOTAL","grand"]].map(([lbl, type]) => (
                       <tr key={lbl} style={{ background: type === "grand" ? "#fffbeb" : "#fff",
                         borderBottom: "1px solid #e5e7eb" }}>
-                        <td colSpan={cols.length} style={{ padding: "8px 8px", textAlign: "right",
+                        <td colSpan={cols.length} style={{ padding: "6px 8px", textAlign: "right",
                           fontSize: type === "grand" ? 12 : 10, fontWeight: type === "grand" ? 900 : 600,
                           color: type === "grand" ? "#d97706" : "#374151",
                           borderLeft: "1px solid " + (type === "grand" ? "#d97706" : "#e5e7eb") }}>
                           {lbl}
                         </td>
-                        <td style={{ padding: "8px 8px", width: 110,
+                        <td style={{ padding: "6px 8px", width: 110,
                           borderLeft: "1.5px solid " + (type === "grand" ? "#d97706" : "#d1d5db"),
                           borderBottom: type === "grand" ? "2px solid #d97706" : undefined }} />
                       </tr>
@@ -1467,33 +1467,33 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
                 </table>
 
                 {/* Payment + Terms */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14, marginBottom: 16 }}>
-                  <div style={{ padding: "10px 14px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
+                  <div style={{ padding: "8px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8 }}>
                     <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#15803d",
-                      letterSpacing: "0.07em", marginBottom: 8 }}>PAYMENT DETAILS</div>
+                      letterSpacing: "0.07em", marginBottom: 6 }}>PAYMENT DETAILS</div>
                     {["Payment Method","Amount Paid","Remaining Balance","Payment Date"].map(lbl => (
-                      <div key={lbl} style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 6 }}>
+                      <div key={lbl} style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 5 }}>
                         <span style={{ fontSize: 10, color: "#6b7280", minWidth: 110, flexShrink: 0 }}>{lbl}:</span>
-                        <div style={{ flex: 1, borderBottom: "1.5px solid #bbf7d0", height: 20 }} />
+                        <div style={{ flex: 1, borderBottom: "1.5px solid #bbf7d0", height: 18 }} />
                       </div>
                     ))}
                   </div>
-                  <div style={{ padding: "10px 14px", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+                  <div style={{ padding: "8px 12px", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8 }}>
                     <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#6b7280",
-                      letterSpacing: "0.07em", marginBottom: 8 }}>TERMS & CONDITIONS</div>
+                      letterSpacing: "0.07em", marginBottom: 6 }}>TERMS & CONDITIONS</div>
                     {[1,2,3,4].map(i => (
-                      <div key={i} style={{ borderBottom: "1px solid #e5e7eb", height: 22, marginBottom: 4 }} />
+                      <div key={i} style={{ borderBottom: "1px solid #e5e7eb", height: 19, marginBottom: 3 }} />
                     ))}
                   </div>
                 </div>
 
                 {/* Signatures */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 20, marginBottom: 16 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 12 }}>
                   {["Ordered By","Authorized By","Received By"].map(lbl => (
                     <div key={lbl} style={{ textAlign: "center" }}>
-                      <div style={{ borderBottom: "1.5px solid #374151", height: 40, marginBottom: 6 }} />
+                      <div style={{ borderBottom: "1.5px solid #374151", height: 34, marginBottom: 5 }} />
                       <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 600 }}>{lbl}</div>
-                      <div style={{ fontSize: 9, color: "#d1d5db", marginTop: 2 }}>Signature / Name / Date</div>
+                      <div style={{ fontSize: 9, color: "#d1d5db", marginTop: 1 }}>Signature / Name / Date</div>
                     </div>
                   ))}
                 </div>
@@ -1560,32 +1560,49 @@ export function OrderFormView({ userDoc = {} }) {
 
   function printForm() {
     if (!printRef.current) return;
-    const rawHtml = printRef.current.innerHTML;
+    
+    // Get raw HTML and create new window
+    const rawHTML = printRef.current.innerHTML;
+    
     const w = window.open("", "_blank", "width=900,height=900");
     w.document.write(`<!DOCTYPE html>
 <html><head><title>Order Form</title>
 <style>
-  *, *::before, *::after { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; background: #fff; }
+  * { box-sizing: border-box; }
+  body { margin: 0; padding: 0; background: #fff; }
   @page { size: A4 portrait; margin: 0; }
-  .pg-wrap { display: contents !important; }
-  .pg-page {
-    position: relative !important;
-    width: 794px !important; height: 1123px !important;
-    max-height: 1123px !important; overflow: hidden !important;
-    page-break-after: always !important; break-after: page !important;
-  }
-  .pg-page:last-of-type { page-break-after: avoid !important; break-after: avoid !important; }
 </style>
-</head><body>${rawHtml}</body></html>`);
-    const doc = w.document;
-    doc.close();
-    Array.from(doc.body.children).forEach(wrapper => {
-      wrapper.classList.add("pg-wrap");
-      wrapper.style.cssText = "display:contents;padding:0;margin:0;background:none;border-radius:0;";
+</head><body>${rawHTML}</body></html>`);
+    
+    w.document.close();
+    
+    // Remove gradient wrappers, keep only pages
+    const wrappers = Array.from(w.document.body.children);
+    wrappers.forEach(wrapper => {
+      // Make wrapper transparent
+      wrapper.style.background = 'none';
+      wrapper.style.border = 'none';
+      wrapper.style.padding = '0';
+      wrapper.style.margin = '0';
+      wrapper.style.borderRadius = '0';
+      wrapper.style.display = 'block';
+      
+      // Get the actual page inside
       const page = wrapper.firstElementChild;
-      if (page) page.classList.add("pg-page");
+      if (page) {
+        // Ensure page properties are correct
+        page.style.width = '794px';
+        page.style.height = '1123px';
+        page.style.padding = '0 52px 70px 52px';
+        page.style.margin = '0';
+        page.style.overflow = 'hidden';
+        page.style.background = '#fff';
+        page.style.position = 'relative';
+        page.style.display = 'flex';
+        page.style.flexDirection = 'column';
+      }
     });
+    
     w.focus();
     setTimeout(() => { w.print(); w.close(); }, 800);
   }
@@ -1668,7 +1685,7 @@ export function OrderFormView({ userDoc = {} }) {
       </div>
 
       {/* ── Form Preview ── */}
-      <div style={{ background: "linear-gradient(135deg,#f59e0b,#6366f1,#8b5cf6)", padding: "2px", borderRadius: 14 }}>
+      <div style={{ background: "linear-gradient(135deg,#f59e0b,#6366f1,#8b5cf6)", margin: "0 auto", padding: "2px", borderRadius: 14, width: "75%" }}>
         <div style={{ background: "#0d1117", borderRadius: 12, overflow: "hidden" }}>
           <div ref={containerRef} style={{ width: "100%", overflow: "hidden" }}>
             <div style={{
@@ -1748,60 +1765,74 @@ export function OrderFormModal({ order, userDoc = {}, onClose }) {
   function printForm() {
     if (!printRef.current) return;
 
-    // Use full innerHTML but fix it with targeted CSS:
-    // 1. Gradient wrappers → display:contents (transparent in layout)
-    // 2. Each white A4 page div → exact height, overflow hidden
-    // 3. Last page → no break-after
-    const rawHtml = printRef.current.innerHTML;
-
     const w = window.open("", "_blank", "width=900,height=900");
     w.document.write(`<!DOCTYPE html>
 <html><head><title>Order Form</title>
 <style>
-  *, *::before, *::after { box-sizing: border-box; }
+  * { box-sizing: border-box; }
   html, body { margin: 0; padding: 0; background: #fff; }
-  @page { size: A4 portrait; margin: 0; }
-
-  /* ── Gradient border wrappers: make invisible to layout ── */
-  .pg-wrap {
-    display: contents !important;
+  
+  @page { 
+    size: A4 portrait; 
+    margin: 0; 
   }
-
-  /* ── Each A4 page div ── */
-  .pg-page {
-    position: relative !important;
-    width: 794px !important;
-    height: 1123px !important;
-    max-height: 1123px !important;
-    overflow: hidden !important;
-    page-break-after: always !important;
-    break-after: page !important;
-    page-break-inside: avoid !important;
-    break-inside: avoid !important;
+  
+  .print-page {
+    position: relative;
+    width: 794px;
+    height: 1123px;
+    min-height: 1123px;
+    max-height: 1123px;
+    overflow: hidden;
+    background: #fff;
+    page-break-after: always;
+    break-after: page;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    padding: 0 52px 70px 52px;
+    margin: 0;
+    display: block;
   }
-
-  /* Last page: no extra blank page */
-  .pg-page:last-of-type {
-    page-break-after: avoid !important;
-    break-after: avoid !important;
+  
+  .print-page:last-child {
+    page-break-after: avoid;
+    break-after: avoid;
+  }
+  
+  /* Table rules */
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    page-break-inside: auto;
+  }
+  
+  thead {
+    display: table-header-group;
+  }
+  
+  tbody tr {
+    page-break-inside: avoid;
+    page-break-after: auto;
   }
 </style>
-</head><body>${rawHtml}</body></html>`);
+</head><body></body></html>`);
 
-    // Add classes after writing so DOM is ready
     const doc = w.document;
     doc.close();
-
-    // Tag gradient wrappers and inner pages with classes
-    const allChildren = Array.from(doc.body.children);
-    allChildren.forEach(wrapper => {
-      wrapper.classList.add("pg-wrap");
-      // Also force style to override inline gradient
-      wrapper.style.cssText = "display:contents;padding:0;margin:0;background:none;border-radius:0;";
+    
+    // Extract and add pages with proper class
+    const pageWrappers = Array.from(printRef.current.children);
+    pageWrappers.forEach((wrapper, idx) => {
       const page = wrapper.firstElementChild;
-      if (page) page.classList.add("pg-page");
+      if (page) {
+        const clonedPage = page.cloneNode(true);
+        clonedPage.className = 'print-page';
+        // Preserve inline flex styles but remove pageBreak inline styles
+        // (they'll be handled by CSS class)
+        doc.body.appendChild(clonedPage);
+      }
     });
-
+    
     w.focus();
     setTimeout(() => { w.print(); w.close(); }, 800);
   }
@@ -1863,7 +1894,7 @@ export function OrderFormModal({ order, userDoc = {}, onClose }) {
         {/* Form Preview */}
         <div style={{
           background: "linear-gradient(135deg,#f59e0b,#6366f1,#8b5cf6)",
-          padding: "2px", borderRadius: 14, overflow: "hidden"
+          padding: "2px", borderRadius: 14, overflow: "hidden", width: "95%"
         }}>
           <div style={{ background: "#111", borderRadius: 12, overflow: "hidden" }}>
             {/* Measure available width, then scale 794px pages to fit */}
@@ -1871,9 +1902,9 @@ export function OrderFormModal({ order, userDoc = {}, onClose }) {
               <div style={{
                 width: 794,
                 transformOrigin: "top left",
-                transform: `scale(${scale})`,
+                // transform: `scale(${scale})`,
                 // Collapse the extra whitespace caused by scaling
-                marginBottom: scale < 1 ? `${(1123 * (scale - 1))}px` : 0,
+                // marginBottom: scale < 1 ? `${(1123 * (scale - 1))}px` : 0,
               }}>
                 <div ref={printRef}>
                   <BlankOrderFormTemplate userDoc={userDoc} formType={formType} totalPages={pages} />
@@ -1921,7 +1952,7 @@ function SupplierHistoryTemplate({ supplier, orders, payments, receipts, returns
 
   return (
     <div style={{ width: 794, minHeight: 1123, background: "#fff", color: "#111",
-      fontFamily: "'Segoe UI', Arial, sans-serif", fontSize: 13, padding: "48px 52px",
+      fontSize: 13, padding: "48px 52px",
       boxSizing: "border-box", position: "relative" }}>
       {/* Accent bar */}
       <div style={{ position: "absolute", top: 0, left: 0, right: 0, height: 5,
@@ -2212,7 +2243,7 @@ function SupplierHistoryModal({ supplier, orders, payments, receipts, returns, u
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto"
       style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)" }}>
-      <div className="w-full max-w-[860px] my-4">
+      <div className="w-full max-w-[820px] mx-auto my-4">
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4 px-1">
           <h3 className="text-white font-bold text-base">📊 Supplier Report — {supplier.name}</h3>
           <div className="flex flex-wrap items-center gap-2">
