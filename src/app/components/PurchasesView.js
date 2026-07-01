@@ -237,7 +237,7 @@ export default function PurchasesView({ uid, userDoc }) {
     const unsub = onSnapshot(
       query(collection(db, "users", uid, "suppliers"), orderBy("createdAt", "desc")),
       async snap => {
-        const list = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+        const list = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(s => !s.deleted);
         const withStats = await Promise.all(list.map(async sup => {
           try {
             // Fetch orders, receipts and returns — now nested under each supplier
@@ -247,7 +247,7 @@ export default function PurchasesView({ uid, userDoc }) {
               getDocs(collection(db, "users", uid, "suppliers", sup.id, "returns")),
             ]);
 
-            const orders   = oSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
+            const orders   = oSnap.docs.map(d => ({ _id: d.id, ...d.data() })).filter(o => !o.deleted);
             const receipts = recSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
             const returns  = retSnap.docs.map(d => ({ _id: d.id, ...d.data() }));
 
@@ -321,31 +321,17 @@ export default function PurchasesView({ uid, userDoc }) {
 
   async function handleDeleteSupplier(id) {
     try {
-      const batch = writeBatch(db);
+      const deletedAt = serverTimestamp();
 
-      // 1. Delete all orders for this supplier
+      // Soft delete all orders for this supplier
       const ordersSnap = await getDocs(collection(db, "users", uid, "suppliers", id, "orders"));
-      ordersSnap.docs.forEach(d => batch.delete(d.ref));
+      await Promise.all(ordersSnap.docs.map(d => updateDoc(d.ref, { deleted: true, deletedAt })));
 
-      // 2. Delete all payments nested under this supplier
-      const paymentsSnap = await getDocs(collection(db, "users", uid, "suppliers", id, "payments"));
-      paymentsSnap.docs.forEach(d => batch.delete(d.ref));
-
-      // 3. Delete all receipts nested under this supplier
-      const receiptsSnap = await getDocs(collection(db, "users", uid, "suppliers", id, "receipts"));
-      receiptsSnap.docs.forEach(d => batch.delete(d.ref));
-
-      // 4. Delete all returns nested under this supplier
-      const returnsSnap = await getDocs(collection(db, "users", uid, "suppliers", id, "returns"));
-      returnsSnap.docs.forEach(d => batch.delete(d.ref));
-
-      // 5. Delete the supplier document itself
-      batch.delete(doc(db, "users", uid, "suppliers", id));
-
-      await batch.commit();
+      // Soft delete the supplier doc itself
+      await updateDoc(doc(db, "users", uid, "suppliers", id), { deleted: true, deletedAt });
 
       if (selectedSupplier?.id === id) setSelectedSupplier(null);
-      setAlert({ show: true, type: "success", title: "Deleted! 🗑️", message: "Supplier and all linked data permanently removed." });
+      setAlert({ show: true, type: "success", title: "Deleted! 🗑️", message: "Supplier moved to trash. You can restore it from Trash." });
     } catch (err) {
       setAlert({ show: true, type: "error", title: "Error", message: err.message });
     }

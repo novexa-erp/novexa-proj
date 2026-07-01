@@ -7,7 +7,7 @@ import Image from "next/image";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
   collection, onSnapshot, query, orderBy, limit,
-  doc, addDoc, serverTimestamp, getDoc,
+  doc, addDoc, serverTimestamp, getDoc, getDocs,
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import InvoicesView from "./InvoicesView";
@@ -19,6 +19,8 @@ import PurchasesView from "./PurchasesView";
 import AnalyticsView from "./AnalyticsView";
 import SweetAlert from "./SweetAlert";
 import { OrderFormView } from "./SupplierDetail";
+import ContactView from "./ContactView";
+import TrashView from "./TrashView";
 
 // ── Sidebar nav items ────────────────────────────────────────────────────────
 const navItems = [
@@ -31,6 +33,7 @@ const navItems = [
   { icon: "📋", label: "Order Form",  id: "order-form"  },
   { icon: "📈", label: "Analytics",   id: "analytics"   },
   { icon: "⚙️", label: "Settings",   id: "settings"    },
+  { icon: "📞", label: "Contact Us",  id: "contact"     },
 ];
 
 const statusStyle = {
@@ -71,6 +74,7 @@ function DashboardContent() {
   const [customers, setCustomers] = useState([]);
   const [inventory, setInventory] = useState([]);
   const [payments,  setPayments]  = useState([]);
+  const [totalPurchasing, setTotalPurchasing] = useState(0);
   const [dataLoading, setDataLoading] = useState(true);
 
   // ── Modals (customer + product only — invoices handled by InvoicesView) ─────
@@ -84,20 +88,113 @@ function DashboardContent() {
   // ── Logout Confirmation ─────────────────────────────────────────────────────
   const [showLogoutConfirm, setShowLogoutConfirm] = useState(false);
 
-  // ── Auth guard ──────────────────────────────────────────────────────────────
+  // ── Subscription expiry warning ─────────────────────────────────────────────
+  const [showExpiryPopup,  setShowExpiryPopup]  = useState(false);
+  const [expiryDaysLeft,   setExpiryDaysLeft]   = useState(null);
+
+  // ── Auth guard + subscription + session check ────────────────────────────────
   useEffect(() => {
     const unsub = onAuthStateChanged(auth, async (u) => {
-      if (!u) { router.push("/login"); return; }
+      if (!u) { router.push("/pages/login"); return; }
+
+      // Step 1: Check subscription status
+      try {
+        const token = await u.getIdToken();
+        const res = await fetch("/api/admin/check-subscription", {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+        if (!data.allowed) {
+          await signOut(auth);
+          const reason = data.status === "frozen"
+            ? (data.reason === "subscription_expired" ? "expired" : "frozen")
+            : data.status === "not_started" ? "not_started" : "access_denied";
+          router.push(`/pages/login?blocked=${reason}`);
+          return;
+        }
+      } catch { /* network error — allow in */ }
+
+      // Step 2: Register session — only if no active sessionId already stored
+      // (prevents creating duplicate sessions on every page refresh)
+      const existingSessionId = sessionStorage.getItem("novexa_session_id");
+      if (!existingSessionId || existingSessionId === "admin") {
+        try {
+          const token = await u.getIdToken();
+          const res = await fetch("/api/admin/session-login", {
+            method: "POST",
+            headers: { authorization: `Bearer ${token}` },
+          });
+          const data = await res.json();
+          if (data.sessionId && data.sessionId !== "admin") {
+            sessionStorage.setItem("novexa_session_id", data.sessionId);
+          }
+        } catch { /* ignore — session tracking optional */ }
+      }
+
       setUser(u);
-      // fetch user profile doc
       try {
         const snap = await getDoc(doc(db, "users", u.uid));
-        if (snap.exists()) setUserDoc(snap.data());
+        if (snap.exists()) {
+          const data = snap.data();
+          setUserDoc(data);
+          // ── Check expiry and show popup once per session ──────────────────
+          if (data.activeTo) {
+            const diff = Math.ceil(
+              (new Date(data.activeTo + "T23:59:59") - new Date()) / 86400000
+            );
+            if (diff >= 0 && diff <= 3) {
+              setExpiryDaysLeft(diff);
+              // Show popup only once per browser session
+              const popupKey = `novexa_expiry_shown_${u.uid}`;
+              if (!sessionStorage.getItem(popupKey)) {
+                setShowExpiryPopup(true);
+                sessionStorage.setItem(popupKey, "1");
+              }
+            }
+          }
+        }
       } catch { /* ignore */ }
       setAuthLoading(false);
     });
     return () => unsub();
   }, [router]);
+
+  // ── Heartbeat — verify session every 8s ─────────────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+
+    async function heartbeat() {
+      const sessionId = sessionStorage.getItem("novexa_session_id");
+      if (!sessionId || sessionId === "admin") return;
+
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch("/api/admin/session-heartbeat", {
+          method: "POST",
+          headers: {
+            authorization:  `Bearer ${token}`,
+            "x-session-id": sessionId,
+          },
+        });
+        const data = await res.json();
+        if (!data.valid) {
+          sessionStorage.removeItem("novexa_session_id");
+          await signOut(auth);
+          const reason = data.reason === "account_frozen"       ? "frozen"
+                       : data.reason === "subscription_expired" ? "expired"
+                       : data.reason === "account_not_found"    ? "access_denied"
+                       : "session_evicted";
+          router.push(`/pages/login?blocked=${reason}`);
+        }
+      } catch { /* network blip — don't kick out */ }
+    }
+
+    // Run immediately on mount, then every 8 seconds
+    heartbeat();
+    const interval = setInterval(heartbeat, 8000);
+    return () => clearInterval(interval);
+  }, [user, router]);
 
   // ── Sync activeNav with URL ──────────────────────────────────────────────────
   useEffect(() => {
@@ -135,7 +232,7 @@ function DashboardContent() {
     );
     const unsubCust = onSnapshot(
       query(collection(db, "users", uid, "customers"), orderBy("createdAt", "desc")),
-      (snap) => { setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() }))); check(); },
+      (snap) => { setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => !c.deleted)); check(); },
       () => check()
     );
     const unsubProd = onSnapshot(
@@ -152,13 +249,53 @@ function DashboardContent() {
     return () => { unsubInv(); unsubCust(); unsubProd(); unsubPay(); };
   }, [user]);
 
+  // ── Fetch total purchasing from supplier orders ────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    const uid = user.uid;
+    let cancelled = false;
+    const unsubSuppliers = onSnapshot(
+      query(collection(db, "users", uid, "suppliers"), orderBy("createdAt", "desc")),
+      async (snap) => {
+        if (cancelled) return;
+        try {
+          const suppliers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          let grandTotal = 0;
+          await Promise.all(suppliers.map(async (sup) => {
+            const oSnap = await getDocs(collection(db, "users", uid, "suppliers", sup.id, "orders"));
+            oSnap.docs.forEach(d => {
+              const o = d.data();
+              if (o.items?.length) {
+                const sub = o.items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+                const disc = o.discountType === "percent"
+                  ? sub * (Number(o.discountValue) || 0) / 100
+                  : (Number(o.discountValue) || 0);
+                grandTotal += Math.max(sub - disc, 0);
+              }
+            });
+          }));
+          if (!cancelled) setTotalPurchasing(grandTotal);
+        } catch { /* ignore */ }
+      },
+      () => {}
+    );
+    return () => { cancelled = true; unsubSuppliers(); };
+  }, [user]);
+
   // ── Computed stats ───────────────────────────────────────────────────────────
   // Split: customer-linked invoices vs other (direct from Invoices tab)
   const customerInvoices = invoices.filter(i => i.customerId);
   const otherInvoices    = invoices.filter(i => !i.customerId);
 
-  const totalRevenue    = invoices.filter(i => i.status === "Paid").reduce((s, i) => s + (Number(i.amount) || 0), 0);
-  const pendingAmount   = invoices.filter(i => i.status === "Unpaid" || i.status === "Partial").reduce((s, i) => s + (Number(i.amount) || 0), 0);
+  // Total Revenue = all amounts collected (Paid invoices full amount + Partial paid amounts)
+  const totalRevenue    = invoices.filter(i => i.status === "Paid").reduce((s, i) => s + (Number(i.amount) || 0), 0)
+    + invoices.filter(i => i.status === "Partial").reduce((s, i) => s + ((Number(i.amount) || 0) - (Number(i.balance) || 0)), 0);
+
+  // Pending = sum of all balances (unpaid full amount + partial remaining balance)
+  const customerPending = customerInvoices.reduce((s, i) => s + (Number(i.balance) || 0), 0);
+  const otherPending    = otherInvoices.reduce((s, i) => s + (Number(i.balance) || 0), 0);
+  const pendingAmount   = customerPending + otherPending;
+
   const collectedPct    = totalRevenue + pendingAmount > 0 ? Math.round((totalRevenue / (totalRevenue + pendingAmount)) * 100) : 0;
   const pendingPct      = 100 - collectedPct;
   const activeCustomers = customers.filter(c => c.status !== "inactive").length;
@@ -169,16 +306,25 @@ function DashboardContent() {
   const otherBalance    = otherInvoices.reduce((s, i) => s + (Number(i.balance) || 0), 0);
 
   const stats = [
-    { label: "Total Revenue",       value: formatRs(totalRevenue),   change: `${invoices.filter(i=>i.status==="Paid").length} paid`,          up: true,                icon: "💰", color: "from-amber-500 to-orange-600" },
-    { label: "Invoices Sent",       value: String(invoices.length),  change: `${invoices.filter(i=>i.status==="Unpaid").length} unpaid`,       up: invoices.filter(i=>i.status==="Unpaid").length === 0, icon: "🧾", color: "from-pink-500 to-purple-600" },
-    { label: "Customer Balance",    value: formatRs(customerBalance), change: `${customerInvoices.length} invoices`,                          up: customerBalance === 0, icon: "👥", color: "from-orange-500 to-amber-600",
-      onClick: () => handleNavChange("customers") },
-    { label: "Other Invoice Balance", value: formatRs(otherBalance),  change: `${otherInvoices.length} invoices`,                             up: otherBalance === 0,   icon: "🧾", color: "from-blue-500 to-cyan-600",
-      onClick: () => handleNavChange("invoices") },
+    { label: "Total Revenue",        value: formatRs(totalRevenue),    change: `${invoices.filter(i=>i.status==="Paid").length} paid`,          icon: "💰", color: "from-amber-500 to-orange-600" },
+    { label: "Total Purchasing",      value: formatRs(totalPurchasing), change: "All orders",                                                    icon: "🛒", color: "from-green-500 to-emerald-600", onClick: () => handleNavChange("purchases") },
+    { label: "Customer Balance",      value: formatRs(customerBalance), change: `${customerInvoices.length} invoices`,                          icon: "👥", color: "from-orange-500 to-amber-600",  onClick: () => handleNavChange("customers") },
+    { label: "Other Invoice Balance", value: formatRs(otherBalance),    change: `${otherInvoices.length} invoices`,                             icon: "🧾", color: "from-blue-500 to-cyan-600",    onClick: () => handleNavChange("invoices") },
   ];
 
   // ── Sign out ─────────────────────────────────────────────────────────────────
   async function handleSignOut() {
+    const sessionId = sessionStorage.getItem("novexa_session_id");
+    if (sessionId && auth.currentUser) {
+      try {
+        const token = await auth.currentUser.getIdToken();
+        await fetch("/api/admin/session-logout", {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}`, "x-session-id": sessionId },
+        });
+      } catch { /* ignore */ }
+      sessionStorage.removeItem("novexa_session_id");
+    }
     await signOut(auth);
     router.push("/pages/login");
   }
@@ -326,6 +472,60 @@ function DashboardContent() {
         onClose={() => setAlert({ ...alert, show: false })}
       />
 
+      {/* ── Subscription Expiry Popup ── */}
+      {showExpiryPopup && expiryDaysLeft !== null && (
+        <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)" }}>
+          <div className="w-full max-w-sm rounded-3xl overflow-hidden"
+            style={{ background: "#0d1117", border: "1px solid rgba(239,68,68,0.35)", boxShadow: "0 0 60px rgba(239,68,68,0.15)" }}>
+            {/* Red top bar */}
+            <div className="h-1.5 w-full" style={{ background: "linear-gradient(90deg,#ef4444,#f97316)" }} />
+            <div className="p-7 flex flex-col items-center gap-4 text-center">
+              {/* Animated icon */}
+              <div className="relative w-20 h-20 flex items-center justify-center rounded-full"
+                style={{ background: "rgba(239,68,68,0.1)", border: "2px solid rgba(239,68,68,0.3)" }}>
+                <span className="text-4xl animate-bounce">⏰</span>
+              </div>
+              <div>
+                <h2 className="text-white font-black text-xl mb-1">
+                  Subscription Expiring Soon!
+                </h2>
+                <p className="text-gray-400 text-sm leading-relaxed">
+                  {expiryDaysLeft === 0
+                    ? "Your Novexa subscription expires today! Please renew immediately to avoid losing access."
+                    : `Your Novexa subscription will expire in `}
+                  {expiryDaysLeft > 0 && (
+                    <span className="text-red-400 font-black text-base">
+                      {expiryDaysLeft} {expiryDaysLeft === 1 ? "day" : "days"}
+                    </span>
+                  )}
+                  {expiryDaysLeft > 0 && ". Please contact Novexa to renew your plan and avoid interruption."}
+                </p>
+              </div>
+              {/* Urgency badge */}
+              <div className="px-4 py-2 rounded-full text-xs font-black uppercase tracking-widest"
+                style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171" }}>
+                {expiryDaysLeft === 0 ? "🚨 Expires Today" : expiryDaysLeft === 1 ? "⚠️ Last Day Tomorrow" : `⚠️ ${expiryDaysLeft} Days Remaining`}
+              </div>
+              <div className="flex gap-3 w-full mt-1">
+                <button onClick={() => setShowExpiryPopup(false)}
+                  className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all hover:bg-white/10"
+                  style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#6b7280" }}>
+                  Remind Later
+                </button>
+                <a href="https://wa.me/923001234567?text=Hello%20Novexa%2C%20I%20need%20to%20renew%20my%20subscription."
+                  target="_blank" rel="noopener noreferrer"
+                  onClick={() => setShowExpiryPopup(false)}
+                  className="flex-1 py-3 rounded-xl text-sm font-black text-center transition-all hover:scale-[1.02]"
+                  style={{ background: "linear-gradient(135deg,#ef4444,#f97316)", color: "#fff" }}>
+                  Contact Support →
+                </a>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Sidebar ── */}
       <aside
         className={`fixed lg:static inset-y-0 left-0 z-40 flex flex-col transition-transform duration-300
@@ -380,6 +580,19 @@ function DashboardContent() {
               <p className="text-gray-500 text-[10px] truncate">{user?.email}</p>
             </div>
           </div>
+          {/* Trash Button */}
+          <button
+            onClick={() => handleNavChange("trash")}
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full text-left transition-all duration-200 hover:bg-red-500/10 mb-2 group"
+            style={{
+              color: activeNav === "trash" ? "#f87171" : "#6b7280",
+              background: activeNav === "trash" ? "rgba(248,113,113,0.08)" : "transparent",
+              border: activeNav === "trash" ? "1px solid rgba(248,113,113,0.2)" : "1px solid transparent",
+            }}>
+            <span className="text-base">🗑️</span>
+            <span>Trash</span>
+            {activeNav === "trash" && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-red-400" />}
+          </button>
           {/* Logout Button */}
           <button 
             onClick={confirmLogout} 
@@ -437,6 +650,35 @@ function DashboardContent() {
           </div>
         </header>
 
+        {/* ── Subscription Expiry Banner ── */}
+        {expiryDaysLeft !== null && expiryDaysLeft <= 3 && (
+          <div className="flex items-center justify-between gap-3 px-5 py-3"
+            style={{
+              background: expiryDaysLeft === 0
+                ? "linear-gradient(90deg,rgba(239,68,68,0.18),rgba(249,115,22,0.12))"
+                : "linear-gradient(90deg,rgba(239,68,68,0.12),rgba(249,115,22,0.07))",
+              borderBottom: `1px solid ${expiryDaysLeft === 0 ? "rgba(239,68,68,0.5)" : "rgba(239,68,68,0.3)"}`,
+              borderLeft: `3px solid ${expiryDaysLeft === 0 ? "#ef4444" : "#f97316"}`,
+            }}>
+            <div className="flex items-center gap-2.5 min-w-0">
+              <span className="text-base flex-shrink-0">
+                {expiryDaysLeft === 0 ? "🚨" : "⏰"}
+              </span>
+              <p className="text-sm font-semibold truncate" style={{ color: expiryDaysLeft === 0 ? "#fca5a5" : "#fdba74" }}>
+                {expiryDaysLeft === 0
+                  ? "Your subscription expires today! Renew now to avoid losing access."
+                  : `Your subscription expires in ${expiryDaysLeft} ${expiryDaysLeft === 1 ? "day" : "days"}. Renew before it's too late.`}
+              </p>
+            </div>
+            <a href="https://wa.me/923001234567?text=Hello%20Novexa%2C%20I%20need%20to%20renew%20my%20subscription."
+              target="_blank" rel="noopener noreferrer"
+              className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:scale-105"
+              style={{ background: "linear-gradient(135deg,#ef4444,#f97316)", color: "#fff" }}>
+              Contact Support →
+            </a>
+          </div>
+        )}
+
         {/* page body */}
         <main className="flex-1 p-5 md:p-7 overflow-y-auto">
 
@@ -458,6 +700,10 @@ function DashboardContent() {
           ) : activeNav === "settings" ? (
             <SettingsView uid={user?.uid} user={user} userDoc={userDoc} loading={viewLoading}
               onSettingsSaved={(updated) => setUserDoc(prev => ({ ...prev, ...updated }))} />
+          ) : activeNav === "contact" ? (
+            <ContactView userDoc={userDoc} user={user} />
+          ) : activeNav === "trash" ? (
+            <TrashView uid={user?.uid} />
           ) : (
           <>
           {/* Overview Section with Professional Loader */}
@@ -534,32 +780,34 @@ function DashboardContent() {
                   </button>
                 </div>
               </div>
-              <div className="divide-y" style={{ borderColor: "rgba(255,255,255,0.04)" }}>
-                {invoices.length === 0 ? (
+              <div className="p-3 flex flex-col gap-1.5">
+                {otherInvoices.length === 0 ? (
                   <div className="px-5 py-10 text-center">
                     <p className="text-gray-500 text-sm">No invoices yet.</p>
-                    <button onClick={() => setShowInvoiceModal(true)} className="text-blue-400 text-xs mt-2 hover:text-blue-300">Create your first invoice →</button>
+                    <button onClick={() => handleNavChange("invoices")} className="text-blue-400 text-xs mt-2 hover:text-blue-300">Create your first invoice →</button>
                   </div>
                 ) : (
-                  invoices.slice(0, 6).map((inv) => {
+                  otherInvoices.slice(0, 6).map((inv) => {
                     const st = statusStyle[inv.status] || statusStyle["Unpaid"];
                     const dateStr = inv.createdAt?.toDate ? inv.createdAt.toDate().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
                     const num = inv.id.slice(-4).toUpperCase();
                     return (
-                      <div key={inv.id} className="flex items-center justify-between px-5 py-3.5 transition-colors hover:bg-white/[0.02]">
+                      <div key={inv.id}
+                        className="flex items-center justify-between px-4 py-3 rounded-xl transition-all hover:bg-white/[0.04]"
+                        style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
                         <div className="flex items-center gap-3 min-w-0">
-                          <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0"
-                            style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>
+                          <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0"
+                            style={{ background: "rgba(37,99,235,0.12)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>
                             {num}
                           </div>
                           <div className="min-w-0">
-                            <p className="text-white text-sm font-medium truncate">{inv.customer || "Unknown"}</p>
-                            <p className="text-gray-500 text-xs">INV-{num} · {dateStr}</p>
+                            <p className="text-white text-sm font-semibold truncate">{inv.customer || "Unknown"}</p>
+                            <p className="text-gray-500 text-[11px]">INV-{num} · {dateStr}</p>
                           </div>
                         </div>
-                        <div className="flex items-center gap-3 flex-shrink-0">
-                          <span className="text-white text-sm font-semibold">{formatRs(inv.amount)}</span>
-                          <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                        <div className="flex items-center gap-2.5 flex-shrink-0">
+                          <span className="text-white text-sm font-bold">{formatRs(inv.amount)}</span>
+                          <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg"
                             style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
                             {inv.status}
                           </span>
@@ -586,9 +834,9 @@ function DashboardContent() {
                     {lowStockItems.slice(0, 5).map((item) => {
                       const c = (Number(item.stock) || 0) <= 5 ? "#f87171" : "#fbbf24";
                       return (
-                        <div key={item.id} className="flex items-center justify-between">
-                          <span className="text-gray-400 text-xs truncate max-w-[140px]">{item.name}</span>
-                          <span className="text-xs font-bold px-2 py-0.5 rounded-full flex-shrink-0"
+                        <div key={item.id} className="flex items-center justify-between gap-2">
+                          <span className="text-gray-300 text-xs font-medium truncate flex-1">{item.name}</span>
+                          <span className="text-xs font-bold px-2.5 py-0.5 rounded-lg flex-shrink-0 whitespace-nowrap"
                             style={{ background: `${c}18`, color: c, border: `1px solid ${c}40` }}>
                             {item.stock} left
                           </span>
@@ -606,46 +854,86 @@ function DashboardContent() {
                   <h3 className="text-white font-bold text-sm">Payment Summary</h3>
                 </div>
                 <div className="flex flex-col gap-3">
-                  {[
-                    { label: "Collected", amount: formatRs(totalRevenue),  color: "#34d399", pct: collectedPct },
-                    { label: "Pending",   amount: formatRs(pendingAmount), color: "#fbbf24", pct: pendingPct   },
-                  ].map((p) => (
-                    <div key={p.label}>
-                      <div className="flex justify-between mb-1.5">
-                        <span className="text-gray-400 text-xs">{p.label}</span>
-                        <span className="text-white text-xs font-semibold">{p.amount}</span>
+                  {/* Collected */}
+                  <div>
+                    <div className="flex justify-between mb-1.5">
+                      <span className="text-gray-400 text-xs">Collected</span>
+                      <span className="text-white text-xs font-semibold">{formatRs(totalRevenue)}</span>
+                    </div>
+                    <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-700"
+                        style={{ width: `${collectedPct}%`, background: "#34d399" }} />
+                    </div>
+                  </div>
+                  {/* Pending */}
+                  <div>
+                    <div className="flex justify-between mb-1.5">
+                      <span className="text-gray-400 text-xs">Pending</span>
+                      <span className="text-white text-xs font-semibold">{formatRs(pendingAmount)}</span>
+                    </div>
+                    <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
+                      <div className="h-full rounded-full transition-all duration-700"
+                        style={{ width: `${pendingPct}%`, background: "#fbbf24" }} />
+                    </div>
+                  </div>
+                  {/* Pending breakdown */}
+                  {pendingAmount > 0 && (
+                    <div className="mt-1 rounded-lg p-2.5 flex flex-col gap-1.5"
+                      style={{ background: "rgba(251,191,36,0.05)", border: "1px solid rgba(251,191,36,0.1)" }}>
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 text-[11px]">↳ Customer pending</span>
+                        <span className="text-amber-400 text-[11px] font-semibold">{formatRs(customerPending)}</span>
                       </div>
-                      <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
-                        <div className="h-full rounded-full transition-all duration-700"
-                          style={{ width: `${p.pct}%`, background: p.color }} />
+                      <div className="flex justify-between">
+                        <span className="text-gray-500 text-[11px]">↳ Other invoice pending</span>
+                        <span className="text-amber-400 text-[11px] font-semibold">{formatRs(otherPending)}</span>
                       </div>
                     </div>
-                  ))}
+                  )}
                 </div>
               </div>
 
               {/* customers quick list */}
               <div className="rounded-xl p-5" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
-                <div className="flex items-center gap-2 mb-4">
-                  <span className="text-base">👥</span>
-                  <h3 className="text-white font-bold text-sm">Recent Customers</h3>
+                <div className="flex items-center justify-between mb-4">
+                  <div className="flex items-center gap-2">
+                    <span className="text-base">👥</span>
+                    <h3 className="text-white font-bold text-sm">Recent Customers</h3>
+                  </div>
+                  <button onClick={() => handleNavChange("customers")}
+                    className="text-[11px] font-semibold" style={{ color: "#F59E0B" }}>
+                    View all →
+                  </button>
                 </div>
                 {customers.length === 0 ? (
                   <p className="text-gray-500 text-xs">No customers yet.</p>
                 ) : (
-                  <div className="flex flex-col gap-2.5">
-                    {customers.slice(0, 4).map((c) => (
-                      <div key={c.id} className="flex items-center gap-2.5">
-                        <div className="w-7 h-7 rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0"
-                          style={{ background: "rgba(37,99,235,0.15)", color: "#60A5FA" }}>
-                          {(c.name || "?").charAt(0).toUpperCase()}
+                  <div className="flex flex-col gap-2">
+                    {customers.slice(0, 4).map((c) => {
+                      const custBal = customerInvoices
+                        .filter(i => i.customerId === c.id)
+                        .reduce((s, i) => s + (Number(i.balance) || 0), 0);
+                      return (
+                        <div key={c.id}
+                          className="flex items-center gap-3 p-2.5 rounded-xl transition-all hover:bg-white/[0.03]"
+                          style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}>
+                          <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0"
+                            style={{ background: "linear-gradient(135deg,rgba(37,99,235,0.2),rgba(245,158,11,0.2))", color: "#60A5FA", border: "1px solid rgba(37,99,235,0.2)" }}>
+                            {(c.name || "?").charAt(0).toUpperCase()}
+                          </div>
+                          <div className="flex-1 min-w-0">
+                            <p className="text-white text-xs font-semibold truncate">{c.name}</p>
+                            <p className="text-gray-500 text-[10px] truncate">{c.phone || c.email || "—"}</p>
+                          </div>
+                          {custBal > 0 && (
+                            <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg flex-shrink-0"
+                              style={{ background: "rgba(251,191,36,0.1)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.2)" }}>
+                              {formatRs(custBal)}
+                            </span>
+                          )}
                         </div>
-                        <div className="min-w-0">
-                          <p className="text-white text-xs font-medium truncate">{c.name}</p>
-                          <p className="text-gray-500 text-[10px] truncate">{c.phone || c.email || "—"}</p>
-                        </div>
-                      </div>
-                    ))}
+                      );
+                    })}
                   </div>
                 )}
               </div>

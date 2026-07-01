@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp } from "firebase/firestore";
+import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 const cardStyle = { 
@@ -32,7 +32,7 @@ export default function InventoryView({ uid }) {
   async function loadProducts() {
     try {
       const snap = await getDocs(collection(db, `users/${uid}/products`));
-      setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => !p.deleted));
     } catch (err) {
       console.error("Load error:", err);
     }
@@ -62,7 +62,10 @@ export default function InventoryView({ uid }) {
   async function handleDelete(id) {
     if (!confirm("Delete this product?")) return;
     try {
-      await deleteDoc(doc(db, `users/${uid}/products`, id));
+      await updateDoc(doc(db, `users/${uid}/products`, id), {
+        deleted: true,
+        deletedAt: serverTimestamp(),
+      });
       loadProducts();
     } catch (err) {
       alert("Delete error: " + err.message);

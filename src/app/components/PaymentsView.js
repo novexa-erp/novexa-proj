@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
-import { collection, getDocs, addDoc, updateDoc, deleteDoc, doc, serverTimestamp, query, where } from "firebase/firestore";
+import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, query, where } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 const cardStyle = { 
@@ -32,8 +32,8 @@ export default function PaymentsView({ uid }) {
         getDocs(collection(db, `users/${uid}/purchases`)),
       ]);
       
-      setPayments(paymentsSnap.docs.map(d => ({ id: d.id, ...d.data() })));
-      setInvoices(invoicesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
+      setPayments(paymentsSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => !p.deleted));
+      setInvoices(invoicesSnap.docs.map(d => ({ id: d.id, ...d.data() })).filter(i => !i.deleted));
       setPurchases(purchasesSnap.docs.map(d => ({ id: d.id, ...d.data() })));
     } catch (err) {
       console.error("Load error:", err);
@@ -57,7 +57,10 @@ export default function PaymentsView({ uid }) {
   async function handleDelete(id) {
     if (!confirm("Delete this payment record?")) return;
     try {
-      await deleteDoc(doc(db, `users/${uid}/payments`, id));
+      await updateDoc(doc(db, `users/${uid}/payments`, id), {
+        deleted: true,
+        deletedAt: serverTimestamp(),
+      });
       loadData();
     } catch (err) {
       alert("Delete error: " + err.message);

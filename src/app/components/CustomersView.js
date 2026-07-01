@@ -1,7 +1,7 @@
 "use client";
 import { useState, useEffect } from "react";
 import {
-  collection, addDoc, doc, updateDoc, deleteDoc,
+  collection, addDoc, doc, updateDoc,
   serverTimestamp, onSnapshot, query, orderBy, where, getDocs,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
@@ -204,7 +204,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         collection(db, "users", uid, "customers", customer.id, "invoices"),
         orderBy("createdAt", "desc")
       ),
-      snap => { setCustInvoices(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setInvLoading(false); },
+      snap => { setCustInvoices(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(i => !i.deleted)); setInvLoading(false); },
       () => setInvLoading(false)
     );
     return () => unsub();
@@ -728,14 +728,21 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
 
   async function handleDeleteInv(id) {
     try {
-      await deleteDoc(doc(db, "users", uid, "customers", customer.id, "invoices", id));
-      await deleteDoc(doc(db, "users", uid, "invoices", id)).catch(() => {});
-      
+      const deletedAt = serverTimestamp();
+      // Soft delete in customer subcollection
+      await updateDoc(doc(db, "users", uid, "customers", customer.id, "invoices", id), {
+        deleted: true, deletedAt,
+      });
+      // Soft delete in global invoices collection
+      await updateDoc(doc(db, "users", uid, "invoices", id), {
+        deleted: true, deletedAt,
+      }).catch(() => {});
+
       setAlert({
         show: true,
         type: "success",
         title: "Invoice Deleted! 🗑️",
-        message: "The invoice has been permanently deleted.",
+        message: "The invoice has been removed from your records.",
       });
     } catch (err) { 
       setAlert({
@@ -1562,36 +1569,45 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
 
   async function handleDelete(id) {
     try {
-      // 1. Delete all invoices in customer subcollection
+      // Soft delete: customer + all their invoices + payments
+      const deletedAt = serverTimestamp();
+
+      // 1. Soft delete all invoices in customer subcollection
       const subInvSnap = await getDocs(
         collection(db, "users", uid, "customers", id, "invoices")
       );
-      const subDeletes = subInvSnap.docs.map(d => deleteDoc(d.ref));
-      await Promise.all(subDeletes);
+      await Promise.all(subInvSnap.docs.map(d =>
+        updateDoc(d.ref, { deleted: true, deletedAt })
+      ));
 
-      // 2. Delete matching global invoices (customerId === id)
+      // 2. Soft delete matching global invoices
       const globalInvSnap = await getDocs(
         query(collection(db, "users", uid, "invoices"), where("customerId", "==", id))
       );
-      const globalDeletes = globalInvSnap.docs.map(d => deleteDoc(d.ref));
-      await Promise.all(globalDeletes);
+      await Promise.all(globalInvSnap.docs.map(d =>
+        updateDoc(d.ref, { deleted: true, deletedAt })
+      ));
 
-      // 3. Delete matching payments (customerId === id)
+      // 3. Soft delete matching payments
       const paySnap = await getDocs(
         query(collection(db, "users", uid, "payments"), where("customerId", "==", id))
       );
-      const payDeletes = paySnap.docs.map(d => deleteDoc(d.ref));
-      await Promise.all(payDeletes);
+      await Promise.all(paySnap.docs.map(d =>
+        updateDoc(d.ref, { deleted: true, deletedAt })
+      ));
 
-      // 4. Finally delete the customer document itself
-      await deleteDoc(doc(db, "users", uid, "customers", id));
+      // 4. Soft delete the customer doc itself
+      await updateDoc(doc(db, "users", uid, "customers", id), {
+        deleted: true, deletedAt,
+      });
+
       if (detailCust?.id === id) setDetailCust(null);
 
       setAlert({
         show: true,
         type: "success",
         title: "Customer Deleted! 🗑️",
-        message: "The customer and all related invoices & payments have been permanently deleted.",
+        message: "Customer moved to trash. You can restore them from the Trash section.",
       });
     } catch (err) {
       setAlert({
@@ -1606,7 +1622,7 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
 
   // stats — sirf existing customers ki invoices (deleted customers ki exclude)
   const existingCustomerIds = new Set(customers.map(c => c.id));
-  const custLinkedInvoices = invoices.filter(i => i.customerId && existingCustomerIds.has(i.customerId));
+  const custLinkedInvoices = invoices.filter(i => i.customerId && existingCustomerIds.has(i.customerId) && !i.deleted);
   const activeCount  = customers.filter(c => c.status !== "inactive").length;
   const totalRevenue = custLinkedInvoices.filter(i => i.status === "Paid").reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const totalPaid    = custLinkedInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
@@ -1812,7 +1828,7 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filtered.map((c, idx) => {
-            const custInv = invoices.filter(i => i.customerId === c.id);
+            const custInv = invoices.filter(i => i.customerId === c.id && !i.deleted);
             // Exclude carry-forward invoices from balance (avoid double-counting)
             const custCarriedIds = new Set();
             custInv.forEach(inv => {

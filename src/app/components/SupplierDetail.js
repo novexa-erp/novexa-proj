@@ -2303,7 +2303,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
     if (!uid || !supplier.id) return;
     const unsub = onSnapshot(
       query(collection(db, "users", uid, "suppliers", supplier.id, "orders"), orderBy("createdAt", "desc")),
-      snap => { setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() }))); setLoading(false); },
+      snap => { setOrders(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(o => !o.deleted)); setLoading(false); },
       () => setLoading(false)
     );
     return () => unsub();
@@ -2528,33 +2528,12 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
   // ── Delete Order ──────────────────────────────────────────────────────────
   async function handleDeleteOrder(id) {
     try {
-      const batch = writeBatch(db);
-
-      // 1. Delete the order document itself
-      batch.delete(doc(db, "users", uid, "suppliers", supplier.id, "orders", id));
-
-      // 2. Delete all payments linked to this order
-      const paymentsSnap = await getDocs(
-        query(collection(db, "users", uid, "suppliers", supplier.id, "payments"), where("orderId", "==", id))
+      // Soft delete the order
+      await updateDoc(
+        doc(db, "users", uid, "suppliers", supplier.id, "orders", id),
+        { deleted: true, deletedAt: serverTimestamp() }
       );
-      paymentsSnap.docs.forEach(d => batch.delete(d.ref));
-
-      // 3. Delete all receipts (purchased) linked to this order
-      const receiptsSnap = await getDocs(
-        query(collection(db, "users", uid, "suppliers", supplier.id, "receipts"), where("orderId", "==", id))
-      );
-      receiptsSnap.docs.forEach(d => batch.delete(d.ref));
-
-      // 4. Delete all returns linked to this order
-      const returnsSnap = await getDocs(
-        query(collection(db, "users", uid, "suppliers", supplier.id, "returns"), where("orderId", "==", id))
-      );
-      returnsSnap.docs.forEach(d => batch.delete(d.ref));
-
-      // Commit all deletes in one atomic batch
-      await batch.commit();
-
-      setAlert({ show: true, type: "success", title: "Deleted! 🗑️", message: "Order and all linked records permanently removed." });
+      setAlert({ show: true, type: "success", title: "Deleted! 🗑️", message: "Order moved to trash. Restore it from Trash." });
     } catch (err) {
       setAlert({ show: true, type: "error", title: "Error", message: err.message });
     }

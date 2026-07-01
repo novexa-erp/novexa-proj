@@ -1,7 +1,7 @@
 "use client";
 import { useState } from "react";
 import {
-  collection, addDoc, doc, updateDoc, deleteDoc, serverTimestamp,
+  collection, addDoc, doc, updateDoc, serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import InvoiceModal, { formatRs } from "./InvoiceModal";
@@ -47,8 +47,8 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
   // Sweet Alert State
   const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
 
-  // only show invoices NOT linked to a customer (customerId = undefined/null/empty)
-  const directInvoices = invoices.filter(i => !i.customerId);
+  // only show invoices NOT linked to a customer AND not soft-deleted
+  const directInvoices = invoices.filter(i => !i.customerId && !i.deleted);
 
   // filter
   const filtered = directInvoices.filter(inv => {
@@ -228,19 +228,20 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
     setSaving(false);
   }
 
-  // ── Delete ─────────────────────────────────────────────────────────────────
+  // ── Delete (soft) ─────────────────────────────────────────────────────────
   async function handleDelete(id) {
     try {
-      await deleteDoc(doc(db, "users", uid, "invoices", id));
-      
-      // Show delete success alert
+      await updateDoc(doc(db, "users", uid, "invoices", id), {
+        deleted:   true,
+        deletedAt: serverTimestamp(),
+      });
       setAlert({
         show: true,
         type: "success",
         title: "Invoice Deleted! 🗑️",
-        message: "The invoice has been permanently deleted from your records.",
+        message: "The invoice has been removed from your records.",
       });
-    } catch (err) { 
+    } catch (err) {
       setAlert({
         show: true,
         type: "error",
@@ -372,9 +373,10 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
 
       {/* ── Invoice list ── */}
       <div className="rounded-xl overflow-hidden" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
-        {/* list header */}
+
+        {/* list header — same grid as rows */}
         <div className="hidden md:grid px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-gray-600 border-b border-white/[0.05]"
-          style={{ gridTemplateColumns: "1fr 120px 110px 110px 90px 120px" }}>
+          style={{ gridTemplateColumns: "minmax(0,1fr) 110px 110px 110px 90px 160px" }}>
           <span>Customer</span>
           <span className="text-right">Amount</span>
           <span className="text-right">Paid</span>
@@ -392,10 +394,9 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
                 {search ? "No matches found" : `No ${activeTab === "All" ? "" : activeTab.toLowerCase() + " "}invoices yet`}
               </h3>
               <p className="text-gray-400 text-sm mb-6 max-w-md mx-auto">
-                {search 
+                {search
                   ? `No invoices match "${search}"`
-                  : "Create your first invoice to get started"
-                }
+                  : "Create your first invoice to get started"}
               </p>
               {!search && (
                 <button onClick={() => { setEditTarget(null); setShowModal(true); }}
@@ -408,20 +409,18 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
           </div>
         ) : (
           filtered.map((inv) => {
-            const st      = STATUS_STYLE[inv.status] || STATUS_STYLE["Unpaid"];
-            const dateStr = inv.createdAt?.toDate
+            const st       = STATUS_STYLE[inv.status] || STATUS_STYLE["Unpaid"];
+            const dateStr  = inv.createdAt?.toDate
               ? inv.createdAt.toDate().toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })
               : inv.invoiceDate || "—";
-            const num     = inv.id.slice(-4).toUpperCase();
+            const num      = inv.id.slice(-4).toUpperCase();
             const isOverdue = inv.dueDate && new Date(inv.dueDate) < new Date() && inv.status !== "Paid";
 
             return (
-              <div key={inv.id}
-                className="grid items-center px-5 py-3.5 border-b border-white/[0.04] hover:bg-white/[0.02] transition-colors"
-                style={{ gridTemplateColumns: "1fr" }}>
+              <div key={inv.id} className="border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] transition-colors">
 
-                {/* mobile layout */}
-                <div className="flex items-center justify-between md:hidden">
+                {/* ── Mobile ── */}
+                <div className="flex items-center justify-between px-5 py-3.5 md:hidden">
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-8 h-8 rounded-xl flex items-center justify-center text-[10px] font-black flex-shrink-0"
                       style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>
@@ -442,23 +441,19 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
                       {inv.status}
                     </span>
                     <div className="flex gap-1">
-                      <button onClick={() => setPdfInvoice(inv)}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
-                        style={{ background: "rgba(52,211,153,0.08)", color: "#34d399" }}>👁</button>
-                      <button onClick={() => { setEditTarget({ id: inv.id, form: docToForm(inv) }); setShowModal(true); }}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
-                        style={{ background: "rgba(37,99,235,0.1)", color: "#60A5FA" }}>✏️</button>
-                      <button onClick={() => setDeleteConf(inv.id)}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
-                        style={{ background: "rgba(248,113,113,0.1)", color: "#f87171" }}>🗑</button>
+                      <button onClick={() => setPdfInvoice(inv)} className="w-7 h-7 rounded-lg flex items-center justify-center text-xs" style={{ background: "rgba(52,211,153,0.08)", color: "#34d399" }}>👁</button>
+                      <button onClick={() => { setEditTarget({ id: inv.id, form: docToForm(inv) }); setShowModal(true); }} className="w-7 h-7 rounded-lg flex items-center justify-center text-xs" style={{ background: "rgba(37,99,235,0.1)", color: "#60A5FA" }}>✏️</button>
+                      <button onClick={() => setDeleteConf(inv.id)} className="w-7 h-7 rounded-lg flex items-center justify-center text-xs" style={{ background: "rgba(248,113,113,0.1)", color: "#f87171" }}>🗑</button>
                     </div>
                   </div>
                 </div>
 
-                {/* desktop layout */}
-                <div className="hidden md:grid items-center gap-4"
-                  style={{ gridTemplateColumns: "1fr 120px 110px 110px 90px 120px" }}>
-                  <div className="flex items-center gap-3 min-w-0">
+                {/* ── Desktop — same grid template as header ── */}
+                <div className="hidden md:grid items-center px-5 py-3.5"
+                  style={{ gridTemplateColumns: "minmax(0,1fr) 110px 110px 110px 90px 160px" }}>
+
+                  {/* Customer */}
+                  <div className="flex items-center gap-3 min-w-0 pr-4">
                     <div className="w-8 h-8 rounded-xl flex items-center justify-center text-[10px] font-black flex-shrink-0"
                       style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>
                       {num}
@@ -474,17 +469,28 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
                       </div>
                     </div>
                   </div>
+
+                  {/* Amount */}
                   <p className="text-white text-sm font-bold text-right">{formatRs(inv.amount)}</p>
+
+                  {/* Paid */}
                   <p className="text-right text-sm font-semibold" style={{ color: "#34d399" }}>{formatRs(inv.amountPaid || 0)}</p>
-                  <p className="text-right text-sm font-semibold" style={{ color: Number(inv.balance) > 0 ? "#f87171" : "#34d399" }}>
+
+                  {/* Balance */}
+                  <p className="text-right text-sm font-semibold"
+                    style={{ color: Number(inv.balance) > 0 ? "#f87171" : "#34d399" }}>
                     {formatRs(inv.balance || 0)}
                   </p>
+
+                  {/* Status */}
                   <div className="flex justify-center">
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                    <span className="text-[10px] font-bold px-2.5 py-1 rounded-full"
                       style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
                       {inv.status}
                     </span>
                   </div>
+
+                  {/* Actions */}
                   <div className="flex justify-end gap-1.5">
                     <button onClick={() => setPdfInvoice(inv)}
                       className="flex items-center gap-1 px-2.5 py-1.5 rounded-lg text-[11px] font-semibold transition-all hover:scale-105"
@@ -502,6 +508,7 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
                       🗑 Del
                     </button>
                   </div>
+
                 </div>
               </div>
             );
@@ -538,7 +545,7 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
             style={{ background: "#0d1117", border: "1px solid rgba(248,113,113,0.3)" }}>
             <p className="text-3xl">🗑️</p>
             <h3 className="text-white font-bold text-base">Delete Invoice?</h3>
-            <p className="text-gray-400 text-sm">This action cannot be undone. The invoice will be permanently removed.</p>
+            <p className="text-gray-400 text-sm">This invoice will be removed from your view. You can ask admin to restore it if needed.</p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteConf(null)}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold"

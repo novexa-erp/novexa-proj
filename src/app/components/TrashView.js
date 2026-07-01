@@ -1,0 +1,380 @@
+"use client";
+
+import { useState, useEffect } from "react";
+import {
+  collection, query, where, onSnapshot, orderBy,
+  doc, updateDoc, deleteDoc, serverTimestamp, getDocs,
+} from "firebase/firestore";
+import { db } from "@/lib/firebase";
+
+function formatRs(n) {
+  if (!n && n !== 0) return "Rs. 0";
+  return "Rs. " + Number(n).toLocaleString("en-PK");
+}
+function fmtDate(ts) {
+  if (!ts) return "—";
+  const d = ts.toDate ? ts.toDate() : new Date(ts);
+  return d.toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" });
+}
+
+const STATUS_STYLE = {
+  Paid:    { color: "#34d399", bg: "rgba(52,211,153,0.1)",  border: "rgba(52,211,153,0.25)"  },
+  Unpaid:  { color: "#f87171", bg: "rgba(248,113,113,0.1)", border: "rgba(248,113,113,0.25)" },
+  Partial: { color: "#fbbf24", bg: "rgba(251,191,36,0.1)",  border: "rgba(251,191,36,0.25)"  },
+};
+
+const TABS = [
+  { id: "invoices",  label: "Invoices",  icon: "🧾" },
+  { id: "customers", label: "Customers", icon: "👥" },
+  { id: "products",  label: "Products",  icon: "📦" },
+  { id: "payments",  label: "Payments",  icon: "💳" },
+  { id: "suppliers", label: "Suppliers", icon: "🏭" },
+  { id: "orders",    label: "Orders",    icon: "📋" },
+];
+
+export default function TrashView({ uid }) {
+  const [activeTab, setActiveTab] = useState("invoices");
+  const [items,     setItems]     = useState({ invoices: [], customers: [], products: [], payments: [], suppliers: [], orders: [] });
+  const [loading,   setLoading]   = useState(true);
+  const [restoreId, setRestoreId] = useState(null);
+  const [permId,    setPermId]    = useState(null);
+  const [working,   setWorking]   = useState(false);
+  const [toast,     setToast]     = useState(null);
+
+  function showToast(msg, type = "success") {
+    setToast({ msg, type });
+    setTimeout(() => setToast(null), 3000);
+  }
+
+  // ── Load all deleted items ─────────────────────────────────────────────────
+  useEffect(() => {
+    if (!uid) return;
+    const unsubs = [];
+    const simpleCols = ["invoices", "customers", "products", "payments", "suppliers"];
+
+    // Simple top-level collections
+    simpleCols.forEach(col => {
+      const q = query(
+        collection(db, "users", uid, col),
+        where("deleted", "==", true)
+      );
+      const unsub = onSnapshot(q, snap => {
+        const docs = snap.docs.map(d => ({ id: d.id, _col: col, ...d.data() }));
+        setItems(prev => ({ ...prev, [col]: docs }));
+        setLoading(false);
+      }, () => setLoading(false));
+      unsubs.push(unsub);
+    });
+
+    // Orders — nested under each supplier, need collectionGroup or per-supplier scan
+    // Use collectionGroup for simplicity
+    const ordersUnsub = onSnapshot(
+      query(
+        collection(db, "users", uid, "suppliers"),
+        where("deleted", "==", false)   // only active suppliers
+      ),
+      async (suppSnap) => {
+        // For each active supplier, listen to their deleted orders
+        const allOrders = [];
+        await Promise.all(suppSnap.docs.map(async suppDoc => {
+          const oSnap = await getDocs(
+            query(
+              collection(db, "users", uid, "suppliers", suppDoc.id, "orders"),
+              where("deleted", "==", true)
+            )
+          );
+          oSnap.docs.forEach(d => allOrders.push({
+            id: d.id,
+            _col: "orders",
+            _supplierId: suppDoc.id,
+            _supplierName: suppDoc.data().name || "Unknown Supplier",
+            ...d.data(),
+          }));
+        }));
+        setItems(prev => ({ ...prev, orders: allOrders }));
+        setLoading(false);
+      },
+      () => setLoading(false)
+    );
+    unsubs.push(ordersUnsub);
+
+    return () => unsubs.forEach(u => u());
+  }, [uid]);
+
+  const current = items[activeTab] || [];
+  const total   = Object.values(items).reduce((s, arr) => s + arr.length, 0);
+
+  // ── Restore ────────────────────────────────────────────────────────────────
+  async function handleRestore(item) {
+    setWorking(true);
+    try {
+      const updates = { deleted: false, deletedAt: null, restoredAt: serverTimestamp() };
+
+      if (item._col === "orders") {
+        await updateDoc(doc(db, "users", uid, "suppliers", item._supplierId, "orders", item.id), updates);
+      } else {
+        await updateDoc(doc(db, "users", uid, item._col, item.id), updates);
+      }
+
+      // Customer restore — also restore their invoices + payments
+      if (item._col === "customers") {
+        const subSnap = await getDocs(collection(db, "users", uid, "customers", item.id, "invoices"));
+        await Promise.all(subSnap.docs.map(d => updateDoc(d.ref, updates)));
+        const invSnap = await getDocs(query(collection(db, "users", uid, "invoices"), where("customerId", "==", item.id)));
+        await Promise.all(invSnap.docs.map(d => updateDoc(d.ref, updates)));
+        const paySnap = await getDocs(query(collection(db, "users", uid, "payments"), where("customerId", "==", item.id)));
+        await Promise.all(paySnap.docs.map(d => updateDoc(d.ref, updates)));
+      }
+
+      // Supplier restore — also restore their orders
+      if (item._col === "suppliers") {
+        const oSnap = await getDocs(collection(db, "users", uid, "suppliers", item.id, "orders"));
+        await Promise.all(oSnap.docs.map(d => updateDoc(d.ref, updates)));
+      }
+
+      // Invoice restore — also restore in customer subcollection
+      if (item._col === "invoices" && item.customerId) {
+        await updateDoc(doc(db, "users", uid, "customers", item.customerId, "invoices", item.id), updates).catch(() => {});
+      }
+
+      showToast("Restored successfully ✓");
+    } catch (err) {
+      showToast(err.message || "Restore failed", "error");
+    }
+    setWorking(false);
+    setRestoreId(null);
+  }
+
+  // ── Permanent Delete ───────────────────────────────────────────────────────
+  async function handlePermDelete(item) {
+    setWorking(true);
+    try {
+      if (item._col === "orders") {
+        await deleteDoc(doc(db, "users", uid, "suppliers", item._supplierId, "orders", item.id));
+      } else {
+        await deleteDoc(doc(db, "users", uid, item._col, item.id));
+      }
+
+      if (item._col === "customers") {
+        const subSnap = await getDocs(collection(db, "users", uid, "customers", item.id, "invoices"));
+        await Promise.all(subSnap.docs.map(d => deleteDoc(d.ref)));
+        const invSnap = await getDocs(query(collection(db, "users", uid, "invoices"), where("customerId", "==", item.id)));
+        await Promise.all(invSnap.docs.map(d => deleteDoc(d.ref)));
+        const paySnap = await getDocs(query(collection(db, "users", uid, "payments"), where("customerId", "==", item.id)));
+        await Promise.all(paySnap.docs.map(d => deleteDoc(d.ref)));
+      }
+
+      if (item._col === "suppliers") {
+        const oSnap = await getDocs(collection(db, "users", uid, "suppliers", item.id, "orders"));
+        await Promise.all(oSnap.docs.map(d => deleteDoc(d.ref)));
+      }
+
+      if (item._col === "invoices" && item.customerId) {
+        await deleteDoc(doc(db, "users", uid, "customers", item.customerId, "invoices", item.id)).catch(() => {});
+      }
+
+      showToast("Permanently deleted", "error");
+    } catch (err) {
+      showToast(err.message || "Delete failed", "error");
+    }
+    setWorking(false);
+    setPermId(null);
+  }
+
+  // ── Item label helper ──────────────────────────────────────────────────────
+  function getLabel(item) {
+    if (item._col === "invoices")  return item.customerName || item.customer || "Unknown";
+    if (item._col === "customers") return item.name || "Unknown Customer";
+    if (item._col === "products")  return item.name || "Unknown Product";
+    if (item._col === "payments")  return item.payerName || item.customer || "Payment";
+    if (item._col === "suppliers") return item.name || "Unknown Supplier";
+    if (item._col === "orders")    return `PO-${item.id.slice(-4).toUpperCase()} · ${item._supplierName}`;
+    return "Item";
+  }
+  function getSublabel(item) {
+    if (item._col === "invoices")  return `INV-${item.id.slice(-4).toUpperCase()} · ${formatRs(item.amount)} · ${item.status || ""}`;
+    if (item._col === "customers") return `${item.phone || ""} · ${item.email || ""}`.replace(/^·\s|·\s$/, "").trim() || "—";
+    if (item._col === "products")  return `Stock: ${item.stock ?? "—"} · Price: ${formatRs(item.price)}`;
+    if (item._col === "payments")  return `${formatRs(item.paid || item.amount)} · ${item.method || "cash"}`;
+    if (item._col === "suppliers") return `${item.phone || ""} · Balance: ${formatRs(item.totalBalance)}`;
+    if (item._col === "orders")    return `Total: ${formatRs(item.totalAmount)} · Paid: ${formatRs(item.paidAmount)} · Balance: ${formatRs(item.balance)}`;
+    return "";
+  }
+  function getIcon(item) {
+    if (item._col === "invoices")  return "🧾";
+    if (item._col === "customers") return "👥";
+    if (item._col === "products")  return "📦";
+    if (item._col === "payments")  return "💳";
+    if (item._col === "suppliers") return "🏭";
+    if (item._col === "orders")    return "📋";
+    return "🗑";
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center h-60">
+        <div className="w-12 h-12 rounded-full border-4 border-t-red-500 border-transparent animate-spin" />
+      </div>
+    );
+  }
+
+  return (
+    <div className="flex flex-col gap-5 pb-10">
+
+      {/* Toast */}
+      {toast && (
+        <div className="fixed bottom-5 right-5 z-[9999] px-4 py-3 rounded-xl text-sm font-semibold shadow-2xl"
+          style={{
+            background: toast.type === "success" ? "rgba(52,211,153,0.15)" : "rgba(248,113,113,0.15)",
+            border: `1px solid ${toast.type === "success" ? "rgba(52,211,153,0.35)" : "rgba(248,113,113,0.35)"}`,
+            color:  toast.type === "success" ? "#34d399" : "#f87171",
+            backdropFilter: "blur(12px)",
+          }}>
+          {toast.type === "success" ? "✓" : "✕"} {toast.msg}
+        </div>
+      )}
+
+      {/* Header */}
+      <div className="rounded-xl p-5" style={{ background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.18)" }}>
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div>
+            <h2 className="text-white font-black text-xl">🗑️ Trash</h2>
+            <p className="text-gray-500 text-xs mt-0.5">Deleted items — restore or permanently remove.</p>
+          </div>
+          <span className="px-3 py-1.5 rounded-xl text-sm font-bold"
+            style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>
+            {total} item{total !== 1 ? "s" : ""} in trash
+          </span>
+        </div>
+      </div>
+
+      {/* Tabs */}
+      <div className="flex flex-wrap gap-2">
+        {TABS.map(t => (
+          <button key={t.id} onClick={() => setActiveTab(t.id)}
+            className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all"
+            style={{
+              background: activeTab === t.id ? "rgba(248,113,113,0.15)" : "rgba(255,255,255,0.04)",
+              border: `1px solid ${activeTab === t.id ? "rgba(248,113,113,0.4)" : "rgba(255,255,255,0.08)"}`,
+              color: activeTab === t.id ? "#f87171" : "#6b7280",
+            }}>
+            {t.icon} {t.label}
+            <span className="ml-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+              style={{ background: "rgba(255,255,255,0.08)", color: "#9ca3af" }}>
+              {items[t.id]?.length || 0}
+            </span>
+          </button>
+        ))}
+      </div>
+
+      {/* Items list */}
+      {current.length === 0 ? (
+        <div className="flex flex-col items-center justify-center py-16 gap-3">
+          <span className="text-5xl">🎉</span>
+          <p className="text-white font-bold">No deleted {activeTab} here</p>
+          <p className="text-gray-500 text-sm">This section is clean.</p>
+        </div>
+      ) : (
+        <div className="rounded-xl overflow-hidden" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)" }}>
+          {current.map((item, idx) => (
+            <div key={item.id}
+              className="flex items-center justify-between px-5 py-4 border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] transition-colors gap-4">
+
+              {/* Icon + Info */}
+              <div className="flex items-center gap-3 min-w-0 flex-1">
+                <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0"
+                  style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.2)" }}>
+                  {getIcon(item)}
+                </div>
+                <div className="min-w-0">
+                  <p className="text-white text-sm font-semibold truncate">{getLabel(item)}</p>
+                  <p className="text-gray-500 text-[11px] truncate">{getSublabel(item)}</p>
+                </div>
+              </div>
+
+              {/* Deleted on */}
+              <div className="hidden sm:block flex-shrink-0 text-right">
+                <p className="text-gray-600 text-[10px] uppercase tracking-wide">Deleted</p>
+                <p className="text-gray-400 text-xs">{fmtDate(item.deletedAt)}</p>
+              </div>
+
+              {/* Actions */}
+              <div className="flex gap-1.5 flex-shrink-0">
+                <button onClick={() => setRestoreId(item.id)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:scale-105"
+                  style={{ background: "rgba(52,211,153,0.08)", color: "#34d399", border: "1px solid rgba(52,211,153,0.2)" }}>
+                  ↩ Restore
+                </button>
+                <button onClick={() => setPermId(item.id)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:scale-105"
+                  style={{ background: "rgba(248,113,113,0.08)", color: "#f87171", border: "1px solid rgba(248,113,113,0.2)" }}>
+                  🗑 Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/* Restore Confirm */}
+      {restoreId && (() => { const item = current.find(i => i.id === restoreId); return item ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 flex flex-col gap-4 text-center"
+            style={{ background: "#0d1117", border: "1px solid rgba(52,211,153,0.25)" }}>
+            <span className="text-4xl">↩️</span>
+            <h3 className="text-white font-bold text-lg">Restore {TABS.find(t=>t.id===item._col)?.label.slice(0,-1)}?</h3>
+            <p className="text-gray-400 text-sm">
+              <span className="text-white font-semibold">{getLabel(item)}</span> will be restored and visible again.
+              {item._col === "customers" && " Their invoices and payments will also be restored."}
+              {item._col === "suppliers" && " Their orders will also be restored."}
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setRestoreId(null)} disabled={working}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+                Cancel
+              </button>
+              <button onClick={() => handleRestore(item)} disabled={working}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+                style={{ background: "rgba(52,211,153,0.15)", border: "1px solid rgba(52,211,153,0.35)", color: "#34d399" }}>
+                {working ? "Restoring..." : "Yes, Restore"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null; })()}
+
+      {/* Permanent Delete Confirm */}
+      {permId && (() => { const item = current.find(i => i.id === permId); return item ? (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 flex flex-col gap-4 text-center"
+            style={{ background: "#0d1117", border: "1px solid rgba(248,113,113,0.3)" }}>
+            <span className="text-4xl">⚠️</span>
+            <h3 className="text-white font-bold text-lg">Delete Forever?</h3>
+            <p className="text-gray-400 text-sm">
+              <span className="text-white font-semibold">{getLabel(item)}</span> will be{" "}
+              <span className="text-red-400 font-bold">permanently removed</span> from Firestore. Cannot be undone.
+              {item._col === "customers" && " All their invoices and payments will also be deleted."}
+              {item._col === "suppliers" && " All their orders will also be deleted."}
+            </p>
+            <div className="flex gap-3">
+              <button onClick={() => setPermId(null)} disabled={working}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+                Cancel
+              </button>
+              <button onClick={() => handlePermDelete(item)} disabled={working}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+                style={{ background: "rgba(248,113,113,0.15)", border: "1px solid rgba(248,113,113,0.4)", color: "#f87171" }}>
+                {working ? "Deleting..." : "Delete Forever"}
+              </button>
+            </div>
+          </div>
+        </div>
+      ) : null; })()}
+
+    </div>
+  );
+}
