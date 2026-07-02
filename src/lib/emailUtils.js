@@ -97,67 +97,86 @@ export async function sendSupplierOrderEmail(order, supplier, userDoc, pdfBase64
 }
 
 /**
- * Helper — fire-and-forget email after any invoice create/update
- * Pass setAlert to show feedback toast.
+ * Helper — prompt user confirmation before emailing invoice
+ * Pass setAlert to show feedback toast, and onConfirm callback for custom UI.
  */
-export function autoEmailInvoice({ invoice, userDoc, uid, setAlert, isUpdate = false }) {
+export function autoEmailInvoice({ invoice, userDoc, uid, setAlert, isUpdate = false, onConfirm }) {
   if (!invoice?.email?.trim()) return;
 
-  (async () => {
-    try {
-      const pdfBase64 = await generateInvoicePdfBase64(invoice, userDoc);
-      const result    = await sendInvoiceEmail(invoice, userDoc, pdfBase64, uid, isUpdate);
-      if (result.success) {
+  // If onConfirm callback provided, call it to show confirmation dialog
+  if (onConfirm) {
+    onConfirm(async () => {
+      // User clicked "Yes" - send email
+      try {
+        const pdfBase64 = await generateInvoicePdfBase64(invoice, userDoc);
+        const result    = await sendInvoiceEmail(invoice, userDoc, pdfBase64, uid, isUpdate);
+        if (result.success) {
+          setAlert({
+            show: true, type: "success",
+            title: isUpdate ? "Invoice Updated & Emailed! 🧾📧" : "Invoice Created & Emailed! 🧾📧",
+            message: `${isUpdate ? "Updated" : "New"} invoice emailed to ${invoice.email}.`,
+          });
+        } else {
+          setAlert({
+            show: true, type: "warning",
+            title: `Invoice ${isUpdate ? "Updated" : "Created"} ✓ (Email Failed)`,
+            message: `Invoice saved, but email could not be sent: ${result.error}`,
+          });
+        }
+      } catch (e) {
+        console.error("[autoEmailInvoice]", e);
         setAlert({
-          show: true, type: "success",
-          title: isUpdate ? "Invoice Updated & Emailed! 🧾📧" : "Invoice Created & Emailed! 🧾📧",
-          message: `${isUpdate ? "Updated" : "New"} invoice emailed to ${invoice.email}.`,
-        });
-      } else {
-        setAlert({
-          show: true, type: "warning",
-          title: `Invoice ${isUpdate ? "Updated" : "Created"} ✓ (Email Failed)`,
-          message: `Invoice saved, but email could not be sent: ${result.error}`,
+          show: true, type: "error",
+          title: "Email Failed",
+          message: "An error occurred while sending the email.",
         });
       }
-    } catch (e) {
-      console.error("[autoEmailInvoice]", e);
-    }
-  })();
+    });
+  }
 }
 
 /**
- * Helper — fire-and-forget email for supplier PO create/update
+ * Helper — prompt user confirmation before emailing supplier PO
+ * Pass setAlert to show feedback toast, and onConfirm callback for custom UI.
  */
-export function autoEmailSupplierOrder({ order, supplier, userDoc, uid, setAlert, isUpdate = false }) {
+export function autoEmailSupplierOrder({ order, supplier, userDoc, uid, setAlert, isUpdate = false, onConfirm }) {
   if (!supplier?.email?.trim()) return;
 
-  (async () => {
-    try {
-      const orderForEmail = {
-        ...order,
-        email:        supplier.email,
-        customerName: supplier.name,
-        address:      supplier.address || "",
-        phone:        supplier.phone   || "",
-      };
-      const pdfBase64 = await generateInvoicePdfBase64(orderForEmail, userDoc);
-      const result    = await sendSupplierOrderEmail(order, supplier, userDoc, pdfBase64, uid, isUpdate);
-      if (result.success) {
+  // If onConfirm callback provided, call it to show confirmation dialog
+  if (onConfirm) {
+    onConfirm(async () => {
+      // User clicked "Yes" - send email
+      try {
+        const orderForEmail = {
+          ...order,
+          email:        supplier.email,
+          customerName: supplier.name,
+          address:      supplier.address || "",
+          phone:        supplier.phone   || "",
+        };
+        const pdfBase64 = await generateInvoicePdfBase64(orderForEmail, userDoc);
+        const result    = await sendSupplierOrderEmail(order, supplier, userDoc, pdfBase64, uid, isUpdate);
+        if (result.success) {
+          setAlert({
+            show: true, type: "success",
+            title: isUpdate ? "Order Updated & Emailed! 🛒📧" : "Order Created & Emailed! 🛒📧",
+            message: `Purchase order emailed to ${supplier.email}.`,
+          });
+        } else {
+          setAlert({
+            show: true, type: "warning",
+            title: `Order ${isUpdate ? "Updated" : "Created"} ✓ (Email Failed)`,
+            message: `Order saved, but email could not be sent: ${result.error}`,
+          });
+        }
+      } catch (e) {
+        console.error("[autoEmailSupplierOrder]", e);
         setAlert({
-          show: true, type: "success",
-          title: isUpdate ? "Order Updated & Emailed! 🛒📧" : "Order Created & Emailed! 🛒📧",
-          message: `Purchase order emailed to ${supplier.email}.`,
-        });
-      } else {
-        setAlert({
-          show: true, type: "warning",
-          title: `Order ${isUpdate ? "Updated" : "Created"} ✓ (Email Failed)`,
-          message: `Order saved, but email could not be sent: ${result.error}`,
+          show: true, type: "error",
+          title: "Email Failed",
+          message: "An error occurred while sending the email.",
         });
       }
-    } catch (e) {
-      console.error("[autoEmailSupplierOrder]", e);
-    }
-  })();
+    });
+  }
 }

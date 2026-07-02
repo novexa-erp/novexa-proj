@@ -7,6 +7,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import SweetAlert from "./SweetAlert";
+import EmailConfirmationDialog from "./EmailConfirmationDialog";
 import { autoEmailSupplierOrder } from "@/lib/emailUtils";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -2303,6 +2304,9 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
   const [supplierReceipts, setSupplierReceipts] = useState([]);
   const [supplierReturns, setSupplierReturns]   = useState([]);
   const [alert, setAlert]             = useState({ show: false, type: "", title: "", message: "" });
+  
+  // Email Confirmation Dialog State
+  const [emailConfirm, setEmailConfirm] = useState({ show: false, order: null, isUpdate: false });
 
   // real-time orders listener
   useEffect(() => {
@@ -2425,7 +2429,10 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
           });
         }
 
-        setAlert({ show: true, type: "success", title: "Order Updated! ✓", message: newItems.length > 0 ? `Order updated & ${newItems.length} new receipt(s) recorded.` : "Purchase order updated." });
+        // Only show alert if no email will be sent
+        if (!supplier.email?.trim()) {
+          setAlert({ show: true, type: "success", title: "Order Updated! ✓", message: newItems.length > 0 ? `Order updated & ${newItems.length} new receipt(s) recorded.` : "Purchase order updated." });
+        }
 
         // ── Auto-email updated order to supplier ──────────────────────────
         if (supplier.email?.trim()) {
@@ -2437,7 +2444,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
             dueDate:   formData.dueDate || "",
             note:      formData.note || "",
           };
-          autoEmailSupplierOrder({ order: updatedOrder, supplier, userDoc, uid, setAlert, isUpdate: true });
+          setEmailConfirm({ show: true, order: updatedOrder, isUpdate: true });
         }
 
       } else {
@@ -2483,14 +2490,15 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
             createdAt:     serverTimestamp(),
           });
         }
-        setAlert({ show: true, type: "success", title: "Order Created! 🛒", message: "New purchase order recorded." });
+        
+        // Only show alert if no email will be sent
+        if (!supplier.email?.trim()) {
+          setAlert({ show: true, type: "success", title: "Order Created! 🛒", message: "New purchase order recorded." });
+        }
 
         // ── Auto-email new order to supplier ──────────────────────────────
         if (supplier.email?.trim()) {
-          autoEmailSupplierOrder({
-            order: { ...payload, id: ref.id },
-            supplier, userDoc, uid, setAlert, isUpdate: false,
-          });
+          setEmailConfirm({ show: true, order: { ...payload, id: ref.id }, isUpdate: false });
         }
       }
 
@@ -2540,11 +2548,14 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
         createdAt:       serverTimestamp(),
       });
 
-      setAlert({
-        show: true, type: "success",
-        title: "Payment Recorded! 💸",
-        message: `${formatRs(amount)} paid to ${supplier.name}. Balance: ${formatRs(newBalance)}.`,
-      });
+      // Only show alert if no email will be sent
+      if (!supplier.email?.trim()) {
+        setAlert({
+          show: true, type: "success",
+          title: "Payment Recorded! 💸",
+          message: `${formatRs(amount)} paid to ${supplier.name}. Balance: ${formatRs(newBalance)}.`,
+        });
+      }
 
       // ── Auto-email payment receipt to supplier ────────────────────────────
       if (supplier.email?.trim()) {
@@ -2554,7 +2565,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
           balance:    newBalance,
           status:     newStatus,
         };
-        autoEmailSupplierOrder({ order: updatedOrder, supplier, userDoc, uid, setAlert, isUpdate: true });
+        setEmailConfirm({ show: true, order: updatedOrder, isUpdate: true });
       }
 
       setPayOrder(null);
@@ -2611,11 +2622,14 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
         updatedAt: serverTimestamp(),
       });
 
-      setAlert({
-        show: true, type: "success",
-        title: "Return Recorded! 📦",
-        message: `${formatRs(returnTotal)} deducted. New balance: ${formatRs(newBalance)}.`,
-      });
+      // Only show alert if no email will be sent
+      if (!supplier.email?.trim()) {
+        setAlert({
+          show: true, type: "success",
+          title: "Return Recorded! 📦",
+          message: `${formatRs(returnTotal)} deducted. New balance: ${formatRs(newBalance)}.`,
+        });
+      }
 
       // ── Auto-email return confirmation to supplier ────────────────────────
       if (supplier.email?.trim()) {
@@ -2624,7 +2638,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
           balance: newBalance,
           status:  newStatus,
         };
-        autoEmailSupplierOrder({ order: updatedOrder, supplier, userDoc, uid, setAlert, isUpdate: true });
+        setEmailConfirm({ show: true, order: updatedOrder, isUpdate: true });
       }
 
       setReturnOrder(null);
@@ -2985,6 +2999,39 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
           onCancel={() => setDeleteOrderId(null)}
         />
       )}
+
+      {/* ── Email Confirmation Dialog ── */}
+      <EmailConfirmationDialog
+        show={emailConfirm.show}
+        recipientEmail={supplier?.email}
+        documentType="order"
+        onConfirm={() => {
+          // User clicked "Yes" - send email
+          if (emailConfirm.order) {
+            autoEmailSupplierOrder({
+              order: emailConfirm.order,
+              supplier,
+              userDoc,
+              uid,
+              setAlert,
+              isUpdate: emailConfirm.isUpdate,
+              onConfirm: (sendEmailFn) => sendEmailFn()
+            });
+          }
+          setEmailConfirm({ show: false, order: null, isUpdate: false });
+        }}
+        onCancel={() => {
+          // User clicked "No" - show success without email
+          const docType = emailConfirm.isUpdate ? "Updated" : "Created";
+          setAlert({
+            show: true,
+            type: "success",
+            title: `Order ${docType}! 🛒`,
+            message: `Purchase order has been ${docType.toLowerCase()} successfully. Email was not sent.`,
+          });
+          setEmailConfirm({ show: false, order: null, isUpdate: false });
+        }}
+      />
     </>
   );
 }

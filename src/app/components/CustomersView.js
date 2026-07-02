@@ -9,6 +9,7 @@ import InvoiceModal, { EMPTY_FORM, calcTotals } from "./InvoiceModal";
 import InvoicePDFModal from "./InvoicePDF";
 import CustomerHistoryPDFModal from "./CustomerHistoryPDF";
 import SweetAlert from "./SweetAlert";
+import EmailConfirmationDialog from "./EmailConfirmationDialog";
 import { autoEmailInvoice } from "@/lib/emailUtils";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
@@ -481,19 +482,24 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             createdAt: serverTimestamp(),
           });
 
-          setAlert({
-            show: true,
-            type: "success",
-            title: "Invoice Updated! 🛍️",
-            message: `${formatRs(newPurchaseAmount)} worth of new items added to invoice. Balance updated to ${formatRs(mergedBalance)}.`,
-          });
+          // Only show alert if no email will be sent
+          const emailAddr = formData.email || customer.email;
+          if (!emailAddr?.trim()) {
+            setAlert({
+              show: true,
+              type: "success",
+              title: "Invoice Updated! 🛍️",
+              message: `${formatRs(newPurchaseAmount)} worth of new items added to invoice. Balance updated to ${formatRs(mergedBalance)}.`,
+            });
+          }
 
           // ── Auto-email updated invoice ──────────────────────────────────────
-          const emailAddr = formData.email || customer.email;
           if (emailAddr?.trim()) {
-            autoEmailInvoice({
+            setEmailConfirm({
+              show: true,
               invoice: { ...mergedPayload, id: editInv.id, email: emailAddr },
-              userDoc, uid, setAlert, isUpdate: true,
+              isUpdate: true,
+              documentType: "invoice"
             });
           }
 
@@ -575,18 +581,23 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             createdAt:      serverTimestamp(),
           });
 
-          setAlert({
-            show: true, type: "success",
-            title: "Goods Return Recorded! ↩️",
-            message: `${retData.description} × ${retData.qty} returned. ${formatRs(returnAmount)} deducted from invoice. New balance: ${formatRs(newBalance)}.`,
-          });
+          // Only show alert if no email will be sent
+          const retEmailAddr = formData.email || customer.email;
+          if (!retEmailAddr?.trim()) {
+            setAlert({
+              show: true, type: "success",
+              title: "Goods Return Recorded! ↩️",
+              message: `${retData.description} × ${retData.qty} returned. ${formatRs(returnAmount)} deducted from invoice. New balance: ${formatRs(newBalance)}.`,
+            });
+          }
 
           // ── Auto-email updated invoice after return ─────────────────────────
-          const retEmailAddr = formData.email || customer.email;
           if (retEmailAddr?.trim()) {
-            autoEmailInvoice({
+            setEmailConfirm({
+              show: true,
               invoice: { ...payload, id: editInv.id, amount: newFullAmount, actualAmount: newActual, balance: newBalance, status: newStatus, email: retEmailAddr },
-              userDoc, uid, setAlert, isUpdate: true,
+              isUpdate: true,
+              documentType: "return"
             });
           }
 
@@ -678,35 +689,45 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             createdAt: serverTimestamp(),
           });
           
-          setAlert({
-            show: true,
-            type: "success",
-            title: "Payment Collected! 💰",
-            message: `Payment of ${formatRs(paymentAmount)} collected from ${formData.payerName || customer.name}. Invoice updated to ${newStatus}.`,
-          });
+          // Only show alert if no email will be sent
+          const payEmailAddr = formData.email || customer.email;
+          if (!payEmailAddr?.trim()) {
+            setAlert({
+              show: true,
+              type: "success",
+              title: "Payment Collected! 💰",
+              message: `Payment of ${formatRs(paymentAmount)} collected from ${formData.payerName || customer.name}. Invoice updated to ${newStatus}.`,
+            });
+          }
 
           // ── Auto-email updated invoice (payment collected) ──────────────────
-          const payEmailAddr = formData.email || customer.email;
           if (payEmailAddr?.trim()) {
-            autoEmailInvoice({
+            setEmailConfirm({
+              show: true,
               invoice: { ...payload, id: editInv.id, amountPaid: newTotalPaid, balance: newBalance, status: newStatus, email: payEmailAddr },
-              userDoc, uid, setAlert, isUpdate: true,
+              isUpdate: true,
+              documentType: "invoice"
             });
           }
         } else {
-          setAlert({
-            show: true,
-            type: "success",
-            title: "Invoice Updated! ✓",
-            message: `Invoice has been updated successfully.`,
-          });
+          // Only show alert if no email will be sent
+          const editEmailAddr = formData.email || customer.email;
+          if (!editEmailAddr?.trim()) {
+            setAlert({
+              show: true,
+              type: "success",
+              title: "Invoice Updated! ✓",
+              message: `Invoice has been updated successfully.`,
+            });
+          }
 
           // ── Auto-email updated invoice (plain edit) ─────────────────────────
-          const editEmailAddr = formData.email || customer.email;
           if (editEmailAddr?.trim()) {
-            autoEmailInvoice({
+            setEmailConfirm({
+              show: true,
               invoice: { ...payload, id: editInv.id, email: editEmailAddr },
-              userDoc, uid, setAlert, isUpdate: true,
+              isUpdate: true,
+              documentType: "invoice"
             });
           }
         }
@@ -752,12 +773,24 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
           );
         });
 
-        // ── Auto-email new customer invoice ──────────────────────────────────
+        // Only show alert if no email will be sent
         const createEmailAddr = formData.email || customer.email;
+        if (!createEmailAddr?.trim()) {
+          setAlert({
+            show: true,
+            type: "success",
+            title: "Invoice Created! 🧾",
+            message: `New invoice for ${customer.name} has been created successfully.`,
+          });
+        }
+
+        // ── Auto-email new customer invoice ──────────────────────────────────
         if (createEmailAddr?.trim()) {
-          autoEmailInvoice({
+          setEmailConfirm({
+            show: true,
             invoice: { ...payload, id: ref.id, email: createEmailAddr },
-            userDoc, uid, setAlert, isUpdate: false,
+            isUpdate: false,
+            documentType: "invoice"
           });
         }
       }
@@ -1559,6 +1592,9 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
   
   // Sweet Alert State
   const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
+  
+  // Email Confirmation Dialog State
+  const [emailConfirm, setEmailConfirm] = useState({ show: false, invoice: null, isUpdate: false, documentType: "invoice" });
 
   // sync detailCust when customers list updates (e.g. after edit)
   useEffect(() => {
@@ -1981,6 +2017,39 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
         <DeleteConfirm name={customers.find(c => c.id === deleteConf)?.name}
           onConfirm={() => handleDelete(deleteConf)} onCancel={() => setDeleteConf(null)} />
       )}
+
+      {/* ── Email Confirmation Dialog ── */}
+      <EmailConfirmationDialog
+        show={emailConfirm.show}
+        recipientEmail={emailConfirm.invoice?.email}
+        documentType={emailConfirm.documentType}
+        onConfirm={() => {
+          // User clicked "Yes" - send email
+          if (emailConfirm.invoice) {
+            autoEmailInvoice({
+              invoice: emailConfirm.invoice,
+              userDoc,
+              uid,
+              setAlert,
+              isUpdate: emailConfirm.isUpdate,
+              onConfirm: (sendEmailFn) => sendEmailFn()
+            });
+          }
+          setEmailConfirm({ show: false, invoice: null, isUpdate: false, documentType: "invoice" });
+        }}
+        onCancel={() => {
+          // User clicked "No" - show success without email
+          const docType = emailConfirm.isUpdate ? "Updated" : "Created";
+          const docTypeText = emailConfirm.documentType === "return" ? "Return Recorded" : `Invoice ${docType}`;
+          setAlert({
+            show: true,
+            type: "success",
+            title: `${docTypeText}! ${emailConfirm.documentType === "return" ? "↩️" : "🧾"}`,
+            message: `${emailConfirm.documentType === "return" ? "Return has been" : "Invoice has been"} ${docType.toLowerCase()} successfully. Email was not sent.`,
+          });
+          setEmailConfirm({ show: false, invoice: null, isUpdate: false, documentType: "invoice" });
+        }}
+      />
 
       <style jsx global>{`
         @keyframes gradient-x {
