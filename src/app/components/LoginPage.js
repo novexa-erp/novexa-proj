@@ -209,7 +209,7 @@ function LoginContent() {
       if (isAdmin) {
         setAlert({ show: true, type: "success", title: "Welcome Back! 🎉", message: "Login successful! Redirecting you..." });
         setLoading(false);
-        setTimeout(() => router.push("/admin"), 1500);
+        setTimeout(() => router.push("/super-admin"), 1500);
         return;
       }
 

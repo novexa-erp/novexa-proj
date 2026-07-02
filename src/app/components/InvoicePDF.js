@@ -30,6 +30,10 @@ function InvoiceNumber(id) {
 }
 
 // ── The printable invoice template ───────────────────────────────────────────
+export function InvoiceTemplateForEmail({ inv, userDoc }) {
+  return <InvoiceTemplate inv={inv} userDoc={userDoc} payments={[]} />;
+}
+
 function InvoiceTemplate({ inv, userDoc, payments = [] }) {
   const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
 

@@ -7,6 +7,7 @@ import {
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import SweetAlert from "./SweetAlert";
+import { autoEmailSupplierOrder } from "@/lib/emailUtils";
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 function formatRs(n) {
@@ -1945,7 +1946,10 @@ function SupplierHistoryTemplate({ supplier, orders, payments, receipts, returns
   });
   timeline.sort((a, b) => b.date - a.date);
 
-  const totalOrdered  = orders.reduce((s, o) => s + (Number(o.totalAmount) || 0), 0);
+  // totalOrdered = original order amounts + additional purchases (receipts)
+  // Returns are NOT subtracted — they affect balance, not total purchased amount
+  const totalOrdered  = orders.reduce((s, o) => s + (Number(o.totalAmount) || 0), 0)
+                      + (receipts || []).reduce((s, r) => s + (Number(r.receiptTotal) || 0), 0);
   const totalPaid     = orders.reduce((s, o) => s + (Number(o.paidAmount) || 0), 0);
   const totalBalance  = orders.reduce((s, o) => s + (Number(o.balance) || 0), 0);
   const generatedOn   = new Date().toLocaleDateString("en-PK", { day: "2-digit", month: "long", year: "numeric" });
@@ -2228,7 +2232,9 @@ function SupplierHistoryModal({ supplier, orders, payments, receipts, returns, u
   const totalBalance = orders.reduce((s, o) => s + (Number(o.balance) || 0), 0);
 
   function shareWhatsApp() {
-    const totalOrdered = orders.reduce((s, o) => s + (Number(o.totalAmount) || 0), 0);
+    // Returns NOT subtracted — total ordered = how much was purchased, not affected by returns
+    const totalOrdered = orders.reduce((s, o) => s + (Number(o.totalAmount) || 0), 0)
+                       + (receipts || []).reduce((s, r) => s + (Number(r.receiptTotal) || 0), 0);
     const totalPaid    = orders.reduce((s, o) => s + (Number(o.paidAmount) || 0), 0);
     const text = encodeURIComponent(
       `Hi ${supplier.name},\n\nAccount Summary:\n\n` +
@@ -2354,12 +2360,12 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
     return Math.max(sub - disc, 0);
   }
 
-  // stats — totalOrdered = original amounts (from items) + all receipts - all returns
+  // stats — totalOrdered = original amounts (from items) + all receipts
+  // Returns are NOT subtracted from totalOrdered — they reduce balance, not purchasing total
   const totalOrdered  = orders.reduce((s, o) => {
     const orig     = orderOriginalAmt(o);
     const receipts = supplierReceipts.filter(r => r.orderId === o.id).reduce((a, r) => a + (Number(r.receiptTotal) || 0), 0);
-    const returns  = supplierReturns.filter(r => r.orderId === o.id).reduce((a, r) => a + (Number(r.returnTotal) || 0), 0);
-    return s + orig + receipts - returns;
+    return s + orig + receipts;
   }, 0);
   const totalPaid     = orders.reduce((s, o) => s + (Number(o.paidAmount) || 0), 0);
   const totalBalance  = orders.reduce((s, o) => s + (Number(o.balance) || 0), 0);
@@ -2421,6 +2427,19 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
 
         setAlert({ show: true, type: "success", title: "Order Updated! ✓", message: newItems.length > 0 ? `Order updated & ${newItems.length} new receipt(s) recorded.` : "Purchase order updated." });
 
+        // ── Auto-email updated order to supplier ──────────────────────────
+        if (supplier.email?.trim()) {
+          const currentOrder = orders.find(o => o.id === editOrder.id);
+          const updatedOrder = {
+            ...currentOrder,
+            id:        editOrder.id,
+            orderDate: formData.orderDate,
+            dueDate:   formData.dueDate || "",
+            note:      formData.note || "",
+          };
+          autoEmailSupplierOrder({ order: updatedOrder, supplier, userDoc, uid, setAlert, isUpdate: true });
+        }
+
       } else {
         // ── CREATE MODE ───────────────────────────────────────────────────
         const cleanItems = originalItems.map(({ isNew, isReceipt, ...rest }) => rest);
@@ -2465,6 +2484,14 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
           });
         }
         setAlert({ show: true, type: "success", title: "Order Created! 🛒", message: "New purchase order recorded." });
+
+        // ── Auto-email new order to supplier ──────────────────────────────
+        if (supplier.email?.trim()) {
+          autoEmailSupplierOrder({
+            order: { ...payload, id: ref.id },
+            supplier, userDoc, uid, setAlert, isUpdate: false,
+          });
+        }
       }
 
       setShowOrderModal(false);
@@ -2518,6 +2545,18 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
         title: "Payment Recorded! 💸",
         message: `${formatRs(amount)} paid to ${supplier.name}. Balance: ${formatRs(newBalance)}.`,
       });
+
+      // ── Auto-email payment receipt to supplier ────────────────────────────
+      if (supplier.email?.trim()) {
+        const updatedOrder = {
+          ...payOrder,
+          paidAmount: newPaid,
+          balance:    newBalance,
+          status:     newStatus,
+        };
+        autoEmailSupplierOrder({ order: updatedOrder, supplier, userDoc, uid, setAlert, isUpdate: true });
+      }
+
       setPayOrder(null);
     } catch (err) {
       setAlert({ show: true, type: "error", title: "Error", message: err.message });
@@ -2577,6 +2616,17 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
         title: "Return Recorded! 📦",
         message: `${formatRs(returnTotal)} deducted. New balance: ${formatRs(newBalance)}.`,
       });
+
+      // ── Auto-email return confirmation to supplier ────────────────────────
+      if (supplier.email?.trim()) {
+        const updatedOrder = {
+          ...returnOrder,
+          balance: newBalance,
+          status:  newStatus,
+        };
+        autoEmailSupplierOrder({ order: updatedOrder, supplier, userDoc, uid, setAlert, isUpdate: true });
+      }
+
       setReturnOrder(null);
     } catch (err) {
       setAlert({ show: true, type: "error", title: "Error", message: err.message });

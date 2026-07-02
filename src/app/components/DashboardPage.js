@@ -133,32 +133,40 @@ function DashboardContent() {
       }
 
       setUser(u);
-      try {
-        const snap = await getDoc(doc(db, "users", u.uid));
-        if (snap.exists()) {
-          const data = snap.data();
-          setUserDoc(data);
-          // ── Check expiry and show popup once per session ──────────────────
-          if (data.activeTo) {
-            const diff = Math.ceil(
-              (new Date(data.activeTo + "T23:59:59") - new Date()) / 86400000
-            );
-            if (diff >= 0 && diff <= 3) {
-              setExpiryDaysLeft(diff);
-              // Show popup only once per browser session
-              const popupKey = `novexa_expiry_shown_${u.uid}`;
-              if (!sessionStorage.getItem(popupKey)) {
-                setShowExpiryPopup(true);
-                sessionStorage.setItem(popupKey, "1");
-              }
-            }
-          }
-        }
-      } catch { /* ignore */ }
+
+      // userDoc is loaded via real-time listener below — just set auth loading done
       setAuthLoading(false);
+
+      // ── Expiry check will run once userDoc listener fires ──────────────────
     });
     return () => unsub();
   }, [router]);
+
+  // ── Real-time userDoc listener ───────────────────────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    const unsubUser = onSnapshot(doc(db, "users", user.uid), (snap) => {
+      if (snap.exists()) {
+        const data = snap.data();
+        setUserDoc(data);
+        // ── Check expiry and show popup once per session ──────────────────
+        if (data.activeTo) {
+          const diff = Math.ceil(
+            (new Date(data.activeTo + "T23:59:59") - new Date()) / 86400000
+          );
+          if (diff >= 0 && diff <= 3) {
+            setExpiryDaysLeft(diff);
+            const popupKey = `novexa_expiry_shown_${user.uid}`;
+            if (!sessionStorage.getItem(popupKey)) {
+              setShowExpiryPopup(true);
+              sessionStorage.setItem(popupKey, "1");
+            }
+          }
+        }
+      }
+    });
+    return () => unsubUser();
+  }, [user]);
 
   // ── Heartbeat — verify session every 8s ─────────────────────────────────────
   useEffect(() => {

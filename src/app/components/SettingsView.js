@@ -76,6 +76,16 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
   const [pwForm, setPwForm] = useState({ current: "", newPw: "", confirm: "" });
   const [showPw, setShowPw] = useState({ current: false, newPw: false, confirm: false });
 
+  // ── Gmail sender state ────────────────────────────────────────────────────
+  const [gmailForm, setGmailForm]   = useState({
+    gmailSender:      userDoc?.gmailSender      || "",
+    gmailAppPassword: "",   // never pre-fill password for security
+  });
+  const [showGmailPass, setShowGmailPass] = useState(false);
+  const [gmailSaving,   setGmailSaving]   = useState(false);
+  const [gmailMsg,      setGmailMsg]      = useState({ type: "", text: "" });
+  const [gmailConnected, setGmailConnected] = useState(!!(userDoc?.gmailSender));
+
   const [saving,   setSaving]   = useState(false);
   const [pwSaving, setPwSaving] = useState(false);
   const [saved,    setSaved]    = useState(false);
@@ -94,6 +104,11 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
         currency:    userDoc.currency    || p.currency || "PKR",
         logoDataUrl: userDoc.logoDataUrl || p.logoDataUrl,
       }));
+      // Sync gmail connected state
+      if (userDoc.gmailSender) {
+        setGmailForm(f => ({ ...f, gmailSender: userDoc.gmailSender }));
+        setGmailConnected(true);
+      }
     }
   }, [userDoc]);
 
@@ -126,6 +141,55 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
       if (onSettingsSaved) onSettingsSaved(profile);
     } catch (err) { alert("Save failed: " + err.message); }
     setSaving(false);
+  }
+
+  // ── Save Gmail Sender ─────────────────────────────────────────────────────
+  async function handleSaveGmail(e) {
+    e.preventDefault();
+    setGmailMsg({ type: "", text: "" });
+    if (!gmailForm.gmailSender || !gmailForm.gmailAppPassword) {
+      setGmailMsg({ type: "error", text: "Both Gmail address and App Password are required." });
+      return;
+    }
+    if (!gmailForm.gmailSender.includes("@gmail.com") && !gmailForm.gmailSender.includes("@")) {
+      setGmailMsg({ type: "error", text: "Please enter a valid email address." });
+      return;
+    }
+    if (gmailForm.gmailAppPassword.replace(/\s/g, "").length !== 16) {
+      setGmailMsg({ type: "error", text: "Gmail App Password should be exactly 16 characters (remove spaces)." });
+      return;
+    }
+    setGmailSaving(true);
+    try {
+      const { setDoc: sd } = await import("firebase/firestore");
+      await sd(doc(db, "users", uid), {
+        gmailSender:      gmailForm.gmailSender.trim(),
+        gmailAppPassword: gmailForm.gmailAppPassword.replace(/\s/g, ""),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      setGmailConnected(true);
+      setGmailMsg({ type: "success", text: `Gmail connected! Invoices will be sent from ${gmailForm.gmailSender}` });
+      setGmailForm(f => ({ ...f, gmailAppPassword: "" })); // clear password from UI
+    } catch (err) {
+      setGmailMsg({ type: "error", text: "Failed to save: " + err.message });
+    }
+    setGmailSaving(false);
+  }
+
+  async function handleDisconnectGmail() {
+    try {
+      const { setDoc: sd } = await import("firebase/firestore");
+      await sd(doc(db, "users", uid), {
+        gmailSender:      "",
+        gmailAppPassword: "",
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+      setGmailConnected(false);
+      setGmailForm({ gmailSender: "", gmailAppPassword: "" });
+      setGmailMsg({ type: "success", text: "Gmail disconnected." });
+    } catch (err) {
+      setGmailMsg({ type: "error", text: err.message });
+    }
   }
 
   // ── Change password ───────────────────────────────────────────────────────
@@ -334,6 +398,153 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
         </SECT>
       </form>
 
+      {/* ── Gmail Email Sender Setup ── */}
+      <div className="rounded-2xl p-6 flex flex-col gap-5" style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}>
+        <SECT title="📧 Email Sender Setup" color="#34d399">
+
+          {/* ── DISABLED BY ADMIN ── */}
+          {userDoc?.emailFeatureEnabled === false ? (
+            <div className="flex flex-col gap-4">
+              {/* Locked banner */}
+              <div className="relative overflow-hidden rounded-2xl p-5 flex flex-col gap-3"
+                style={{ background: "linear-gradient(135deg, rgba(239,68,68,0.08), rgba(245,158,11,0.05))", border: "1px solid rgba(239,68,68,0.2)" }}>
+                <div className="absolute inset-0 opacity-[0.03]"
+                  style={{ backgroundImage: "repeating-linear-gradient(45deg, #fff 0, #fff 1px, transparent 0, transparent 50%)", backgroundSize: "10px 10px" }} />
+                <div className="relative z-10 flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0"
+                    style={{ background: "rgba(239,68,68,0.12)", border: "1px solid rgba(239,68,68,0.25)" }}>
+                    🔒
+                  </div>
+                  <div className="flex flex-col gap-1">
+                    <p className="text-white font-bold text-sm">Email Feature Disabled</p>
+                    <p className="text-gray-400 text-xs leading-relaxed">
+                      This feature has been disabled by your administrator. Invoice email sending is currently not available for your account.
+                    </p>
+                  </div>
+                </div>
+              </div>
+              {/* Note card */}
+              <div className="rounded-xl p-4 flex flex-col gap-2.5"
+                style={{ background: "rgba(245,158,11,0.05)", border: "1px solid rgba(245,158,11,0.15)" }}>
+                <div className="flex items-center gap-2">
+                  <span className="text-lg">💡</span>
+                  <p className="text-amber-400 text-xs font-bold uppercase tracking-wider">What does this mean?</p>
+                </div>
+                <ul className="text-gray-400 text-xs flex flex-col gap-1.5 leading-relaxed">
+                  <li className="flex items-start gap-2"><span className="text-amber-500 mt-0.5">•</span> You cannot connect a Gmail account at this time</li>
+                  <li className="flex items-start gap-2"><span className="text-amber-500 mt-0.5">•</span> Invoice emails will not be sent automatically</li>
+                  <li className="flex items-start gap-2"><span className="text-amber-500 mt-0.5">•</span> All other features (PDF, WhatsApp, Print) still work normally</li>
+                  <li className="flex items-start gap-2"><span className="text-amber-500 mt-0.5">•</span> Contact your administrator to get this feature enabled</li>
+                </ul>
+              </div>
+              {/* Greyed-out form preview */}
+              <div className="flex flex-col gap-3 opacity-30 pointer-events-none select-none">
+                <div>
+                  <label style={lbl}>Your Gmail Address</label>
+                  <div style={{ ...base, color: "#6b7280" }}>yourname@gmail.com</div>
+                </div>
+                <div>
+                  <label style={lbl}>Gmail App Password</label>
+                  <div style={{ ...base, color: "#6b7280", letterSpacing: "0.3em" }}>••••••••••••••••</div>
+                </div>
+                <div className="px-6 py-2.5 rounded-xl text-sm font-bold w-fit"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#6b7280" }}>
+                  Connect Gmail →
+                </div>
+              </div>
+            </div>
+          ) : (
+            /* ── ENABLED STATE ── */
+            <div className="flex flex-col gap-4">
+              {/* Status banner */}
+              {gmailConnected ? (
+                <div className="flex items-center justify-between px-4 py-3 rounded-xl"
+                  style={{ background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.25)" }}>
+                  <div className="flex items-center gap-3">
+                    <span className="text-xl">✅</span>
+                    <div>
+                      <p className="text-green-400 text-sm font-bold">Gmail Connected</p>
+                      <p className="text-gray-400 text-xs mt-0.5">
+                        Invoices will be sent from <span className="text-green-300 font-mono">{gmailForm.gmailSender || userDoc?.gmailSender}</span>
+                      </p>
+                    </div>
+                  </div>
+                  <button type="button" onClick={handleDisconnectGmail}
+                    className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105"
+                    style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171" }}>
+                    Disconnect
+                  </button>
+                </div>
+              ) : (
+                <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
+                  style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }}>
+                  <span className="text-xl">⚠️</span>
+                  <p className="text-amber-400 text-xs leading-relaxed">
+                    Gmail not connected. Invoice emails will not be sent until you set this up.
+                  </p>
+                </div>
+              )}
+              {/* How to get App Password */}
+              <div className="rounded-xl p-4 flex flex-col gap-2"
+                style={{ background: "rgba(37,99,235,0.06)", border: "1px solid rgba(37,99,235,0.15)" }}>
+                <p className="text-blue-400 text-xs font-bold uppercase tracking-wider">How to get Gmail App Password</p>
+                <ol className="text-gray-400 text-xs flex flex-col gap-1.5 list-decimal list-inside leading-relaxed">
+                  <li>Go to <span className="text-blue-400 font-semibold">myaccount.google.com</span> → Security</li>
+                  <li>Enable <span className="text-white font-semibold">2-Step Verification</span> (required)</li>
+                  <li>Search <span className="text-white font-semibold">"App passwords"</span> in search bar</li>
+                  <li>Create new → name it <span className="text-white font-semibold">Novexa</span> → Copy the 16-digit password</li>
+                </ol>
+              </div>
+              {/* Form */}
+              <form onSubmit={handleSaveGmail} className="flex flex-col gap-3">
+                <div>
+                  <label style={lbl}>Your Gmail Address</label>
+                  <SInput type="email" placeholder="yourname@gmail.com" value={gmailForm.gmailSender}
+                    onChange={e => setGmailForm(f => ({ ...f, gmailSender: e.target.value }))} />
+                </div>
+                <div>
+                  <label style={lbl}>Gmail App Password (16 characters)</label>
+                  <div className="relative">
+                    <input
+                      type={showGmailPass ? "text" : "password"}
+                      placeholder="xxxx xxxx xxxx xxxx"
+                      value={gmailForm.gmailAppPassword}
+                      onChange={e => setGmailForm(f => ({ ...f, gmailAppPassword: e.target.value }))}
+                      autoComplete="new-password"
+                      style={{ ...base, paddingRight: 42, letterSpacing: showGmailPass ? "0.1em" : "0.2em" }}
+                    />
+                    <button type="button" onClick={() => setShowGmailPass(v => !v)}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors text-sm">
+                      {showGmailPass ? "🙈" : "👁"}
+                    </button>
+                  </div>
+                  <p className="text-gray-600 text-[10px] mt-1.5">
+                    Stored securely — only used to send invoice emails on your behalf.
+                  </p>
+                </div>
+                {gmailMsg.text && (
+                  <div className="px-4 py-3 rounded-xl text-xs font-medium"
+                    style={{
+                      background: gmailMsg.type === "success" ? "rgba(52,211,153,0.08)" : "rgba(239,68,68,0.08)",
+                      border: `1px solid ${gmailMsg.type === "success" ? "rgba(52,211,153,0.25)" : "rgba(239,68,68,0.25)"}`,
+                      color: gmailMsg.type === "success" ? "#34d399" : "#fca5a5",
+                    }}>
+                    {gmailMsg.type === "success" ? "✓ " : "⚠ "}{gmailMsg.text}
+                  </div>
+                )}
+                <button type="submit" disabled={gmailSaving}
+                  className="px-6 py-2.5 rounded-xl text-sm font-bold transition-all hover:scale-105 w-fit"
+                  style={{ background: "linear-gradient(135deg,#34d399,#059669)", color: "#fff",
+                    opacity: gmailSaving ? 0.7 : 1, cursor: gmailSaving ? "not-allowed" : "pointer" }}>
+                  {gmailSaving ? "Saving..." : gmailConnected ? "Update Gmail →" : "Connect Gmail →"}
+                </button>
+              </form>
+            </div>
+          )}
+
+        </SECT>
+      </div>
+
       </div>
 
       {/* ────────────── RIGHT COLUMN: Info Cards ────────────── */}
@@ -353,7 +564,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
               { icon: "🏢", text: "Add your business logo for professional invoices" },
               { icon: "💰", text: "Select your default currency for all transactions" },
               { icon: "🔒", text: "Change password regularly for better security" },
-              { icon: "📧", text: "Keep your email updated for notifications" },
+              { icon: "📧", text: "Connect your Gmail in Email Setup to auto-send invoices" },
             ].map((tip, i) => (
               <div key={i} className="flex items-start gap-3 text-xs">
                 <span className="text-lg leading-none mt-0.5">{tip.icon}</span>

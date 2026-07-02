@@ -9,6 +9,7 @@ import InvoiceModal, { EMPTY_FORM, calcTotals } from "./InvoiceModal";
 import InvoicePDFModal from "./InvoicePDF";
 import CustomerHistoryPDFModal from "./CustomerHistoryPDF";
 import SweetAlert from "./SweetAlert";
+import { autoEmailInvoice } from "@/lib/emailUtils";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function formatRs(n) {
@@ -486,6 +487,16 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             title: "Invoice Updated! 🛍️",
             message: `${formatRs(newPurchaseAmount)} worth of new items added to invoice. Balance updated to ${formatRs(mergedBalance)}.`,
           });
+
+          // ── Auto-email updated invoice ──────────────────────────────────────
+          const emailAddr = formData.email || customer.email;
+          if (emailAddr?.trim()) {
+            autoEmailInvoice({
+              invoice: { ...mergedPayload, id: editInv.id, email: emailAddr },
+              userDoc, uid, setAlert, isUpdate: true,
+            });
+          }
+
           setShowInvModal(false);
           setEditInv(null);
           setSavingInv(false);
@@ -569,6 +580,16 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             title: "Goods Return Recorded! ↩️",
             message: `${retData.description} × ${retData.qty} returned. ${formatRs(returnAmount)} deducted from invoice. New balance: ${formatRs(newBalance)}.`,
           });
+
+          // ── Auto-email updated invoice after return ─────────────────────────
+          const retEmailAddr = formData.email || customer.email;
+          if (retEmailAddr?.trim()) {
+            autoEmailInvoice({
+              invoice: { ...payload, id: editInv.id, amount: newFullAmount, actualAmount: newActual, balance: newBalance, status: newStatus, email: retEmailAddr },
+              userDoc, uid, setAlert, isUpdate: true,
+            });
+          }
+
           setShowInvModal(false);
           setEditInv(null);
           setSavingInv(false);
@@ -663,6 +684,15 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             title: "Payment Collected! 💰",
             message: `Payment of ${formatRs(paymentAmount)} collected from ${formData.payerName || customer.name}. Invoice updated to ${newStatus}.`,
           });
+
+          // ── Auto-email updated invoice (payment collected) ──────────────────
+          const payEmailAddr = formData.email || customer.email;
+          if (payEmailAddr?.trim()) {
+            autoEmailInvoice({
+              invoice: { ...payload, id: editInv.id, amountPaid: newTotalPaid, balance: newBalance, status: newStatus, email: payEmailAddr },
+              userDoc, uid, setAlert, isUpdate: true,
+            });
+          }
         } else {
           setAlert({
             show: true,
@@ -670,6 +700,15 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             title: "Invoice Updated! ✓",
             message: `Invoice has been updated successfully.`,
           });
+
+          // ── Auto-email updated invoice (plain edit) ─────────────────────────
+          const editEmailAddr = formData.email || customer.email;
+          if (editEmailAddr?.trim()) {
+            autoEmailInvoice({
+              invoice: { ...payload, id: editInv.id, email: editEmailAddr },
+              userDoc, uid, setAlert, isUpdate: true,
+            });
+          }
         }
       } else {
         // add to customer subcollection first to get the id
@@ -712,6 +751,15 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             }
           );
         });
+
+        // ── Auto-email new customer invoice ──────────────────────────────────
+        const createEmailAddr = formData.email || customer.email;
+        if (createEmailAddr?.trim()) {
+          autoEmailInvoice({
+            invoice: { ...payload, id: ref.id, email: createEmailAddr },
+            userDoc, uid, setAlert, isUpdate: false,
+          });
+        }
       }
       setShowInvModal(false);
       setEditInv(null);

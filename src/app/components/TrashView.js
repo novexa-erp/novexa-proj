@@ -59,7 +59,10 @@ export default function TrashView({ uid }) {
         where("deleted", "==", true)
       );
       const unsub = onSnapshot(q, snap => {
-        const docs = snap.docs.map(d => ({ id: d.id, _col: col, ...d.data() }));
+        // Hide items that have been "permanently deleted" (moved to admin archive)
+        const docs = snap.docs
+          .map(d => ({ id: d.id, _col: col, ...d.data() }))
+          .filter(d => !d.adminTrash);
         setItems(prev => ({ ...prev, [col]: docs }));
         setLoading(false);
       }, () => setLoading(false));
@@ -91,7 +94,8 @@ export default function TrashView({ uid }) {
             ...d.data(),
           }));
         }));
-        setItems(prev => ({ ...prev, orders: allOrders }));
+        // Hide adminTrash items from user's view
+        setItems(prev => ({ ...prev, orders: allOrders.filter(o => !o.adminTrash) }));
         setLoading(false);
       },
       () => setLoading(false)
@@ -145,35 +149,38 @@ export default function TrashView({ uid }) {
     setRestoreId(null);
   }
 
-  // ── Permanent Delete ───────────────────────────────────────────────────────
+  // ── Permanent Delete — moves to admin trash instead of actual deletion ──────
   async function handlePermDelete(item) {
     setWorking(true);
     try {
+      // Mark as adminTrash instead of deleting — super admin can still see and restore
+      const adminTrashUpdate = { adminTrash: true, adminTrashedAt: serverTimestamp() };
+
       if (item._col === "orders") {
-        await deleteDoc(doc(db, "users", uid, "suppliers", item._supplierId, "orders", item.id));
+        await updateDoc(doc(db, "users", uid, "suppliers", item._supplierId, "orders", item.id), adminTrashUpdate);
       } else {
-        await deleteDoc(doc(db, "users", uid, item._col, item.id));
+        await updateDoc(doc(db, "users", uid, item._col, item.id), adminTrashUpdate);
       }
 
       if (item._col === "customers") {
         const subSnap = await getDocs(collection(db, "users", uid, "customers", item.id, "invoices"));
-        await Promise.all(subSnap.docs.map(d => deleteDoc(d.ref)));
+        await Promise.all(subSnap.docs.map(d => updateDoc(d.ref, adminTrashUpdate)));
         const invSnap = await getDocs(query(collection(db, "users", uid, "invoices"), where("customerId", "==", item.id)));
-        await Promise.all(invSnap.docs.map(d => deleteDoc(d.ref)));
+        await Promise.all(invSnap.docs.map(d => updateDoc(d.ref, adminTrashUpdate)));
         const paySnap = await getDocs(query(collection(db, "users", uid, "payments"), where("customerId", "==", item.id)));
-        await Promise.all(paySnap.docs.map(d => deleteDoc(d.ref)));
+        await Promise.all(paySnap.docs.map(d => updateDoc(d.ref, adminTrashUpdate)));
       }
 
       if (item._col === "suppliers") {
         const oSnap = await getDocs(collection(db, "users", uid, "suppliers", item.id, "orders"));
-        await Promise.all(oSnap.docs.map(d => deleteDoc(d.ref)));
+        await Promise.all(oSnap.docs.map(d => updateDoc(d.ref, adminTrashUpdate)));
       }
 
       if (item._col === "invoices" && item.customerId) {
-        await deleteDoc(doc(db, "users", uid, "customers", item.customerId, "invoices", item.id)).catch(() => {});
+        await updateDoc(doc(db, "users", uid, "customers", item.customerId, "invoices", item.id), adminTrashUpdate).catch(() => {});
       }
 
-      showToast("Permanently deleted", "error");
+      showToast("Moved to admin archive. Contact support to restore.", "error");
     } catch (err) {
       showToast(err.message || "Delete failed", "error");
     }

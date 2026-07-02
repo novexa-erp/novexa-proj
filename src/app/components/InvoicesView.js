@@ -1,12 +1,15 @@
 "use client";
-import { useState } from "react";
+import { useState, useRef } from "react";
 import {
   collection, addDoc, doc, updateDoc, serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import InvoiceModal, { formatRs } from "./InvoiceModal";
-import InvoicePDFModal from "./InvoicePDF";
+import InvoicePDFModal, { InvoiceTemplateForEmail } from "./InvoicePDF";
 import SweetAlert from "./SweetAlert";
+import { generateInvoicePdfBase64, sendInvoiceEmail, autoEmailInvoice } from "@/lib/emailUtils";
+
+// ── Generate PDF base64 from invoice data (for email attachment) ──────────────
 
 const STATUS_STYLE = {
   Paid:    { color: "#34d399", bg: "rgba(52,211,153,0.1)",  border: "rgba(52,211,153,0.25)"  },
@@ -147,6 +150,12 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
             title: "Payment Collected! 💰",
             message: `Payment of ${formatRs(paymentAmount)} collected from ${formData.payerName || formData.customerName}. Invoice updated to ${newStatus}.`,
           });
+
+          // ── Auto-email updated invoice ──────────────────────────────────
+          if (formData.email?.trim()) {
+            const updatedInvoice = { ...payload, id: editTarget.id, amountPaid: newTotalPaid, balance: newBalance, status: newStatus };
+            autoEmailInvoice({ invoice: updatedInvoice, userDoc, uid, setAlert, isUpdate: true });
+          }
         } else {
           // Show update success alert (no payment)
           setAlert({
@@ -155,10 +164,15 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
             title: "Invoice Updated! ✓",
             message: `Invoice for ${formData.customerName} has been updated successfully.`,
           });
+
+          // ── Auto-email updated invoice ──────────────────────────────────
+          if (formData.email?.trim()) {
+            autoEmailInvoice({ invoice: { ...payload, id: editTarget.id }, userDoc, uid, setAlert, isUpdate: true });
+          }
         }
       } else {
         // Create new invoice — store original values so history always shows creation-time state
-        await addDoc(collection(db, "users", uid, "invoices"), {
+        const newDocRef = await addDoc(collection(db, "users", uid, "invoices"), {
           ...payload,
           originalAmountPaid: payload.amountPaid,
           originalBalance:    payload.balance,
@@ -214,6 +228,12 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
           title: "Invoice Created! 🧾",
           message: `New invoice for ${formData.customerName} has been created successfully. Stock updated.`,
         });
+
+        // ── Auto-send email if customer has an email address ──────────────────
+        if (formData.email && formData.email.trim()) {
+          const invoiceForEmail = { ...payload, id: newDocRef.id };
+          autoEmailInvoice({ invoice: invoiceForEmail, userDoc, uid, setAlert, isUpdate: false });
+        }
       }
       setShowModal(false);
       setEditTarget(null);

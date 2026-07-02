@@ -1,8 +1,8 @@
 import AdminPanel from "../components/AdminPanel";
 
 export const metadata = {
-  title: "Admin Panel — Novexa ERP",
-  description: "Restricted admin access only.",
+  title: "Super Admin Panel — Novexa ERP",
+  description: "Restricted super admin access only.",
   robots: "noindex, nofollow",
 };
 
