@@ -9,6 +9,23 @@ function fmtDate(val) {
   try { const d = new Date(val); return isNaN(d) ? "—" : d.toLocaleDateString("en-PK", { day:"2-digit", month:"short", year:"numeric" }); }
   catch { return "—"; }
 }
+
+/* ── 15-day countdown for adminTrash items ───────────────────────────────── */
+function calc15DayCountdown(adminTrashedAt) {
+  if (!adminTrashedAt) return { expired: false, daysLeft: 15, hoursLeft: 0, display: "—" };
+  const trashedDate = new Date(adminTrashedAt);
+  const expiryDate  = new Date(trashedDate.getTime() + (15 * 24 * 60 * 60 * 1000));
+  const now         = new Date();
+  const msLeft      = expiryDate - now;
+  if (msLeft <= 0) {
+    return { expired: true, daysLeft: 0, hoursLeft: 0, display: "⚠️ Expired" };
+  }
+  const daysLeft  = Math.floor(msLeft / (24 * 60 * 60 * 1000));
+  const hoursLeft = Math.floor((msLeft % (24 * 60 * 60 * 1000)) / (60 * 60 * 1000));
+  if (daysLeft === 0) return { expired: false, daysLeft: 0, hoursLeft, display: `⏰ ${hoursLeft}h left` };
+  if (daysLeft === 1) return { expired: false, daysLeft: 1, hoursLeft, display: `⏰ 1d ${hoursLeft}h left` };
+  return { expired: false, daysLeft, hoursLeft, display: `⏰ ${daysLeft}d ${hoursLeft}h left` };
+}
 function fmtDT(val) {
   if (!val) return "—";
   try { const d = new Date(val); return isNaN(d) ? "—" : d.toLocaleString("en-PK"); }
@@ -1085,6 +1102,13 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
   const [trashTab,  setTrashTab]  = useState("invoices");
   const [restoreId, setRestoreId] = useState(null);
   const [restoring, setRestoring] = useState(false);
+  // Ticker to refresh countdown every minute
+  const [tick,      setTick]      = useState(0);
+
+  useEffect(() => {
+    const id = setInterval(() => setTick(t => t + 1), 60_000);
+    return () => clearInterval(id);
+  }, []);
 
   // Include both soft-deleted (deleted:true) AND admin-trashed (adminTrash:true) items
   const buckets = {
@@ -1132,7 +1156,7 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-white font-bold text-sm">🗑️ User Trash Archive</p>
-            <p className="text-gray-500 text-xs mt-0.5">All deleted items — admin can fully restore to original section</p>
+            <p className="text-gray-500 text-xs mt-0.5">All deleted items — admin can fully restore. Items permanently deleted by user are auto-purged after 15 days.</p>
           </div>
           <span className="px-3 py-1.5 rounded-xl text-xs font-bold"
             style={{ background:"rgba(248,113,113,0.1)", border:"1px solid rgba(248,113,113,0.2)", color:"#f87171" }}>
@@ -1140,14 +1164,14 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
           </span>
         </div>
         {/* Legend */}
-        <div className="flex gap-4 mt-3">
+        <div className="flex gap-4 mt-3 flex-wrap">
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-red-400" />
             <span className="text-gray-500 text-[10px]">In user&apos;s trash (user can restore)</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-purple-400" />
-            <span className="text-gray-500 text-[10px]">Permanently deleted by user (admin only)</span>
+            <span className="text-gray-500 text-[10px]">Permanently deleted by user — ⏰ 15-day timer running (admin can still restore)</span>
           </div>
         </div>
       </div>
@@ -1172,6 +1196,9 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
         <div className="rounded-xl overflow-hidden" style={{ border:"1px solid rgba(255,255,255,0.07)" }}>
           {current.map((item,idx)=>{
             const isAdminTrash = !!item.adminTrash;
+            // eslint-disable-next-line no-unused-expressions
+            tick; // re-evaluate every minute
+            const countdown = isAdminTrash ? calc15DayCountdown(item.adminTrashedAt) : null;
             return (
               <div key={item.id}
                 className="flex items-center gap-3 px-4 py-3.5 hover:bg-white/[0.02] transition-colors"
@@ -1200,10 +1227,22 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
                   <p className="text-gray-500 text-[11px] truncate">{trashSub(item)}</p>
                 </div>
 
-                {/* Date */}
-                <div className="hidden sm:flex flex-col items-end flex-shrink-0 mr-2">
-                  <p className="text-gray-600 text-[10px]">{isAdminTrash?"Perm. deleted":"In trash"}</p>
-                  <p className="text-gray-400 text-xs">{fmtDate(item.adminTrashedAt||item.deletedAt)}</p>
+                {/* Date + countdown */}
+                <div className="hidden sm:flex flex-col items-end flex-shrink-0 mr-2 gap-0.5">
+                  {isAdminTrash ? (
+                    <>
+                      <p className="text-gray-600 text-[10px] uppercase tracking-wide">Auto-delete in</p>
+                      <p className={`text-xs font-bold ${countdown?.expired ? "text-red-400" : countdown?.daysLeft <= 3 ? "text-amber-400" : "text-purple-400"}`}>
+                        {countdown?.display || "—"}
+                      </p>
+                      <p className="text-gray-600 text-[10px]">Deleted: {fmtDate(item.adminTrashedAt)}</p>
+                    </>
+                  ) : (
+                    <>
+                      <p className="text-gray-600 text-[10px]">{isAdminTrash?"Perm. deleted":"In trash"}</p>
+                      <p className="text-gray-400 text-xs">{fmtDate(item.adminTrashedAt||item.deletedAt)}</p>
+                    </>
+                  )}
                 </div>
 
                 {/* Restore button — always shown, restores to user's trash */}

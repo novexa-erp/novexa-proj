@@ -30,8 +30,8 @@ function InvoiceNumber(id) {
 }
 
 // ── The printable invoice template ───────────────────────────────────────────
-export function InvoiceTemplateForEmail({ inv, userDoc }) {
-  return <InvoiceTemplate inv={inv} userDoc={userDoc} payments={[]} />;
+export function InvoiceTemplateForEmail({ inv, userDoc, payments = [] }) {
+  return <InvoiceTemplate inv={inv} userDoc={userDoc} payments={payments} />;
 }
 
 function InvoiceTemplate({ inv, userDoc, payments = [] }) {
@@ -48,10 +48,26 @@ function InvoiceTemplate({ inv, userDoc, payments = [] }) {
   // Payment records (type=received)
   const paymentRecords  = payments.filter(p => p.type === "received" || (p.type !== "purchase" && p.type !== "return"));
 
-  // Subtotal only from items on the invoice (full, for display)
+  // Subtotal only from items on the invoice (full, for display in items table)
   const subtotal = (inv.items || []).reduce(
     (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0
   );
+
+  // Actual amounts — excluding previous balance carry-forward items
+  // These are used for Balance Due calculation so this invoice can be fully paid
+  // independently of older invoices' outstanding balances
+  const actualSubtotal = originalItems.reduce(
+    (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0
+  );
+  const actualDiscount = inv.discountType === "percent"
+    ? actualSubtotal * (Number(inv.discountValue) || 0) / 100
+    : Math.min(Number(inv.discountValue) || 0, actualSubtotal);
+  const actualAmount = inv.actualAmount != null
+    ? Number(inv.actualAmount)
+    : Math.max(actualSubtotal - actualDiscount, 0);
+  const amountPaid   = Number(inv.amountPaid) || 0;
+  const goodsReturn  = returnRecords.reduce((s, p) => s + (Number(p.returnAmount) || 0), 0);
+  const actualBalance = Math.max(actualAmount - amountPaid - goodsReturn, 0);
 
   return (
     <div style={{
@@ -105,9 +121,9 @@ function InvoiceTemplate({ inv, userDoc, payments = [] }) {
           <div style={{ marginTop: 10, display: "inline-flex", alignItems: "center",
             gap: 6, padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700,
             letterSpacing: "0.05em", textTransform: "uppercase",
-            background: inv.status === "Paid" ? "#dcfce7" : inv.status === "Partial" ? "#fef3c7" : "#fee2e2",
-            color: STATUS_COLOR[inv.status] || "#dc2626" }}>
-            ● {inv.status || "Unpaid"}
+            background: actualBalance === 0 ? "#dcfce7" : amountPaid > 0 ? "#fef3c7" : "#fee2e2",
+            color: actualBalance === 0 ? "#16a34a" : amountPaid > 0 ? "#d97706" : "#dc2626" }}>
+            ● {actualBalance === 0 && actualAmount > 0 ? "Paid" : amountPaid > 0 ? "Partial" : "Unpaid"}
           </div>
         </div>
       </div>
@@ -144,7 +160,7 @@ function InvoiceTemplate({ inv, userDoc, payments = [] }) {
             </div>
           ))}
          
-          {inv.earlyDiscountDays && inv.earlyDiscountPercent && (
+          {!!(inv.earlyDiscountDays) && !!(inv.earlyDiscountPercent) && (
             <div style={{ marginTop: 8, padding: "6px 10px", borderRadius: 8, fontSize: 11,
               background: "#fffbeb", border: "1px solid #fde68a", color: "#92400e" }}>
               💡 Pay within {inv.earlyDiscountDays} days → {inv.earlyDiscountPercent}% extra off
@@ -171,15 +187,14 @@ function InvoiceTemplate({ inv, userDoc, payments = [] }) {
         <tbody>
           {/* Previous Balance rows */}
           {prevBalItems.map((it, idx) => {
-            const lineTotal = (Number(it.qty) || 0) * (Number(it.unitPrice) || 0);
+            const lineTotal = (Number(it.qty) || 1) * (Number(it.unitPrice) || 0);
             return (
               <tr key={"pb" + idx} style={{ background: "#fffbeb" }}>
                 <td style={{ padding: "7px 8px", textAlign: "center", color: "#9ca3af", fontSize: 10 }}>{idx + 1}</td>
                 <td style={{ padding: "7px 8px", fontSize: 9, color: "#b45309", whiteSpace: "nowrap" }}>{fmtDateTime(inv.createdAt)}</td>
                 <td style={{ padding: "7px 8px", fontSize: 11, color: "#b45309", fontStyle: "italic" }}>{it.description}</td>
-                <td style={{ padding: "7px 8px", fontSize: 10, color: "#9ca3af" }}>—</td>
-                <td style={{ padding: "7px 8px", fontSize: 10, color: "#9ca3af" }}>—</td>
-                <td style={{ padding: "7px 8px", textAlign: "right", fontSize: 11, color: "#b45309" }}>{it.qty}</td>
+                <td style={{ padding: "7px 8px", fontSize: 10, color: "#9ca3af", textAlign: "center" }}>—</td>
+                <td style={{ padding: "7px 8px", fontSize: 10, color: "#9ca3af", textAlign: "left" }}>—</td>
                 <td style={{ padding: "7px 8px", textAlign: "right", fontSize: 11, color: "#b45309", whiteSpace: "nowrap" }}>{formatRs(it.unitPrice)}</td>
                 <td style={{ padding: "7px 8px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "#b45309", whiteSpace: "nowrap" }}>{formatRs(lineTotal)}</td>
               </tr>
@@ -257,9 +272,9 @@ function InvoiceTemplate({ inv, userDoc, payments = [] }) {
       <div style={{ display: "flex", justifyContent: "flex-end", marginBottom: 28 }}>
         <div style={{ minWidth: 260 }}>
           {[
-            { label: "Subtotal",    val: formatRs(subtotal),                    bold: false, color: "#374151" },
+            { label: "Subtotal",    val: formatRs(actualSubtotal),              bold: false, color: "#374151" },
             { label: `Discount${inv.discountType === "percent" ? ` (${inv.discountValue || 0}%)` : ""}`,
-              val: `- ${formatRs(inv.discount || 0)}`,                          bold: false, color: "#d97706" },
+              val: `- ${formatRs(actualDiscount || 0)}`,                        bold: false, color: "#d97706" },
           ].map(r => (
             <div key={r.label} style={{ display: "flex", justifyContent: "space-between",
               gap: 24, padding: "5px 0", borderBottom: "1px solid #f3f4f6", fontSize: 13 }}>
@@ -270,26 +285,26 @@ function InvoiceTemplate({ inv, userDoc, payments = [] }) {
           <div style={{ display: "flex", justifyContent: "space-between", gap: 24,
             padding: "10px 0", borderBottom: "2px solid #1d4ed8", marginTop: 2 }}>
             <span style={{ fontWeight: 700, fontSize: 14, color: "#111" }}>Total</span>
-            <span style={{ fontWeight: 800, fontSize: 16, color: "#1d4ed8" }}>{formatRs(inv.amount)}</span>
+            <span style={{ fontWeight: 800, fontSize: 16, color: "#1d4ed8" }}>{formatRs(actualAmount)}</span>
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 24, padding: "6px 0" }}>
             <span style={{ color: "#16a34a", fontWeight: 600, fontSize: 12 }}>Amount Paid</span>
-            <span style={{ color: "#16a34a", fontWeight: 700, fontSize: 13 }}>{formatRs(inv.amountPaid || 0)}</span>
+            <span style={{ color: "#16a34a", fontWeight: 700, fontSize: 13 }}>{formatRs(amountPaid)}</span>
           </div>
+          {goodsReturn > 0 && (
            <div style={{ display: "flex", justifyContent: "space-between", gap: 24, padding: "6px 0" }}>
             <span style={{ color: "red", fontWeight: 600, fontSize: 12 }}>Goods Return</span>
-             <span style={{ color: "#dc2626", fontWeight: 800 }}>
-                  - {formatRs(returnRecords.reduce((s, p) => s + (Number(p.returnAmount) || 0), 0))}
-                </span>
+             <span style={{ color: "#dc2626", fontWeight: 800 }}>- {formatRs(goodsReturn)}</span>
           </div>
+          )}
           <div style={{ display: "flex", justifyContent: "space-between", gap: 24,
             padding: "8px 12px", borderRadius: 8, marginTop: 4,
-            background: Number(inv.balance) > 0 ? "#fee2e2" : "#dcfce7" }}>
-            <span style={{ fontWeight: 700, fontSize: 13, color: Number(inv.balance) > 0 ? "#dc2626" : "#16a34a" }}>
+            background: actualBalance > 0 ? "#fee2e2" : "#dcfce7" }}>
+            <span style={{ fontWeight: 700, fontSize: 13, color: actualBalance > 0 ? "#dc2626" : "#16a34a" }}>
               Balance Due
             </span>
-            <span style={{ fontWeight: 800, fontSize: 15, color: Number(inv.balance) > 0 ? "#dc2626" : "#16a34a" }}>
-              {formatRs(inv.balance || 0)}
+            <span style={{ fontWeight: 800, fontSize: 15, color: actualBalance > 0 ? "#dc2626" : "#16a34a" }}>
+              {formatRs(actualBalance)}
             </span>
           </div>
         </div>

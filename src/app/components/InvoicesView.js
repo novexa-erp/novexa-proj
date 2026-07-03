@@ -8,7 +8,7 @@ import InvoiceModal, { formatRs } from "./InvoiceModal";
 import InvoicePDFModal, { InvoiceTemplateForEmail } from "./InvoicePDF";
 import SweetAlert from "./SweetAlert";
 import EmailConfirmationDialog from "./EmailConfirmationDialog";
-import { generateInvoicePdfBase64, sendInvoiceEmail, autoEmailInvoice } from "@/lib/emailUtils";
+import { generateInvoicePdfBase64, sendInvoiceEmail } from "@/lib/emailUtils";
 
 // ── Generate PDF base64 from invoice data (for email attachment) ──────────────
 
@@ -57,9 +57,19 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
   // only show invoices NOT linked to a customer AND not soft-deleted
   const directInvoices = invoices.filter(i => !i.customerId && !i.deleted);
 
-  // filter
+  // filter — use effectiveStatus (recalculated from actualAmount) not stored status
   const filtered = directInvoices.filter(inv => {
-    const matchTab    = activeTab === "All" || inv.status === activeTab;
+    const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+    const invActualAmt = inv.actualAmount != null
+      ? Number(inv.actualAmount)
+      : (inv.items || []).filter(it => !isPrevBalItem(it))
+          .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0)
+        || Number(inv.amount) || 0;
+    const invAmtPaid = Number(inv.amountPaid) || 0;
+    const invActualBalance = Math.max(0, invActualAmt - invAmtPaid);
+    const effStatus = invActualBalance === 0 && invActualAmt > 0 ? "Paid" : invAmtPaid > 0 ? "Partial" : "Unpaid";
+
+    const matchTab    = activeTab === "All" || effStatus === activeTab;
     const matchSearch = !search ||
       (inv.customerName || inv.customer || "").toLowerCase().includes(search.toLowerCase()) ||
       (inv.id || "").toLowerCase().includes(search.toLowerCase());
@@ -110,10 +120,12 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
         // Handle payment collection if provided
         if (formData.newPaymentAmount && Number(formData.newPaymentAmount) > 0) {
           const paymentAmount = Number(formData.newPaymentAmount);
-          // previousBalance = balance before this payment
-          const previousBalance = Math.max(0, payload.amount - (Number(formData.amountPaid) || 0));
-          const newTotalPaid = (Number(formData.amountPaid) || 0) + paymentAmount;
-          const newBalance = Math.max(0, payload.amount - newTotalPaid);
+          // Use actualAmount (excluding prev balance carry-forward) for payment calculation
+          const invActualAmount = payload.actualAmount || payload.amount;
+          const currentPaid = Number(formData.amountPaid) || 0;
+          const previousBalance = Math.max(0, invActualAmount - currentPaid);
+          const newTotalPaid = currentPaid + paymentAmount;
+          const newBalance = Math.max(0, invActualAmount - newTotalPaid);
           const newStatus = newBalance === 0 ? "Paid" : newTotalPaid > 0 ? "Partial" : "Unpaid";
           
           // Update ONLY payment fields on invoice — do NOT change items/amounts
@@ -443,12 +455,24 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
           </div>
         ) : (
           filtered.map((inv) => {
-            const st       = STATUS_STYLE[inv.status] || STATUS_STYLE["Unpaid"];
+            const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+            const invActualAmt = inv.actualAmount != null
+              ? Number(inv.actualAmount)
+              : (inv.items || []).filter(it => !isPrevBalItem(it))
+                  .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0)
+                || Number(inv.amount) || 0;
+            const invAmtPaid = Number(inv.amountPaid) || 0;
+            const invActualBalance = Math.max(0, invActualAmt - invAmtPaid);
+            const effectiveStatus = invActualBalance === 0 && invActualAmt > 0
+              ? "Paid"
+              : invAmtPaid > 0 ? "Partial" : "Unpaid";
+
+            const st       = STATUS_STYLE[effectiveStatus] || STATUS_STYLE["Unpaid"];
             const dateStr  = inv.createdAt?.toDate
               ? inv.createdAt.toDate().toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })
               : inv.invoiceDate || "—";
             const num      = inv.id.slice(-4).toUpperCase();
-            const isOverdue = inv.dueDate && new Date(inv.dueDate) < new Date() && inv.status !== "Paid";
+            const isOverdue = inv.dueDate && new Date(inv.dueDate) < new Date() && effectiveStatus !== "Paid";
 
             return (
               <div key={inv.id} className="border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] transition-colors">
@@ -472,7 +496,7 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
                     </div>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                       style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
-                      {inv.status}
+                      {effectiveStatus}
                     </span>
                     <div className="flex gap-1">
                       <button onClick={() => setPdfInvoice(inv)} className="w-7 h-7 rounded-lg flex items-center justify-center text-xs" style={{ background: "rgba(52,211,153,0.08)", color: "#34d399" }}>👁</button>
@@ -520,7 +544,7 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
                   <div className="flex justify-center">
                     <span className="text-[10px] font-bold px-2.5 py-1 rounded-full"
                       style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
-                      {inv.status}
+                      {effectiveStatus}
                     </span>
                   </div>
 
@@ -579,7 +603,11 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
             style={{ background: "#0d1117", border: "1px solid rgba(248,113,113,0.3)" }}>
             <p className="text-3xl">🗑️</p>
             <h3 className="text-white font-bold text-base">Delete Invoice?</h3>
-            <p className="text-gray-400 text-sm">This invoice will be removed from your view. You can ask admin to restore it if needed.</p>
+            <p className="text-gray-400 text-sm">
+              This invoice will be <span className="text-white font-bold">removed from your view</span>.
+              Once gone, recovery is only possible in a genuine emergency by contacting support —
+              and it is <span className="text-red-400 font-bold">not guaranteed</span>.
+            </p>
             <div className="flex gap-3">
               <button onClick={() => setDeleteConf(null)}
                 className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
@@ -601,18 +629,41 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
         show={emailConfirm.show}
         recipientEmail={emailConfirm.invoice?.email}
         documentType="invoice"
-        onConfirm={() => {
-          // User clicked "Yes" - send email
+        onConfirm={async () => {
+          // Send email first — dialog stays open (shows spinner) until done
           if (emailConfirm.invoice) {
-            autoEmailInvoice({
-              invoice: emailConfirm.invoice,
-              userDoc,
-              uid,
-              setAlert,
-              isUpdate: emailConfirm.isUpdate,
-              onConfirm: (sendEmailFn) => sendEmailFn()
-            });
+            try {
+              // Fetch payments so email shows full payment history
+              let invPayments = [];
+              try {
+                const { getDocs, collection: col, query: q, where } = await import("firebase/firestore");
+                const snap = await getDocs(q(col(db, "users", uid, "payments"), where("invoiceId", "==", emailConfirm.invoice.id)));
+                invPayments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+              } catch (_) {}
+              const pdfBase64 = await generateInvoicePdfBase64(emailConfirm.invoice, userDoc, invPayments);
+              const result    = await sendInvoiceEmail(emailConfirm.invoice, userDoc, pdfBase64, uid, emailConfirm.isUpdate, invPayments);
+              if (result.success) {
+                setAlert({
+                  show: true, type: "success",
+                  title: emailConfirm.isUpdate ? "Invoice Updated & Emailed! 🧾📧" : "Invoice Created & Emailed! 🧾📧",
+                  message: `${emailConfirm.isUpdate ? "Updated" : "New"} invoice emailed to ${emailConfirm.invoice.email}.`,
+                });
+              } else {
+                setAlert({
+                  show: true, type: "warning",
+                  title: `Invoice ${emailConfirm.isUpdate ? "Updated" : "Created"} ✓ (Email Failed)`,
+                  message: `Invoice saved, but email could not be sent: ${result.error}`,
+                });
+              }
+            } catch (e) {
+              setAlert({
+                show: true, type: "error",
+                title: "Email Failed",
+                message: "An error occurred while sending the email.",
+              });
+            }
           }
+          // Close dialog only after everything is done
           setEmailConfirm({ show: false, invoice: null, isUpdate: false });
         }}
         onCancel={() => {

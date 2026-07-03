@@ -4,7 +4,7 @@
  */
 
 // ── Generate PDF base64 from invoice/order data ───────────────────────────────
-export async function generateInvoicePdfBase64(invoice, userDoc) {
+export async function generateInvoicePdfBase64(invoice, userDoc, payments = []) {
   try {
     const html2canvas = (await import("html2canvas")).default;
     const jsPDF       = (await import("jspdf")).default;
@@ -20,7 +20,7 @@ export async function generateInvoicePdfBase64(invoice, userDoc) {
 
     await new Promise(resolve => {
       const root = createRoot(container);
-      root.render(React.createElement(InvoiceTemplateForEmail, { inv: invoice, userDoc }));
+      root.render(React.createElement(InvoiceTemplateForEmail, { inv: invoice, userDoc, payments }));
       setTimeout(resolve, 400);
     });
 
@@ -55,12 +55,15 @@ export async function generateInvoicePdfBase64(invoice, userDoc) {
 }
 
 // ── Send customer invoice email ───────────────────────────────────────────────
-export async function sendInvoiceEmail(invoice, userDoc, pdfBase64, uid, isUpdate = false) {
+export async function sendInvoiceEmail(invoice, userDoc, pdfBase64, uid, isUpdate = false, payments = []) {
   try {
     const res = await fetch("/api/send-invoice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ invoice, userDoc, pdfBase64, uid, isUpdate }),
+      body: JSON.stringify({
+        invoice: { ...invoice, payments },
+        userDoc, pdfBase64, uid, isUpdate,
+      }),
     });
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Email send failed");

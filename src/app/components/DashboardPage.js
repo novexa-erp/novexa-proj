@@ -53,6 +53,41 @@ function todayStr() {
   return new Date().toLocaleDateString("en-US", { weekday: "long", year: "numeric", month: "long", day: "numeric" });
 }
 
+// ── Beautiful Digital Clock ───────────────────────────────────────────────────
+function DigitalClock() {
+  const [time, setTime] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const hours   = time.getHours();
+  const minutes = String(time.getMinutes()).padStart(2, "0");
+  const seconds = String(time.getSeconds()).padStart(2, "0");
+  const ampm    = hours >= 12 ? "PM" : "AM";
+  const hh      = String(hours % 12 || 12).padStart(2, "0");
+
+  return (
+    <div className="flex items-center gap-2">
+      {/* Main time display */}
+      <div className="flex items-baseline gap-0.5">
+        <span className="font-mono font-black tabular-nums leading-none"
+          style={{ fontSize: 22, color: "#fff", letterSpacing: "-0.02em", textShadow: "0 0 20px rgba(245,158,11,0.4)" }}>
+          {hh}:{minutes}
+        </span>
+        <span className="font-mono font-bold tabular-nums leading-none"
+          style={{ fontSize: 14, color: "rgba(245,158,11,0.8)", marginBottom: 1 }}>
+          :{seconds}
+        </span>
+        <span className="font-bold leading-none ml-1"
+          style={{ fontSize: 11, color: "#F59E0B", letterSpacing: "0.05em" }}>
+          {ampm}
+        </span>
+      </div>
+    </div>
+  );
+}
+
 // Separate component for search params to wrap in Suspense
 function DashboardContent() {
   const router = useRouter();
@@ -639,6 +674,11 @@ function DashboardContent() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            {/* Digital Clock */}
+            <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl mr-1"
+              style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.15)" }}>
+              <DigitalClock />
+            </div>
             <button className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-colors hover:bg-white/8"
               style={{ border: "1px solid rgba(255,255,255,0.07)" }}>
               <span className="text-base">🔔</span>

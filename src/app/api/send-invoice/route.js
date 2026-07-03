@@ -25,6 +25,17 @@ const STATUS_META = {
   Pending: { color: "#dc2626", bg: "#fee2e2", label: "PENDING" },
 };
 
+// ── helpers ── date+time formatting ──────────────────────────────────────────
+function fmtDateTime(str) {
+  if (!str) return "—";
+  try {
+    return new Date(str).toLocaleString("en-PK", {
+      day: "2-digit", month: "short", year: "numeric",
+      hour: "2-digit", minute: "2-digit", hour12: true,
+    });
+  } catch { return str; }
+}
+
 // ── Customer Invoice HTML email ───────────────────────────────────────────────
 function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
   const invNum        = InvoiceNumber(invoice.id);
@@ -38,11 +49,25 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
   const discount      = Number(invoice.discount)   || 0;
   const afterDiscount = Number(invoice.amount)     || 0;
   const amountPaid    = Number(invoice.amountPaid) || 0;
+  const goodsReturn   = Number(invoice.goodsReturn) || 0;
   const balance       = Number(invoice.balance)    || 0;
 
-  const items = (invoice.items || []).filter(
-    it => !(it.description || "").startsWith("Previous Balance · INV-")
-  );
+  // Separate previous balance row from regular items
+  const allItems = invoice.items || [];
+  const prevBalItem = allItems.find(it => (it.description || "").startsWith("Previous Balance · INV-"));
+  const items = allItems.filter(it => !(it.description || "").startsWith("Previous Balance · INV-"));
+
+  // Previous balance row (orange, italic — same style as PDF)
+  const prevBalRow = prevBalItem ? `
+    <tr style="background:#fffbeb;">
+      <td style="padding:12px 16px;font-size:14px;color:#d97706;font-style:italic;font-weight:600;border-bottom:1px solid #e5e7eb;">
+        ${prevBalItem.description}
+      </td>
+      <td style="padding:12px 16px;text-align:center;font-size:14px;color:#9ca3af;border-bottom:1px solid #e5e7eb;">—</td>
+      <td style="padding:12px 16px;text-align:right;font-size:14px;color:#9ca3af;border-bottom:1px solid #e5e7eb;">—</td>
+      <td style="padding:12px 16px;text-align:right;font-size:14px;font-weight:700;color:#d97706;border-bottom:1px solid #e5e7eb;">${formatRs(prevBalItem.unitPrice || prevBalItem.total)}</td>
+    </tr>` : "";
+
   const itemRows = items.map((it, i) => `
     <tr style="background:${i % 2 === 0 ? "#f8faff" : "#ffffff"};">
       <td style="padding:12px 16px;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">
@@ -53,6 +78,30 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
       <td style="padding:12px 16px;text-align:right;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">${formatRs(it.unitPrice)}</td>
       <td style="padding:12px 16px;text-align:right;font-size:14px;font-weight:600;color:#111827;border-bottom:1px solid #e5e7eb;">${formatRs((Number(it.qty)||0)*(Number(it.unitPrice)||0))}</td>
     </tr>`).join("");
+
+  // Payment history rows
+  const payments = invoice.payments || [];
+  const paymentHistorySection = payments.length > 0 ? `
+  <tr><td style="padding:24px 40px 8px;">
+    <div style="font-size:11px;font-weight:700;color:#16a34a;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;">Payment History</div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;">
+      <thead><tr style="background:linear-gradient(to right,#16a34a,#22c55e);">
+        <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:1px;">Date &amp; Time</th>
+        <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">Method</th>
+        <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">Amount Paid</th>
+        <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">Balance After</th>
+      </tr></thead>
+      <tbody>
+        ${payments.map((p, i) => `
+        <tr style="background:${i % 2 === 0 ? "#f0fdf4" : "#ffffff"};">
+          <td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">${fmtDateTime(p.date || p.paidAt || p.createdAt)}</td>
+          <td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">${p.method || p.paymentMethod || "—"}</td>
+          <td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:600;color:#16a34a;border-bottom:1px solid #e5e7eb;">${formatRs(p.amount)}</td>
+          <td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:600;color:#dc2626;border-bottom:1px solid #e5e7eb;">${formatRs(p.balanceAfter)}</td>
+        </tr>`).join("")}
+      </tbody>
+    </table>
+  </td></tr>` : "";
 
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>Invoice ${invNum}</title></head>
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Arial,sans-serif;">
@@ -101,7 +150,7 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
       <th style="padding:12px 16px;text-align:right;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">Unit Price</th>
       <th style="padding:12px 16px;text-align:right;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">Total</th>
     </tr></thead>
-    <tbody>${itemRows || `<tr><td colspan="4" style="padding:16px;text-align:center;color:#9ca3af;">No items</td></tr>`}</tbody>
+    <tbody>${prevBalRow}${itemRows || `<tr><td colspan="4" style="padding:16px;text-align:center;color:#9ca3af;">No items</td></tr>`}</tbody>
   </table>
 </td></tr>
 <tr><td style="padding:0 40px 32px;">
@@ -109,8 +158,9 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
     <table width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid #e5e7eb;padding-top:16px;">
       <tr><td style="padding:6px 0;font-size:13px;color:#6b7280;">Subtotal</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#374151;">${formatRs(subtotal)}</td></tr>
       ${discount > 0 ? `<tr><td style="padding:6px 0;font-size:13px;color:#16a34a;">Discount</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#16a34a;">− ${formatRs(discount)}</td></tr>` : ""}
-      <tr style="border-top:1px solid #e5e7eb;"><td style="padding:10px 0 6px;font-size:14px;font-weight:700;color:#111827;">Total</td><td style="padding:10px 0 6px;text-align:right;font-size:14px;font-weight:700;color:#111827;">${formatRs(afterDiscount)}</td></tr>
-      ${amountPaid > 0 ? `<tr><td style="padding:6px 0;font-size:13px;color:#16a34a;">Amount Paid</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#16a34a;">− ${formatRs(amountPaid)}</td></tr>` : ""}
+      <tr style="border-top:1px solid #e5e7eb;"><td style="padding:10px 0 6px;font-size:14px;font-weight:700;color:#111827;">Total</td><td style="padding:10px 0 6px;text-align:right;font-size:14px;font-weight:700;color:#1d4ed8;">${formatRs(afterDiscount)}</td></tr>
+      ${amountPaid > 0 ? `<tr><td style="padding:6px 0;font-size:13px;color:#16a34a;">Amount Paid</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#16a34a;">${formatRs(amountPaid)}</td></tr>` : ""}
+      ${goodsReturn > 0 ? `<tr><td style="padding:6px 0;font-size:13px;color:#dc2626;">Goods Return</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#dc2626;">− ${formatRs(goodsReturn)}</td></tr>` : ""}
       <tr><td colspan="2" style="padding-top:6px;"><table width="100%" cellpadding="0" cellspacing="0" style="background:${sm.bg};border-radius:8px;"><tr>
         <td style="padding:12px 14px;font-size:15px;font-weight:800;color:${sm.color};">Balance Due</td>
         <td style="padding:12px 14px;text-align:right;font-size:15px;font-weight:800;color:${sm.color};">${formatRs(balance)}</td>
@@ -118,6 +168,7 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
     </table>
   </td></tr></table>
 </td></tr>
+${paymentHistorySection}
 ${invoice.note ? `<tr><td style="padding:0 40px 28px;"><div style="background:#f8faff;border-left:4px solid #3b82f6;border-radius:6px;padding:14px 16px;"><div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;margin-bottom:4px;">Note</div><div style="font-size:13px;color:#374151;">${invoice.note}</div></div></td></tr>` : ""}
 <tr><td style="padding:20px 40px;background:linear-gradient(135deg,#f0f9ff,#e0f2fe);border-top:1px solid #e5e7eb;">
   <table width="100%" cellpadding="0" cellspacing="0"><tr>

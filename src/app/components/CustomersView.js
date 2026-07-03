@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   collection, addDoc, doc, updateDoc,
   serverTimestamp, onSnapshot, query, orderBy, where, getDocs,
@@ -10,7 +11,24 @@ import InvoicePDFModal from "./InvoicePDF";
 import CustomerHistoryPDFModal from "./CustomerHistoryPDF";
 import SweetAlert from "./SweetAlert";
 import EmailConfirmationDialog from "./EmailConfirmationDialog";
-import { autoEmailInvoice } from "@/lib/emailUtils";
+import { generateInvoicePdfBase64, sendInvoiceEmail } from "@/lib/emailUtils";
+
+// ── Fetch payments for an invoice (for full PDF with payment history) ─────────
+async function fetchInvoicePayments(db, uid, invoiceId) {
+  try {
+    const { getDocs: gd, collection: col, query: q, where: w } = await import("firebase/firestore");
+    const snap = await gd(q(col(db, "users", uid, "payments"), w("invoiceId", "==", invoiceId)));
+    return snap.docs.map(d => {
+      const data = d.data();
+      // Convert Firestore Timestamps to ISO strings for rendering
+      return {
+        ...data,
+        id: d.id,
+        createdAt: data.createdAt?.toDate ? data.createdAt.toDate().toISOString() : data.createdAt,
+      };
+    });
+  } catch { return []; }
+}
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function formatRs(n) {
@@ -181,7 +199,7 @@ function DeleteConfirm({ name, onConfirm, onCancel }) {
 }
 
 // ── Customer Detail ───────────────────────────────────────────────────────────
-function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDelete }) {
+function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDelete, onEmailConfirm }) {
   // real-time listener on THIS customer's invoices subcollection
   const [custInvoices, setCustInvoices] = useState([]);
   const [invLoading,   setInvLoading]   = useState(true);
@@ -273,9 +291,20 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
   function openNewInvoice() {
     // Only carry forward the LATEST unpaid/partial invoice's balance
     // (that invoice already includes previous balances in its own items)
-    const pendingInvoices = custInvoices.filter(
-      inv => (inv.status === "Unpaid" || inv.status === "Partial") && Number(inv.balance) > 0
-    );
+    // Use actualAmount-based status to avoid carrying forward already-paid invoices
+    const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+    const getActualBalance = inv => {
+      const actualAmt = inv.actualAmount != null
+        ? Number(inv.actualAmount)
+        : (inv.items || []).filter(it => !isPrevBalItem(it))
+            .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+      return Math.max(0, actualAmt - (Number(inv.amountPaid) || 0));
+    };
+
+    const pendingInvoices = custInvoices.filter(inv => {
+      const actualBal = getActualBalance(inv);
+      return actualBal > 0;
+    });
 
     // Sort by createdAt descending — take only the most recent one
     const sorted = [...pendingInvoices].sort((a, b) => {
@@ -288,7 +317,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
     const prevBalItems = latestPending ? [{
       description: `Previous Balance · INV-${(latestPending.id || "").slice(-4).toUpperCase()}`,
       qty:         1,
-      unitPrice:   String(Number(latestPending.balance) || 0),
+      unitPrice:   String(getActualBalance(latestPending)),
       productId:   "",
       variantId:   "",
       variantLabel: "",
@@ -307,7 +336,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         ? [...prevBalItems, { description: "", qty: 1, unitPrice: "", productId: "", variantId: "", variantLabel: "", variantUnit: "", stock: "" }]
         : [{ description: "", qty: 1, unitPrice: "", productId: "", variantId: "", variantLabel: "", variantUnit: "", stock: "" }],
       note: latestPending
-        ? `Includes previous outstanding balance from INV-${(latestPending.id || "").slice(-4).toUpperCase()} (Rs. ${Number(latestPending.balance).toLocaleString("en-PK")}).`
+        ? `Includes previous outstanding balance from INV-${(latestPending.id || "").slice(-4).toUpperCase()} (Rs. ${getActualBalance(latestPending).toLocaleString("en-PK")}).`
         : "",
     };
     setEditInv(null);
@@ -482,24 +511,20 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             createdAt: serverTimestamp(),
           });
 
-          // Only show alert if no email will be sent
+          // Show success or email confirm for additional purchase
           const emailAddr = formData.email || customer.email;
-          if (!emailAddr?.trim()) {
-            setAlert({
-              show: true,
-              type: "success",
-              title: "Invoice Updated! 🛍️",
-              message: `${formatRs(newPurchaseAmount)} worth of new items added to invoice. Balance updated to ${formatRs(mergedBalance)}.`,
-            });
-          }
-
-          // ── Auto-email updated invoice ──────────────────────────────────────
           if (emailAddr?.trim()) {
-            setEmailConfirm({
+            onEmailConfirm({
               show: true,
               invoice: { ...mergedPayload, id: editInv.id, email: emailAddr },
               isUpdate: true,
               documentType: "invoice"
+            });
+          } else {
+            setAlert({
+              show: true, type: "success",
+              title: "Invoice Updated! 🛍️",
+              message: `${formatRs(newPurchaseAmount)} worth of new items added. Balance: ${formatRs(mergedBalance)}.`,
             });
           }
 
@@ -581,23 +606,20 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             createdAt:      serverTimestamp(),
           });
 
-          // Only show alert if no email will be sent
+          // Show success or email confirm for return
           const retEmailAddr = formData.email || customer.email;
-          if (!retEmailAddr?.trim()) {
-            setAlert({
-              show: true, type: "success",
-              title: "Goods Return Recorded! ↩️",
-              message: `${retData.description} × ${retData.qty} returned. ${formatRs(returnAmount)} deducted from invoice. New balance: ${formatRs(newBalance)}.`,
-            });
-          }
-
-          // ── Auto-email updated invoice after return ─────────────────────────
           if (retEmailAddr?.trim()) {
-            setEmailConfirm({
+            onEmailConfirm({
               show: true,
               invoice: { ...payload, id: editInv.id, amount: newFullAmount, actualAmount: newActual, balance: newBalance, status: newStatus, email: retEmailAddr },
               isUpdate: true,
               documentType: "return"
+            });
+          } else {
+            setAlert({
+              show: true, type: "success",
+              title: "Goods Return Recorded! ↩️",
+              message: `${retData.description} × ${retData.qty} returned. ${formatRs(returnAmount)} deducted. New balance: ${formatRs(newBalance)}.`,
             });
           }
 
@@ -629,10 +651,14 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         // ★ Handle payment collection if provided
         if (formData.newPaymentAmount && Number(formData.newPaymentAmount) > 0) {
           const paymentAmount = Number(formData.newPaymentAmount);
-          // previousBalance = balance BEFORE this payment (from the original invoice data)
-          const previousBalance = Math.max(0, payload.amount - (Number(formData.amountPaid) || 0));
-          const newTotalPaid = (Number(formData.amountPaid) || 0) + paymentAmount;
-          const newBalance = Math.max(0, payload.amount - newTotalPaid);
+          // Use actualAmount (excluding prev balance carry-forward) for payment calculation
+          // This ensures paying this invoice's products doesn't require paying old balances too
+          const invActualAmount = payload.actualAmount || actualAmountAfterDiscount;
+          const currentPaid = Number(formData.amountPaid) || 0;
+          // previousBalance = actual balance BEFORE this payment (based on actual products only)
+          const previousBalance = Math.max(0, invActualAmount - currentPaid);
+          const newTotalPaid = currentPaid + paymentAmount;
+          const newBalance = Math.max(0, invActualAmount - newTotalPaid);
           const newStatus = newBalance === 0 ? "Paid" : newTotalPaid > 0 ? "Partial" : "Unpaid";
           
           // Update ONLY amountPaid/balance/status on invoice — do NOT re-apply full payload
@@ -666,14 +692,13 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
           // balance = jo bacha
           // status  = Partial / Paid
           // historyBalance = balance based on actualAmount only (excludes prev balance carry-forward)
-          const invActualAmount = payload.actualAmount || actualAmountAfterDiscount;
-          const historyBalance = Math.max(0, invActualAmount - newTotalPaid);
+          const historyBalance = newBalance; // newBalance is already actualAmount-based
           await addDoc(collection(db, "users", uid, "payments"), {
             type: "received",
             amount: previousBalance,          // pehle wala balance (Amount col)
             paid: paymentAmount,              // jo abhi diya (Paid col)
-            balance: newBalance,              // jo bacha (Balance col) — full invoice
-            historyBalance,                   // balance for history view — only actualAmount based
+            balance: newBalance,              // jo bacha (Balance col)
+            historyBalance,                   // same — actualAmount based balance
             invoiceActualAmount: invActualAmount, // actual purchase amount (no prev bal)
             invoiceId: editInv.id,
             invoiceNumber: `INV-${editInv.id.slice(-4).toUpperCase()}`,
@@ -689,45 +714,37 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             createdAt: serverTimestamp(),
           });
           
-          // Only show alert if no email will be sent
+          // Show success or email confirm for payment
           const payEmailAddr = formData.email || customer.email;
-          if (!payEmailAddr?.trim()) {
-            setAlert({
-              show: true,
-              type: "success",
-              title: "Payment Collected! 💰",
-              message: `Payment of ${formatRs(paymentAmount)} collected from ${formData.payerName || customer.name}. Invoice updated to ${newStatus}.`,
-            });
-          }
-
-          // ── Auto-email updated invoice (payment collected) ──────────────────
           if (payEmailAddr?.trim()) {
-            setEmailConfirm({
+            onEmailConfirm({
               show: true,
               invoice: { ...payload, id: editInv.id, amountPaid: newTotalPaid, balance: newBalance, status: newStatus, email: payEmailAddr },
               isUpdate: true,
               documentType: "invoice"
             });
-          }
-        } else {
-          // Only show alert if no email will be sent
-          const editEmailAddr = formData.email || customer.email;
-          if (!editEmailAddr?.trim()) {
+          } else {
             setAlert({
-              show: true,
-              type: "success",
-              title: "Invoice Updated! ✓",
-              message: `Invoice has been updated successfully.`,
+              show: true, type: "success",
+              title: "Payment Collected! 💰",
+              message: `Payment of ${formatRs(paymentAmount)} collected from ${formData.payerName || customer.name}. Status: ${newStatus}.`,
             });
           }
-
-          // ── Auto-email updated invoice (plain edit) ─────────────────────────
+        } else {
+          // Show success or email confirm for plain edit
+          const editEmailAddr = formData.email || customer.email;
           if (editEmailAddr?.trim()) {
-            setEmailConfirm({
+            onEmailConfirm({
               show: true,
               invoice: { ...payload, id: editInv.id, email: editEmailAddr },
               isUpdate: true,
               documentType: "invoice"
+            });
+          } else {
+            setAlert({
+              show: true, type: "success",
+              title: "Invoice Updated! ✓",
+              message: `Invoice has been updated successfully.`,
             });
           }
         }
@@ -786,7 +803,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
 
         // ── Auto-email new customer invoice ──────────────────────────────────
         if (createEmailAddr?.trim()) {
-          setEmailConfirm({
+          onEmailConfirm({
             show: true,
             invoice: { ...payload, id: ref.id, email: createEmailAddr },
             isUpdate: false,
@@ -1014,13 +1031,6 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         ) : (
           <div className="divide-y divide-white/[0.04]">
             {custInvoices.map(inv => {
-              const st = STATUS_STYLE[inv.status] || STATUS_STYLE["Unpaid"];
-              const dateStr = inv.createdAt?.toDate
-                ? inv.createdAt.toDate().toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })
-                : inv.invoiceDate || "—";
-              const isOverdue = inv.dueDate && new Date(inv.dueDate) < new Date() && inv.status !== "Paid";
-              const num = (inv.id || "").slice(-4).toUpperCase();
-
               // Actual purchase amount — exclude "Previous Balance · INV-" carry-forward items
               const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
               const displayAmount = inv.actualAmount != null
@@ -1029,7 +1039,23 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
                     .filter(it => !isPrevBalItem(it))
                     .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0)
                   || Number(inv.amount) || 0;
-              const displayBalance = Math.max(0, displayAmount - (Number(inv.amountPaid) || 0));
+              const amtPaid = Number(inv.amountPaid) || 0;
+              const displayBalance = Math.max(0, displayAmount - amtPaid);
+
+              // Recalculate status from actualAmount — don't trust stored status (may be stale)
+              const effectiveStatus = displayBalance === 0 && displayAmount > 0
+                ? "Paid"
+                : amtPaid > 0
+                  ? "Partial"
+                  : "Unpaid";
+
+              const st = STATUS_STYLE[effectiveStatus] || STATUS_STYLE["Unpaid"];
+              const dateStr = inv.createdAt?.toDate
+                ? inv.createdAt.toDate().toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })
+                : inv.invoiceDate || "—";
+              const isOverdue = inv.dueDate && new Date(inv.dueDate) < new Date() && effectiveStatus !== "Paid";
+              const num = (inv.id || "").slice(-4).toUpperCase();
+
               // Only show real product items (no prev balance entries)
               const realItems = (inv.items || []).filter(it => it.description && !isPrevBalItem(it));
               return (
@@ -1065,7 +1091,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
                     </div>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                       style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
-                      {inv.status}
+                      {effectiveStatus}
                     </span>
                     {/* action btns */}
                     <div className="flex gap-1">
@@ -1582,6 +1608,9 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose, userDoc, 
 
 // ── Main CustomersView ────────────────────────────────────────────────────────
 export default function CustomersView({ uid, customers, invoices, loading, products, userDoc }) {
+  const router       = useRouter();
+  const searchParams = useSearchParams();
+
   const [showModal,    setShowModal]    = useState(false);
   const [editTarget,   setEditTarget]   = useState(null);
   const [saving,       setSaving]       = useState(false);
@@ -1595,6 +1624,30 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
   
   // Email Confirmation Dialog State
   const [emailConfirm, setEmailConfirm] = useState({ show: false, invoice: null, isUpdate: false, documentType: "invoice" });
+
+  // ── Restore detailCust from URL on load / refresh ──────────────────────────
+  useEffect(() => {
+    const cid = searchParams.get("customerId");
+    if (cid && customers.length > 0) {
+      const found = customers.find(c => c.id === cid);
+      if (found) setDetailCust(found);
+    }
+  }, [searchParams, customers]);
+
+  // ── Sync URL when detailCust changes ──────────────────────────────────────
+  function openCustomer(c) {
+    const params = new URLSearchParams(window.location.search);
+    params.set("customerId", c.id);
+    router.push(`${window.location.pathname}?${params.toString()}`, { scroll: false });
+    setDetailCust(c);
+  }
+
+  function closeCustomer() {
+    const params = new URLSearchParams(window.location.search);
+    params.delete("customerId");
+    router.push(`${window.location.pathname}?${params.toString()}`, { scroll: false });
+    setDetailCust(null);
+  }
 
   // sync detailCust when customers list updates (e.g. after edit)
   useEffect(() => {
@@ -1685,7 +1738,7 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
         deleted: true, deletedAt,
       });
 
-      if (detailCust?.id === id) setDetailCust(null);
+      if (detailCust?.id === id) closeCustomer();
 
       setAlert({
         show: true,
@@ -1760,9 +1813,10 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
         <CustomerDetail
           customer={detailCust} uid={uid}
           products={products || []} userDoc={userDoc}
-          onBack={() => setDetailCust(null)}
+          onBack={() => closeCustomer()}
           onEdit={() => { setEditTarget(detailCust); setShowModal(true); }}
           onDelete={() => setDeleteConf(detailCust.id)}
+          onEmailConfirm={(conf) => setEmailConfirm(conf)}
         />
         {showModal && (
           <CustomerModal
@@ -1776,6 +1830,60 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
           <DeleteConfirm name={customers.find(c => c.id === deleteConf)?.name}
             onConfirm={() => handleDelete(deleteConf)} onCancel={() => setDeleteConf(null)} />
         )}
+
+        {/* ── SweetAlert for invoice/email results (CustomersView level) ── */}
+        <SweetAlert
+          show={alert.show}
+          type={alert.type}
+          title={alert.title}
+          message={alert.message}
+          onClose={() => setAlert({ ...alert, show: false })}
+        />
+
+        {/* ── Email Confirmation Dialog ── */}
+        <EmailConfirmationDialog
+          show={emailConfirm.show}
+          recipientEmail={emailConfirm.invoice?.email}
+          documentType={emailConfirm.documentType}
+          onConfirm={async () => {
+            if (emailConfirm.invoice) {
+              try {
+                // Fetch payments so PDF shows full payment history
+                const invPayments = await fetchInvoicePayments(db, uid, emailConfirm.invoice.id);
+                const pdfBase64 = await generateInvoicePdfBase64(emailConfirm.invoice, userDoc, invPayments);
+                const result    = await sendInvoiceEmail(emailConfirm.invoice, userDoc, pdfBase64, uid, emailConfirm.isUpdate, invPayments);
+                if (result.success) {
+                  const docType = emailConfirm.isUpdate ? "Updated" : "Created";
+                  const docTypeText = emailConfirm.documentType === "return" ? "Return Recorded" : `Invoice ${docType}`;
+                  setAlert({
+                    show: true, type: "success",
+                    title: `${docTypeText} & Emailed! ${emailConfirm.documentType === "return" ? "↩️📧" : "🧾📧"}`,
+                    message: `${emailConfirm.documentType === "return" ? "Return" : "Invoice"} emailed to ${emailConfirm.invoice.email}.`,
+                  });
+                } else {
+                  setAlert({
+                    show: true, type: "warning",
+                    title: `Saved ✓ (Email Failed)`,
+                    message: `Saved successfully, but email could not be sent: ${result.error}`,
+                  });
+                }
+              } catch (e) {
+                setAlert({ show: true, type: "error", title: "Email Failed", message: "An error occurred while sending the email." });
+              }
+            }
+            setEmailConfirm({ show: false, invoice: null, isUpdate: false, documentType: "invoice" });
+          }}
+          onCancel={() => {
+            const docType = emailConfirm.isUpdate ? "Updated" : "Created";
+            const docTypeText = emailConfirm.documentType === "return" ? "Return Recorded" : `Invoice ${docType}`;
+            setAlert({
+              show: true, type: "success",
+              title: `${docTypeText}! ${emailConfirm.documentType === "return" ? "↩️" : "🧾"}`,
+              message: `${emailConfirm.documentType === "return" ? "Return has been" : "Invoice has been"} ${docType.toLowerCase()} successfully. Email was not sent.`,
+            });
+            setEmailConfirm({ show: false, invoice: null, isUpdate: false, documentType: "invoice" });
+          }}
+        />
       </>
     );
   }
@@ -1931,7 +2039,7 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
             }, 0);
             return (
               <div key={c.id}
-                onClick={() => setDetailCust(c)}
+                onClick={() => openCustomer(c)}
                 className="customer-card group relative rounded-lg overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:-translate-y-1 cursor-pointer"
                 style={{ 
                   background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", 
@@ -2023,27 +2131,39 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
         show={emailConfirm.show}
         recipientEmail={emailConfirm.invoice?.email}
         documentType={emailConfirm.documentType}
-        onConfirm={() => {
-          // User clicked "Yes" - send email
+        onConfirm={async () => {
           if (emailConfirm.invoice) {
-            autoEmailInvoice({
-              invoice: emailConfirm.invoice,
-              userDoc,
-              uid,
-              setAlert,
-              isUpdate: emailConfirm.isUpdate,
-              onConfirm: (sendEmailFn) => sendEmailFn()
-            });
+            try {
+              // Fetch payments so PDF shows full payment history
+              const invPayments = await fetchInvoicePayments(db, uid, emailConfirm.invoice.id);
+              const pdfBase64 = await generateInvoicePdfBase64(emailConfirm.invoice, userDoc, invPayments);
+              const result    = await sendInvoiceEmail(emailConfirm.invoice, userDoc, pdfBase64, uid, emailConfirm.isUpdate, invPayments);
+              if (result.success) {
+                const docType = emailConfirm.isUpdate ? "Updated" : "Created";
+                const docTypeText = emailConfirm.documentType === "return" ? "Return Recorded" : `Invoice ${docType}`;
+                setAlert({
+                  show: true, type: "success",
+                  title: `${docTypeText} & Emailed! ${emailConfirm.documentType === "return" ? "↩️📧" : "🧾📧"}`,
+                  message: `${emailConfirm.documentType === "return" ? "Return" : "Invoice"} emailed to ${emailConfirm.invoice.email}.`,
+                });
+              } else {
+                setAlert({
+                  show: true, type: "warning",
+                  title: `Saved ✓ (Email Failed)`,
+                  message: `Saved successfully, but email could not be sent: ${result.error}`,
+                });
+              }
+            } catch (e) {
+              setAlert({ show: true, type: "error", title: "Email Failed", message: "An error occurred while sending the email." });
+            }
           }
           setEmailConfirm({ show: false, invoice: null, isUpdate: false, documentType: "invoice" });
         }}
         onCancel={() => {
-          // User clicked "No" - show success without email
           const docType = emailConfirm.isUpdate ? "Updated" : "Created";
           const docTypeText = emailConfirm.documentType === "return" ? "Return Recorded" : `Invoice ${docType}`;
           setAlert({
-            show: true,
-            type: "success",
+            show: true, type: "success",
             title: `${docTypeText}! ${emailConfirm.documentType === "return" ? "↩️" : "🧾"}`,
             message: `${emailConfirm.documentType === "return" ? "Return has been" : "Invoice has been"} ${docType.toLowerCase()} successfully. Email was not sent.`,
           });

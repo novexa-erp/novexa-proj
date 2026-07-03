@@ -22,6 +22,7 @@ export const EMPTY_FORM = {
 };
 
 export function calcTotals(form) {
+  const isPrevBal = it => (it.description || "").startsWith("Previous Balance · INV-");
   const subtotal = form.items.reduce(
     (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0
   );
@@ -32,7 +33,19 @@ export function calcTotals(form) {
   const afterDiscount = Math.max(subtotal - discount, 0);
   const paid = Number(form.amountPaid) || 0;
   const balance = Math.max(afterDiscount - paid, 0);
-  return { subtotal, discount, afterDiscount, paid, balance };
+
+  // actualBalance = balance excluding previous balance carry-forward items
+  // This is used for payment collection — user only pays for their own products
+  const actualSubtotal = form.items
+    .filter(it => !isPrevBal(it))
+    .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+  const actualDiscount = form.discountType === "percent"
+    ? actualSubtotal * (Number(form.discountValue) || 0) / 100
+    : Math.min(Number(form.discountValue) || 0, actualSubtotal);
+  const actualAfterDiscount = Math.max(actualSubtotal - actualDiscount, 0);
+  const actualBalance = Math.max(actualAfterDiscount - paid, 0);
+
+  return { subtotal, discount, afterDiscount, paid, balance, actualBalance, actualAfterDiscount };
 }
 
 // ── shared input styles ───────────────────────────────────────────────────────
@@ -711,8 +724,12 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
     setPickerIdx(null);
   }
 
-  const { subtotal, discount, afterDiscount, paid, balance } = calcTotals(form);
+  const { subtotal, discount, afterDiscount, paid, balance, actualBalance, actualAfterDiscount } = calcTotals(form);
   const autoStatus = balance === 0 && afterDiscount > 0 ? "Paid" : paid > 0 ? "Partial" : "Unpaid";
+
+  // For payment collection: only enable if there are actual product items (not just prev balance)
+  const isPrevBal = it => (it.description || "").startsWith("Previous Balance · INV-");
+  const hasRealItems = (form.items || []).some(it => !isPrevBal(it) && it.description?.trim() && Number(it.qty) > 0 && Number(it.unitPrice) >= 0);
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -1120,8 +1137,8 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
             </div>
           </div>
 
-          {/* ── Payment Collection (Only for Edit with Balance) ── */}
-          {initial && balance > 0 && (
+          {/* ── Payment Collection (Only for Edit with Balance on actual items) ── */}
+          {initial && hasRealItems && actualBalance > 0 && (
             <div>
               <p className={sect} style={{ color: "#10b981" }}>
                 💰 Collect Payment
@@ -1157,12 +1174,12 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                   
                   {/* Payment Amount */}
                   <div className="col-span-2 mt-2">
-                    <FInput label={`💸 Payment Amount (Max: ${formatRs(balance)})`}>
-                      <StyledInput type="number" min="0" max={balance} step="0.01"
+                    <FInput label={`💸 Payment Amount (Max: ${formatRs(actualBalance)})`}>
+                      <StyledInput type="number" min="0" max={actualBalance} step="0.01"
                         placeholder="0" value={form.newPaymentAmount || ""}
                         onChange={(e) => {
                           const val = Number(e.target.value) || 0;
-                          if (val <= balance) {
+                          if (val <= actualBalance) {
                             setForm(p => ({ ...p, newPaymentAmount: e.target.value }));
                           }
                         }} />
@@ -1177,7 +1194,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                       {form.payerName || "Payer"} will pay <span className="text-white font-bold">{formatRs(form.newPaymentAmount)}</span> to {form.receiverName || "Receiver"}
                     </p>
                     <p className="text-xs text-gray-400 mt-1">
-                      New Balance: <span className="text-amber-400 font-bold">{formatRs(Math.max(0, balance - Number(form.newPaymentAmount)))}</span>
+                      New Balance: <span className="text-amber-400 font-bold">{formatRs(Math.max(0, actualBalance - Number(form.newPaymentAmount)))}</span>
                     </p>
                   </div>
                 )}

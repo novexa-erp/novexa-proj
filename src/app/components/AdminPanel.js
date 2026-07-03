@@ -24,6 +24,35 @@ function daysLeft(activeTo, activeToTime) {
   return Math.ceil((new Date(expStr) - new Date()) / 86400000);
 }
 
+/* ── Digital Clock ────────────────────────────────────────────────────────── */
+function DigitalClock() {
+  const [time, setTime] = useState(new Date());
+  useEffect(() => {
+    const id = setInterval(() => setTime(new Date()), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  const hh  = String(time.getHours()).padStart(2, "0");
+  const mm  = String(time.getMinutes()).padStart(2, "0");
+  const ss  = String(time.getSeconds()).padStart(2, "0");
+  const ampm = time.getHours() >= 12 ? "PM" : "AM";
+  const hh12 = String(time.getHours() % 12 || 12).padStart(2, "0");
+
+  return (
+    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl flex-shrink-0"
+      style={{ background: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.2)" }}>
+      <span className="text-blue-400 text-[10px]">🕐</span>
+      <span className="font-mono font-bold tracking-widest"
+        style={{ color: "#60a5fa", fontSize: 13, letterSpacing: "0.12em" }}>
+        {hh12}:{mm}
+        <span className="animate-pulse">:</span>
+        {ss}
+      </span>
+      <span className="text-blue-500 text-[10px] font-bold">{ampm}</span>
+    </div>
+  );
+}
+
 const STATUS_STYLE = {
   active:      { color: "#34d399", bg: "rgba(52,211,153,0.12)",  border: "rgba(52,211,153,0.3)",  label: "Active"   },
   frozen:      { color: "#60a5fa", bg: "rgba(96,165,250,0.12)",  border: "rgba(96,165,250,0.3)",  label: "Frozen"   },
@@ -671,6 +700,7 @@ export default function AdminPanel() {
               </h1>
               <p className="text-gray-600 text-[10px] font-semibold tracking-widest uppercase">{todayStr()}</p>
             </div>
+            <DigitalClock />
           </div>
 
           <div className="flex items-center gap-2">
@@ -705,12 +735,113 @@ export default function AdminPanel() {
           {activeTab==="users" && (
             <div>
               {/* Stats */}
-              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
+              <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                 <StatCard icon="👥" label="Total Users"     value={totalCount}  gradient="linear-gradient(135deg,#2563EB,#1d4ed8)" glow="rgba(37,99,235,0.35)" />
                 <StatCard icon="✅" label="Active"          value={activeCount} gradient="linear-gradient(135deg,#10b981,#059669)" glow="rgba(16,185,129,0.35)" />
                 <StatCard icon="🔒" label="Frozen"          value={frozenCount} gradient="linear-gradient(135deg,#60a5fa,#3b82f6)" glow="rgba(96,165,250,0.35)" />
                 <StatCard icon="⚠️" label="Expiring (7d)"  value={expiringIn7} gradient="linear-gradient(135deg,#F59E0B,#d97706)" glow="rgba(245,158,11,0.35)" />
               </div>
+
+              {/* ── Subscription Expiry Timeline ── */}
+              {(() => {
+                const timeline = users
+                  .filter(u => u.status !== "deleted" && u.activeTo)
+                  .map(u => ({ ...u, dl: daysLeft(u.activeTo, u.activeToTime) }))
+                  .filter(u => u.dl !== null && u.dl <= 30)
+                  .sort((a, b) => a.dl - b.dl);
+
+                if (timeline.length === 0) return null;
+
+                return (
+                  <div className="rounded-2xl mb-6 overflow-hidden"
+                    style={{ background:"linear-gradient(135deg,rgba(245,158,11,0.05),rgba(255,255,255,0.02))", border:"1px solid rgba(245,158,11,0.18)" }}>
+
+                    {/* Header */}
+                    <div className="flex items-center justify-between px-5 py-3"
+                      style={{ borderBottom:"1px solid rgba(245,158,11,0.1)" }}>
+                      <div className="flex items-center gap-2">
+                        <span className="text-base">⏳</span>
+                        <p className="text-white font-bold text-sm">Subscription Expiry Watchlist</p>
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                          style={{ background:"rgba(245,158,11,0.15)", color:"#fbbf24", border:"1px solid rgba(245,158,11,0.25)" }}>
+                          {timeline.length} user{timeline.length!==1?"s":""}
+                        </span>
+                      </div>
+                      <p className="text-gray-600 text-[10px] uppercase tracking-widest">Next 30 days</p>
+                    </div>
+
+                    {/* List */}
+                    <div className="divide-y divide-white/[0.04]">
+                      {timeline.map(u => {
+                        const dl     = u.dl;
+                        const isExp  = dl < 0;
+                        const isToday = dl === 0;
+                        const isCrit = dl >= 0 && dl <= 3;
+                        const isWarn = dl > 3  && dl <= 7;
+                        const color  = isExp ? "#f87171" : isToday ? "#f87171" : isCrit ? "#fb923c" : isWarn ? "#fbbf24" : "#a3a3a3";
+                        const bgCol  = isExp ? "rgba(248,113,113,0.08)" : isCrit ? "rgba(251,146,60,0.06)" : isWarn ? "rgba(251,191,36,0.06)" : "transparent";
+
+                        return (
+                          <div key={u.uid}
+                            className="flex items-center gap-4 px-5 py-3 transition-colors hover:bg-white/[0.02]"
+                            style={{ background: bgCol }}>
+
+                            {/* Avatar */}
+                            <div className="w-8 h-8 rounded-xl flex items-center justify-center text-xs font-black flex-shrink-0"
+                              style={{ background:"linear-gradient(135deg,rgba(37,99,235,0.25),rgba(245,158,11,0.15))", color:"#60A5FA", border:"1px solid rgba(37,99,235,0.2)" }}>
+                              {(u.name||"?").charAt(0).toUpperCase()}
+                            </div>
+
+                            {/* Name + email */}
+                            <div className="flex-1 min-w-0">
+                              <p className="text-white text-sm font-semibold truncate">{u.name}</p>
+                              <p className="text-gray-500 text-[11px] truncate">{u.email}</p>
+                            </div>
+
+                            {/* Expiry date */}
+                            <div className="hidden sm:block text-right flex-shrink-0">
+                              <p className="text-gray-600 text-[10px] uppercase tracking-widest">Expires</p>
+                              <p className="text-gray-400 text-xs">{fmtDate(u.activeTo)}</p>
+                            </div>
+
+                            {/* Countdown pill */}
+                            <div className="flex-shrink-0">
+                              <span className="px-3 py-1.5 rounded-xl text-xs font-black tabular-nums"
+                                style={{
+                                  background: isExp ? "rgba(248,113,113,0.15)" : isCrit ? "rgba(251,146,60,0.15)" : isWarn ? "rgba(251,191,36,0.12)" : "rgba(255,255,255,0.06)",
+                                  border: `1px solid ${isExp ? "rgba(248,113,113,0.35)" : isCrit ? "rgba(251,146,60,0.35)" : isWarn ? "rgba(251,191,36,0.3)" : "rgba(255,255,255,0.1)"}`,
+                                  color,
+                                }}>
+                                {isExp   ? `Expired ${Math.abs(dl)}d ago`
+                                 : isToday ? "🔴 Today!"
+                                 : isCrit  ? `🔴 ${dl}d left`
+                                 : isWarn  ? `🟡 ${dl}d left`
+                                 :           `${dl}d left`}
+                              </span>
+                            </div>
+
+                            {/* Status badge */}
+                            <div className="hidden md:block flex-shrink-0">
+                              {(() => { const ss = STATUS_STYLE[u.status]||STATUS_STYLE.active; return (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
+                                  style={{ background:ss.bg, color:ss.color, border:`1px solid ${ss.border}` }}>
+                                  {ss.label}
+                                </span>
+                              ); })()}
+                            </div>
+
+                            {/* Quick edit */}
+                            <button onClick={() => setEditUser(u)} title="Renew subscription"
+                              className="w-7 h-7 rounded-lg flex items-center justify-center flex-shrink-0 transition-all hover:bg-amber-500/20 hover:scale-110">
+                              <span className="text-sm">✏️</span>
+                            </button>
+                          </div>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Search */}
               <div className="flex items-center gap-3 mb-5">
