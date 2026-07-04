@@ -45,16 +45,30 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
   const bizEmail      = userDoc?.email || "";
   const bizPhone      = userDoc?.phone || "";
   const bizAddr       = userDoc?.address || "";
-  const subtotal      = Number(invoice.subtotal)   || 0;
-  const discount      = Number(invoice.discount)   || 0;
-  const afterDiscount = Number(invoice.amount)     || 0;
-  const amountPaid    = Number(invoice.amountPaid) || 0;
-  const goodsReturn   = Number(invoice.goodsReturn) || 0;
-  const balance       = Number(invoice.balance)    || 0;
+  const subtotal        = Number(invoice.subtotal)       || 0;
+  const discount        = Number(invoice.discount)       || 0;
+  const afterDiscount   = Number(invoice.amount)         || 0;
+  const amountPaid      = Number(invoice.amountPaid)     || 0;
+  // Calculate goodsReturn from payments array (return records) — same as PDF
+  const allPayments     = invoice.payments || [];
+  const returnRecords   = allPayments.filter(p => p.type === "return");
+  const paymentRecords  = allPayments.filter(p => p.type === "received" || (p.type !== "purchase" && p.type !== "return"));
+  const goodsReturn     = returnRecords.reduce((s, p) => s + (Number(p.returnAmount) || 0), 0);
+  // Correct balance = afterDiscount - amountPaid - goodsReturn
+  const balance         = Math.max(0, afterDiscount - amountPaid - goodsReturn);
+  // Previous balance row total (carry-forward from prior invoice)
+  const allItems = invoice.items || [];
+  const prevBalItem     = allItems.find(it => (it.description || "").startsWith("Previous Balance"));
+  const prevCarryAmount = prevBalItem ? (Number(prevBalItem.unitPrice) || Number(prevBalItem.total) || 0) : 0;
+  // Current invoice only items subtotal (excluding previous carry-forward)
+  const currentInvSubtotal = afterDiscount - prevCarryAmount;
+  // Payments apply to current invoice first
+  // currentInvBalance = max(0, currentInvSubtotal - amountPaid)
+  const currentInvBalance = Math.max(0, currentInvSubtotal - amountPaid);
+  // Total balance = previous carry-forward (never reduced by current payments) + current inv remaining
+  const totalBalance      = prevCarryAmount + currentInvBalance;
 
   // Separate previous balance row from regular items
-  const allItems = invoice.items || [];
-  const prevBalItem = allItems.find(it => (it.description || "").startsWith("Previous Balance · INV-"));
   const items = allItems.filter(it => !(it.description || "").startsWith("Previous Balance · INV-"));
 
   // Previous balance row (orange, italic — same style as PDF)
@@ -80,7 +94,9 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
     </tr>`).join("");
 
   // Payment history rows
-  const payments = invoice.payments || [];
+  const payments = paymentRecords;
+  const hasReceivedBy = payments.some(p => p.receiverName && p.receiverName.trim());
+  const hasPaidBy     = payments.some(p => p.payerName   && p.payerName.trim());
   const paymentHistorySection = payments.length > 0 ? `
   <tr><td style="padding:24px 40px 8px;">
     <div style="font-size:11px;font-weight:700;color:#16a34a;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;">Payment History</div>
@@ -90,14 +106,43 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
         <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">Method</th>
         <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">Amount Paid</th>
         <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">Balance After</th>
+        ${hasPaidBy     ? `<th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">Paid By</th>`      : ""}
+        ${hasReceivedBy ? `<th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">Received By</th>` : ""}
       </tr></thead>
       <tbody>
         ${payments.map((p, i) => `
         <tr style="background:${i % 2 === 0 ? "#f0fdf4" : "#ffffff"};">
           <td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">${fmtDateTime(p.date || p.paidAt || p.createdAt)}</td>
           <td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">${p.method || p.paymentMethod || "—"}</td>
-          <td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:600;color:#16a34a;border-bottom:1px solid #e5e7eb;">${formatRs(p.amount)}</td>
-          <td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:600;color:#dc2626;border-bottom:1px solid #e5e7eb;">${formatRs(p.balanceAfter)}</td>
+          <td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:600;color:#16a34a;border-bottom:1px solid #e5e7eb;">${formatRs(p.paid ?? p.amount)}</td>
+          <td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:600;color:#dc2626;border-bottom:1px solid #e5e7eb;">${formatRs(p.balance ?? p.balanceAfter)}</td>
+          ${hasPaidBy     ? `<td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">${p.payerName    || "—"}</td>` : ""}
+          ${hasReceivedBy ? `<td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">${p.receiverName || "—"}</td>` : ""}
+        </tr>`).join("")}
+      </tbody>
+    </table>
+  </td></tr>` : "";
+
+  // Goods Return History section
+  const returnHistorySection = returnRecords.length > 0 ? `
+  <tr><td style="padding:8px 40px 24px;">
+    <div style="font-size:11px;font-weight:700;color:#dc2626;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;">Goods Return History</div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:10px;overflow:hidden;border:1px solid #fecaca;">
+      <thead><tr style="background:linear-gradient(to right,#dc2626,#ef4444);">
+        <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:1px;">Date &amp; Time</th>
+        <th style="padding:10px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">Item</th>
+        <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">Qty</th>
+        <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">Rate</th>
+        <th style="padding:10px 14px;text-align:right;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">Return Amount</th>
+      </tr></thead>
+      <tbody>
+        ${returnRecords.map((p, i) => `
+        <tr style="background:${i % 2 === 0 ? "#fef2f2" : "#ffffff"};">
+          <td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #fecaca;">${fmtDateTime(p.date || p.createdAt)}</td>
+          <td style="padding:10px 14px;font-size:13px;color:#374151;border-bottom:1px solid #fecaca;">${p.description || "—"}</td>
+          <td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:600;color:#dc2626;border-bottom:1px solid #fecaca;">${p.qty || "—"}</td>
+          <td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:600;color:#dc2626;border-bottom:1px solid #fecaca;">${formatRs(p.rate)}</td>
+          <td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:700;color:#dc2626;border-bottom:1px solid #fecaca;">− ${formatRs(p.returnAmount)}</td>
         </tr>`).join("")}
       </tbody>
     </table>
@@ -159,21 +204,54 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
       <tr><td style="padding:6px 0;font-size:13px;color:#6b7280;">Subtotal</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#374151;">${formatRs(subtotal)}</td></tr>
       ${discount > 0 ? `<tr><td style="padding:6px 0;font-size:13px;color:#16a34a;">Discount</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#16a34a;">− ${formatRs(discount)}</td></tr>` : ""}
       <tr style="border-top:1px solid #e5e7eb;"><td style="padding:10px 0 6px;font-size:14px;font-weight:700;color:#111827;">Total</td><td style="padding:10px 0 6px;text-align:right;font-size:14px;font-weight:700;color:#1d4ed8;">${formatRs(afterDiscount)}</td></tr>
-      ${amountPaid > 0 ? `<tr><td style="padding:6px 0;font-size:13px;color:#16a34a;">Amount Paid</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#16a34a;">${formatRs(amountPaid)}</td></tr>` : ""}
+      ${amountPaid > 0 ? `
+      ${payments.length > 1
+        ? payments.map(p => `<tr><td style="padding:4px 0;font-size:13px;color:#16a34a;">Amount Paid (${fmtDate(p.date || p.paidAt || p.createdAt)})</td><td style="padding:4px 0;text-align:right;font-size:13px;color:#16a34a;">${formatRs(p.paid ?? p.amount)}</td></tr>`).join("")
+        : `<tr><td style="padding:6px 0;font-size:13px;color:#16a34a;">Amount Paid</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#16a34a;">${formatRs(amountPaid)}</td></tr>`
+      }` : ""}
       ${goodsReturn > 0 ? `<tr><td style="padding:6px 0;font-size:13px;color:#dc2626;">Goods Return</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#dc2626;">− ${formatRs(goodsReturn)}</td></tr>` : ""}
-      <tr><td colspan="2" style="padding-top:6px;"><table width="100%" cellpadding="0" cellspacing="0" style="background:${sm.bg};border-radius:8px;"><tr>
-        <td style="padding:12px 14px;font-size:15px;font-weight:800;color:${sm.color};">Balance Due</td>
-        <td style="padding:12px 14px;text-align:right;font-size:15px;font-weight:800;color:${sm.color};">${formatRs(balance)}</td>
-      </tr></table></td></tr>
+      ${prevCarryAmount > 0 ? `
+      <tr style="border-top:1px solid #e5e7eb;">
+        <td colspan="2" style="padding-top:10px;padding-bottom:4px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8faff;border:1px solid #dbeafe;border-radius:8px;">
+            <tr>
+              <td style="padding:10px 14px;font-size:13px;font-weight:700;color:#1d4ed8;">Total Balance</td>
+              <td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:700;color:#1d4ed8;">${formatRs(totalBalance)}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+      <tr>
+        <td colspan="2" style="padding-bottom:6px;">
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
+            <tr>
+              <td style="padding:10px 14px;font-size:13px;font-weight:700;color:#16a34a;">Current Invoice Balance</td>
+              <td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:700;color:#16a34a;">${formatRs(currentInvBalance)}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>` : ""}
+      <tr><td colspan="2" style="padding-top:${prevCarryAmount > 0 ? "2" : "6"}px;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:${sm.bg};border-radius:8px;">
+          <tr>
+            <td style="padding:12px 14px;">
+              <div style="font-size:15px;font-weight:800;color:${sm.color};">Balance Due</div>
+              ${prevCarryAmount > 0 && currentInvBalance >= 0 ? `<div style="font-size:11px;color:black;opacity:0.75;margin-top:3px;">(Current Invoice: ${formatRs(currentInvBalance)})</div>` : ""}
+            </td>
+            <td style="padding:12px 14px;text-align:right;font-size:15px;font-weight:800;color:${sm.color};">${formatRs(prevCarryAmount > 0 ? totalBalance : balance)}</td>
+          </tr>
+        </table>
+      </td></tr>
     </table>
   </td></tr></table>
 </td></tr>
 ${paymentHistorySection}
+${returnHistorySection}
 ${invoice.note ? `<tr><td style="padding:0 40px 28px;"><div style="background:#f8faff;border-left:4px solid #3b82f6;border-radius:6px;padding:14px 16px;"><div style="font-size:11px;font-weight:700;color:#6b7280;text-transform:uppercase;margin-bottom:4px;">Note</div><div style="font-size:13px;color:#374151;">${invoice.note}</div></div></td></tr>` : ""}
 <tr><td style="padding:20px 40px;background:linear-gradient(135deg,#f0f9ff,#e0f2fe);border-top:1px solid #e5e7eb;">
   <table width="100%" cellpadding="0" cellspacing="0"><tr>
     <td><div style="font-size:14px;font-weight:700;color:#1d4ed8;">📎 Invoice PDF Attached</div><div style="font-size:12px;color:#6b7280;margin-top:4px;">Your invoice is attached as a PDF.</div></td>
-    <td align="right"><div style="padding:8px 18px;background:${status==="Paid"?"#dcfce7":"#1d4ed8"};color:${status==="Paid"?"#16a34a":"#fff"};border-radius:8px;font-size:13px;font-weight:700;white-space:nowrap;">${status==="Paid"?"✓ Fully Paid":`Balance: ${formatRs(balance)}`}</div></td>
+    <td align="right"><div style="padding:8px 18px;background:${status==="Paid"?"#dcfce7":"#1d4ed8"};color:${status==="Paid"?"#16a34a":"#fff"};border-radius:8px;font-size:13px;font-weight:700;white-space:nowrap;">${balance === 0 ?"✓ Fully Paid":`Balance: ${formatRs(balance)}`}</div></td>
   </tr></table>
 </td></tr>
 <tr><td style="padding:24px 40px;text-align:center;border-top:1px solid #e5e7eb;">

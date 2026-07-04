@@ -81,13 +81,19 @@ function FInput({ label, req, children, cls }) {
   );
 }
 
-function StyledInput({ type = "text", placeholder, value, onChange, req, min, step, sx, autoComplete }) {
+function StyledInput({ type = "text", placeholder, value, onChange, req, min, step, sx, autoComplete, disabled }) {
   const [isFocused, setF] = useState(false);
   return (
     <input type={type} placeholder={placeholder} value={value} onChange={onChange}
       required={req} min={min} step={step} autoComplete={autoComplete || "off"}
+      disabled={disabled}
       onFocus={() => setF(true)} onBlur={() => setF(false)}
-      style={{ ...base, ...(isFocused ? focused : {}), ...sx }} />
+      style={{
+        ...base,
+        ...(isFocused && !disabled ? focused : {}),
+        ...sx,
+        ...(disabled ? { opacity: 0.45, cursor: "not-allowed", pointerEvents: "none", userSelect: "none" } : {}),
+      }} />
   );
 }
 
@@ -587,7 +593,7 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
 }
 
 // ── Main Modal ────────────────────────────────────────────────────────────────
-export default function InvoiceModal({ onClose, onSave, saving, initial, defaultValues, products = [], settingsLogo = "" }) {
+export default function InvoiceModal({ onClose, onSave, saving, initial, defaultValues, products = [], settingsLogo = "", customerTotalBalance = null }) {
   // if no initial logo provided, use settingsLogo as default
   const defaultForm = settingsLogo
     ? { ...EMPTY_FORM, logoDataUrl: settingsLogo }
@@ -725,11 +731,24 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
   }
 
   const { subtotal, discount, afterDiscount, paid, balance, actualBalance, actualAfterDiscount } = calcTotals(form);
-  const autoStatus = balance === 0 && afterDiscount > 0 ? "Paid" : paid > 0 ? "Partial" : "Unpaid";
+
+  // In edit mode: use actualAfterDiscount (excludes Previous Balance carry-forward items)
+  // so this invoice's own balance/status is calculated correctly independent of prev balance rows
+  // Then subtract any past returns for accuracy
+  const totalPastReturns = (initial?._pastReturns || []).reduce((s, r) => s + (Number(r.returnAmount) || 0), 0);
+  const baseAmount = initial ? actualAfterDiscount : afterDiscount; // exclude prev-bal items in edit mode
+  const displayAfterDiscount = Math.max(0, baseAmount - totalPastReturns);
+  const displayBalance = Math.max(displayAfterDiscount - paid, 0);
+  const autoStatus = displayBalance === 0 && displayAfterDiscount > 0 ? "Paid" : paid > 0 ? "Partial" : "Unpaid";
 
   // For payment collection: only enable if there are actual product items (not just prev balance)
   const isPrevBal = it => (it.description || "").startsWith("Previous Balance · INV-");
   const hasRealItems = (form.items || []).some(it => !isPrevBal(it) && it.description?.trim() && Number(it.qty) > 0 && Number(it.unitPrice) >= 0);
+  
+  // In edit mode: use actualAfterDiscount minus past returns for accurate payment cap
+  const displayActualBalance = initial
+    ? Math.max(0, displayAfterDiscount - paid)   // displayAfterDiscount already accounts for returns & prev-bal exclusion
+    : Math.max(actualBalance, 0);
 
   function handleSubmit(e) {
     e.preventDefault();
@@ -739,7 +758,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
       subtotal, discount,
       amount: afterDiscount,
       amountPaid: paid,
-      balance,
+      balance: displayBalance,
       status: autoStatus,
       additionalItems: (initial && showAddPurchase) ? additionalItems : [],
       returnItem: (initial && showReturn && hasReturn) ? returnItem : null,
@@ -910,8 +929,14 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
             const firstRealItem = form.items.find(
               it => it.description && !it.description.startsWith("Previous Balance · INV-")
             );
-            const productName = firstRealItem?.description || "";
-            const defaultRate = firstRealItem?.unitPrice || "";
+            const productName  = firstRealItem?.description  || "";
+            const defaultRate  = firstRealItem?.unitPrice     || "";
+            const variantUnit  = firstRealItem?.variantUnit   || ""; // e.g. "kg", "L", "m"
+            const variantLabel = firstRealItem?.variantLabel  || ""; // e.g. "1 kg"
+            const isVariant    = !!(firstRealItem?.variantId && variantUnit);
+
+            // common preset values for variant units
+            const unitPresets = ["0.25","0.5","0.75","1","2","5","10","20","50"];
 
             return (
               <div>
@@ -919,12 +944,14 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                   <button type="button"
                     onClick={() => {
                       setAdditionalItems([{
-                        description: productName,
-                        qty: 1,
-                        unitPrice: defaultRate,
-                        productId: firstRealItem?.productId || "",
-                        variantId: firstRealItem?.variantId || "",
-                        stock: firstRealItem?.stock || "",
+                        description:  productName,
+                        qty:          isVariant ? "" : 1,
+                        unitPrice:    defaultRate,
+                        productId:    firstRealItem?.productId  || "",
+                        variantId:    firstRealItem?.variantId  || "",
+                        variantLabel: firstRealItem?.variantLabel || "",
+                        variantUnit:  firstRealItem?.variantUnit  || "",
+                        stock:        firstRealItem?.stock || "",
                       }]);
                       setShowAddPurchase(true);
                     }}
@@ -946,45 +973,108 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                     </div>
 
                     <div className="p-4 flex flex-col gap-3">
-                      {/* Column headers */}
-                      <div className="grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
-                        style={{ gridTemplateColumns: "1fr 90px 110px 90px" }}>
-                        <span>Product</span>
-                        <span className="text-center">Qty</span>
-                        <span className="text-right">Rate</span>
-                        <span className="text-right">Total</span>
-                      </div>
+                      {isVariant ? (
+                        /* ── Variant mode: product + unit input + rate (locked) + total ── */
+                        <>
+                          <div className="grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
+                            style={{ gridTemplateColumns: "1fr 120px 110px 90px" }}>
+                            <span>Product</span>
+                            <span className="text-center">Qty ({variantUnit})</span>
+                            <span className="text-right">Rate / {variantUnit}</span>
+                            <span className="text-right">Total</span>
+                          </div>
 
-                      {/* Single purchase row */}
-                      <div className="grid gap-2 items-center"
-                        style={{ gridTemplateColumns: "1fr 90px 110px 90px" }}>
-                        {/* Product name — read only */}
-                        <div className="px-3 py-2 rounded-xl text-sm truncate"
-                          style={{ background: "rgba(255,255,255,0.03)", border: "1.5px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
-                          {additionalItems[0]?.description || "—"}
-                        </div>
-                        {/* Qty — editable */}
-                        <input
-                          type="number" min="1" placeholder="Qty"
-                          value={additionalItems[0]?.qty || ""}
-                          onChange={e => setAddItem(0, "qty", e.target.value)}
-                          style={{ ...{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(255,255,255,0.09)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" } }}
-                        />
-                        {/* Rate — editable */}
-                        <input
-                          type="number" min="0" placeholder="Rate"
-                          value={additionalItems[0]?.unitPrice || ""}
-                          onChange={e => setAddItem(0, "unitPrice", e.target.value)}
-                          style={{ ...{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(255,255,255,0.09)", borderRadius:10, padding:"9px 10px", color:"#fff", fontSize:13, textAlign:"right" } }}
-                        />
-                        {/* Line total */}
-                        <p className="text-xs font-bold text-right pr-1"
-                          style={{ color: (Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0 ? "#f59e0b" : "#4b5563" }}>
-                          {(Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0
-                            ? formatRs((Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0))
-                            : "—"}
-                        </p>
-                      </div>
+                          <div className="grid gap-2 items-center"
+                            style={{ gridTemplateColumns: "1fr 120px 110px 90px" }}>
+                            {/* Product name — read only */}
+                            <div className="px-3 py-2 rounded-xl text-sm truncate"
+                              style={{ background: "rgba(255,255,255,0.03)", border: "1.5px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
+                              {additionalItems[0]?.description || "—"}
+                              {variantLabel && <span className="ml-1 text-[10px] text-amber-400">({variantLabel})</span>}
+                            </div>
+
+                            {/* Unit qty input with decimal support + presets */}
+                            <div className="flex flex-col gap-1">
+                              <input
+                                type="number" min="0.01" step="0.01" placeholder={`e.g. 0.5`}
+                                value={additionalItems[0]?.qty || ""}
+                                onChange={e => setAddItem(0, "qty", e.target.value)}
+                                style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(245,158,11,0.3)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" }}
+                              />
+                              {/* Quick preset buttons */}
+                              <div className="flex flex-wrap gap-1">
+                                {unitPresets.map(p => (
+                                  <button key={p} type="button"
+                                    onClick={() => setAddItem(0, "qty", p)}
+                                    className="px-1.5 py-0.5 rounded text-[9px] font-semibold transition-colors"
+                                    style={{
+                                      background: additionalItems[0]?.qty === p ? "rgba(245,158,11,0.3)" : "rgba(255,255,255,0.05)",
+                                      color: additionalItems[0]?.qty === p ? "#f59e0b" : "#6b7280",
+                                      border: `1px solid ${additionalItems[0]?.qty === p ? "rgba(245,158,11,0.4)" : "rgba(255,255,255,0.08)"}`,
+                                    }}>
+                                    {p}
+                                  </button>
+                                ))}
+                              </div>
+                            </div>
+
+                            {/* Rate — read only (locked to original) */}
+                            <div className="px-2 py-2 rounded-xl text-sm text-right"
+                              style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.06)", color: "#9ca3af" }}>
+                              {formatRs(additionalItems[0]?.unitPrice)}
+                            </div>
+
+                            {/* Line total */}
+                            <p className="text-xs font-bold text-right pr-1"
+                              style={{ color: (Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0 ? "#f59e0b" : "#4b5563" }}>
+                              {(Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0
+                                ? formatRs((Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0))
+                                : "—"}
+                            </p>
+                          </div>
+                        </>
+                      ) : (
+                        /* ── Normal mode: product + qty + rate + total ── */
+                        <>
+                          <div className="grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
+                            style={{ gridTemplateColumns: "1fr 90px 110px 90px" }}>
+                            <span>Product</span>
+                            <span className="text-center">Qty</span>
+                            <span className="text-right">Rate</span>
+                            <span className="text-right">Total</span>
+                          </div>
+
+                          <div className="grid gap-2 items-center"
+                            style={{ gridTemplateColumns: "1fr 90px 110px 90px" }}>
+                            {/* Product name — read only */}
+                            <div className="px-3 py-2 rounded-xl text-sm truncate"
+                              style={{ background: "rgba(255,255,255,0.03)", border: "1.5px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
+                              {additionalItems[0]?.description || "—"}
+                            </div>
+                            {/* Qty — editable */}
+                            <input
+                              type="number" min="1" placeholder="Qty"
+                              value={additionalItems[0]?.qty || ""}
+                              onChange={e => setAddItem(0, "qty", e.target.value)}
+                              style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(255,255,255,0.09)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" }}
+                            />
+                            {/* Rate — editable */}
+                            <input
+                              type="number" min="0" placeholder="Rate"
+                              value={additionalItems[0]?.unitPrice || ""}
+                              onChange={e => setAddItem(0, "unitPrice", e.target.value)}
+                              style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(255,255,255,0.09)", borderRadius:10, padding:"9px 10px", color:"#fff", fontSize:13, textAlign:"right" }}
+                            />
+                            {/* Line total */}
+                            <p className="text-xs font-bold text-right pr-1"
+                              style={{ color: (Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0 ? "#f59e0b" : "#4b5563" }}>
+                              {(Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0
+                                ? formatRs((Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0))
+                                : "—"}
+                            </p>
+                          </div>
+                        </>
+                      )}
 
                       {/* Preview */}
                       {hasAdditionalItems && (
@@ -1006,16 +1096,62 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
               it => it.description && !it.description.startsWith("Previous Balance · INV-")
             );
             const productName = firstRealItem?.description || "";
+            const pastReturns = initial._pastReturns || [];
 
             return (
-              <div>
+              <div className="flex flex-col gap-3">
+                {/* Past returns — read-only rows */}
+                {pastReturns.length > 0 && (
+                  <div className="rounded-xl overflow-hidden"
+                    style={{ border: "1px solid rgba(248,113,113,0.2)", background: "rgba(248,113,113,0.03)" }}>
+                    <div className="px-4 py-3 border-b flex items-center gap-2"
+                      style={{ borderColor: "rgba(248,113,113,0.12)" }}>
+                      <span style={{ color: "#f87171", fontSize: 12 }}>↩️</span>
+                      <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#f87171" }}>
+                        Previously Returned
+                      </p>
+                    </div>
+                    <div className="p-4 flex flex-col gap-2">
+                      {/* Column headers */}
+                      <div className="grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
+                        style={{ gridTemplateColumns: "1fr 80px 100px 90px" }}>
+                        <span>Product</span>
+                        <span className="text-center">Qty</span>
+                        <span className="text-right">Rate</span>
+                        <span className="text-right">Amount</span>
+                      </div>
+                      {pastReturns.map((ret, i) => (
+                        <div key={i} className="grid gap-2 items-center"
+                          style={{ gridTemplateColumns: "1fr 80px 100px 90px" }}>
+                          <div className="px-3 py-2 rounded-xl text-xs truncate"
+                            style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(248,113,113,0.15)", color: "#9ca3af" }}>
+                            {ret.description || "—"}
+                          </div>
+                          <div className="px-2 py-2 rounded-xl text-xs text-center"
+                            style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(248,113,113,0.15)", color: "#9ca3af" }}>
+                            {ret.qty}
+                          </div>
+                          <div className="px-2 py-2 rounded-xl text-xs text-right"
+                            style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(248,113,113,0.15)", color: "#9ca3af" }}>
+                            {formatRs(ret.rate)}
+                          </div>
+                          <p className="text-xs font-semibold text-right pr-1" style={{ color: "#f87171" }}>
+                            - {formatRs(ret.returnAmount)}
+                          </p>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* New return button/form */}
                 {!showReturn ? (
                   <button type="button"
                     onClick={() => {
                       setReturnItem({ description: productName, qty: "", rate: firstRealItem?.unitPrice || "" });
                       setShowReturn(true);
                     }}
-                    className="flex items-center gap-2 text-xs font-semibold px-4 py-2.5 rounded-xl transition-all hover:scale-105"
+                    className="flex items-center gap-2 text-xs font-semibold px-4 py-2.5 rounded-xl transition-all hover:scale-105 w-fit"
                     style={{ color: "#f87171", background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)" }}>
                     ↩️ Goods Return
                   </button>
@@ -1105,22 +1241,86 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
             <div className="grid grid-cols-2 gap-3">
               <FInput label="Amount Already Paid (Rs.)">
                 <StyledInput type="number" min="0" placeholder="0"
-                  value={form.amountPaid} onChange={set("amountPaid")} />
+                  value={form.amountPaid} onChange={set("amountPaid")}
+                  disabled={!!initial} />
               </FInput>
-              <div className="rounded-xl p-3 flex flex-col justify-center"
-                style={{ background: balance > 0 ? "rgba(248,113,113,0.06)" : "rgba(52,211,153,0.06)",
-                  border: `1px solid ${balance > 0 ? "rgba(248,113,113,0.2)" : "rgba(52,211,153,0.2)"}` }}>
-                <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5"
-                  style={{ color: balance > 0 ? "#f87171" : "#34d399" }}>
-                  {balance > 0 ? "Balance Due" : "Fully Paid ✓"}
-                </p>
-                <p className="text-white font-black text-base">{formatRs(balance)}</p>
-                <p className="text-gray-500 text-[10px] mt-0.5">
-                  Status: <span className="font-semibold" style={{
-                    color: autoStatus === "Paid" ? "#34d399" : autoStatus === "Partial" ? "#fbbf24" : "#f87171"
-                  }}>{autoStatus}</span>
-                </p>
-              </div>
+
+              {/* Edit mode: show this invoice status + customer total balance */}
+              {initial && customerTotalBalance != null ? (
+                <div className="rounded-xl p-3 flex flex-col justify-center gap-1"
+                  style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.1)" }}>
+
+                  {/* This invoice status */}
+                  <div className="flex items-center justify-between">
+                    <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#9ca3af" }}>
+                      This Invoice
+                    </p>
+                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                      style={{
+                        background: autoStatus === "Paid" ? "rgba(52,211,153,0.15)" : autoStatus === "Partial" ? "rgba(251,191,36,0.15)" : "rgba(248,113,113,0.15)",
+                        color: autoStatus === "Paid" ? "#34d399" : autoStatus === "Partial" ? "#fbbf24" : "#f87171",
+                        border: `1px solid ${autoStatus === "Paid" ? "rgba(52,211,153,0.3)" : autoStatus === "Partial" ? "rgba(251,191,36,0.3)" : "rgba(248,113,113,0.3)"}`,
+                      }}>
+                      {autoStatus}
+                    </span>
+                  </div>
+
+                  {/* Paid amount */}
+                  {paid > 0 && (
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] text-gray-500">Paid</p>
+                      <p className="text-[11px] font-semibold" style={{ color: "#34d399" }}>{formatRs(paid)}</p>
+                    </div>
+                  )}
+
+                  {/* Returns */}
+                  {(initial._pastReturns?.length > 0) && (
+                    <div className="flex items-center justify-between">
+                      <p className="text-[10px] text-gray-500">Returned</p>
+                      <p className="text-[11px] font-semibold" style={{ color: "#f87171" }}>
+                        - {formatRs(totalPastReturns)}
+                      </p>
+                    </div>
+                  )}
+
+                  {/* This invoice balance or paid */}
+                  <div className="flex items-center justify-between mt-0.5 pt-1.5"
+                    style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+                    <p className="text-[10px] text-gray-500">Invoice Balance</p>
+                    <p className="text-[11px] font-bold" style={{ color: displayBalance > 0 ? "#f87171" : "#34d399" }}>
+                      {displayBalance > 0 ? formatRs(displayBalance) : "Cleared ✓"}
+                    </p>
+                  </div>
+
+                  {/* Divider + Customer total */}
+                  <div className="mt-1 pt-1.5 flex items-center justify-between"
+                    style={{ borderTop: "1px dashed rgba(248,113,113,0.3)" }}>
+                    <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#f87171" }}>
+                      Customer Balance
+                    </p>
+                    <p className="text-sm font-black" style={{ color: customerTotalBalance > 0 ? "#f87171" : "#34d399" }}>
+                      {formatRs(customerTotalBalance)}
+                    </p>
+                  </div>
+                </div>
+
+              ) : (
+                /* New invoice mode: simple balance */
+                <div className="rounded-xl p-3 flex flex-col justify-center"
+                  style={{ background: displayBalance > 0 ? "rgba(248,113,113,0.06)" : "rgba(52,211,153,0.06)",
+                    border: `1px solid ${displayBalance > 0 ? "rgba(248,113,113,0.2)" : "rgba(52,211,153,0.2)"}` }}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest mb-0.5"
+                    style={{ color: displayBalance > 0 ? "#f87171" : "#34d399" }}>
+                    {displayBalance > 0 ? "Balance Due" : "Fully Paid ✓"}
+                  </p>
+                  <p className="text-white font-black text-base">{formatRs(displayBalance)}</p>
+                  <p className="text-gray-500 text-[10px] mt-0.5">
+                    Status: <span className="font-semibold" style={{
+                      color: autoStatus === "Paid" ? "#34d399" : autoStatus === "Partial" ? "#fbbf24" : "#f87171"
+                    }}>{autoStatus}</span>
+                  </p>
+                </div>
+              )}
             </div>
           </div>
 
@@ -1138,7 +1338,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
           </div>
 
           {/* ── Payment Collection (Only for Edit with Balance on actual items) ── */}
-          {initial && hasRealItems && actualBalance > 0 && (
+          {initial && hasRealItems && displayActualBalance > 0 && (
             <div>
               <p className={sect} style={{ color: "#10b981" }}>
                 💰 Collect Payment
@@ -1174,12 +1374,12 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                   
                   {/* Payment Amount */}
                   <div className="col-span-2 mt-2">
-                    <FInput label={`💸 Payment Amount (Max: ${formatRs(actualBalance)})`}>
-                      <StyledInput type="number" min="0" max={actualBalance} step="0.01"
+                    <FInput label={`💸 Payment Amount (Max: ${formatRs(displayActualBalance)})`}>
+                      <StyledInput type="number" min="0" max={displayActualBalance} step="0.01"
                         placeholder="0" value={form.newPaymentAmount || ""}
                         onChange={(e) => {
                           const val = Number(e.target.value) || 0;
-                          if (val <= actualBalance) {
+                          if (val <= displayActualBalance) {
                             setForm(p => ({ ...p, newPaymentAmount: e.target.value }));
                           }
                         }} />
@@ -1194,7 +1394,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                       {form.payerName || "Payer"} will pay <span className="text-white font-bold">{formatRs(form.newPaymentAmount)}</span> to {form.receiverName || "Receiver"}
                     </p>
                     <p className="text-xs text-gray-400 mt-1">
-                      New Balance: <span className="text-amber-400 font-bold">{formatRs(Math.max(0, actualBalance - Number(form.newPaymentAmount)))}</span>
+                      New Balance: <span className="text-amber-400 font-bold">{formatRs(Math.max(0, displayActualBalance - Number(form.newPaymentAmount)))}</span>
                     </p>
                   </div>
                 )}
@@ -1236,10 +1436,14 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
           <div className="rounded-2xl p-4 grid grid-cols-2 sm:grid-cols-4 gap-3"
             style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
             {[
-              { label: "Subtotal", val: formatRs(subtotal),           color: "#fff"     },
-              { label: "Discount", val: `- ${formatRs(discount)}`,    color: "#fbbf24"  },
-              { label: "Paid",     val: formatRs(paid),               color: "#34d399"  },
-              { label: "Balance",  val: formatRs(balance), color: balance > 0 ? "#f87171" : "#34d399" },
+              { label: "Subtotal",  val: formatRs(subtotal),           color: "#fff"     },
+              { label: "Discount",  val: `- ${formatRs(discount)}`,    color: "#fbbf24"  },
+              { label: "Paid",      val: formatRs(paid),               color: "#34d399"  },
+              {
+                label: initial && customerTotalBalance != null ? "Cust. Balance" : "Balance",
+                val:   formatRs(initial && customerTotalBalance != null ? customerTotalBalance : displayBalance),
+                color: (initial && customerTotalBalance != null ? customerTotalBalance : displayBalance) > 0 ? "#f87171" : "#34d399",
+              },
             ].map(s => (
               <div key={s.label} className="text-center">
                 <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-0.5">{s.label}</p>

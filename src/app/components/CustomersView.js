@@ -256,6 +256,20 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
   }, [uid, customer.id, custInvoices]);
 
   // ── computed ──────────────────────────────────────────────────────────────
+  // Helper: get actual balance of an invoice (excluding previous-balance carry-forward items)
+  // Also subtracts goods returns from payments collection
+  const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+  const getActualBalance = inv => {
+    const actualAmt = inv.actualAmount != null
+      ? Number(inv.actualAmount)
+      : (inv.items || []).filter(it => !isPrevBalItem(it))
+          .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+    const invReturnsTotal = customerPayments
+      .filter(p => p.type === "return" && p.invoiceId === inv.id)
+      .reduce((s, p) => s + (Number(p.returnAmount) || 0), 0);
+    return Math.max(0, actualAmt - (Number(inv.amountPaid) || 0) - invReturnsTotal);
+  };
+
   // Find invoice IDs whose balance has been carried forward into a newer invoice
   // These should NOT be counted in totalBalance to avoid double-counting
   const carriedForwardIds = new Set();
@@ -263,50 +277,35 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
     (inv.items || []).forEach(it => {
       const desc = it.description || "";
       if (desc.startsWith("Previous Balance · INV-")) {
-        // Extract the 4-char suffix e.g. "Previous Balance · INV-UTWW" → "UTWW"
         const suffix = desc.replace("Previous Balance · INV-", "").trim().slice(0, 4).toUpperCase();
-        // Find the matching invoice by id suffix
         const matched = custInvoices.find(i => (i.id || "").slice(-4).toUpperCase() === suffix);
         if (matched) carriedForwardIds.add(matched.id);
       }
     });
   });
 
-  // Only count invoices that are NOT carried forward (to avoid double-counting)
+  // Only count actual product amounts — no double-counting regardless of carry-forwards
   const totalBusiness = custInvoices.reduce((s, i) => {
-    if (carriedForwardIds.has(i.id)) return s;
-    // Use actualAmount if available, else full amount
-    const amt = i.actualAmount != null ? Number(i.actualAmount) : (Number(i.amount) || 0);
+    const amt = i.actualAmount != null
+      ? Number(i.actualAmount)
+      : (i.items || []).filter(it => !isPrevBalItem(it))
+          .reduce((sum, it) => sum + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
     return s + amt;
   }, 0);
-  const totalPaid     = custInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
-  const totalBalance  = custInvoices.reduce((s, i) => {
-    // If this invoice's balance is already carried into a newer invoice, skip it
-    if (carriedForwardIds.has(i.id)) return s;
-    return s + (Number(i.balance) || 0);
-  }, 0);
+  const totalPaid = custInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
+
+  // Total balance = sum of actual balances per invoice (avoids double-counting carry-forwards)
+  const totalBalance = custInvoices.reduce((s, i) => s + getActualBalance(i), 0);
   const paidCount     = custInvoices.filter(i => i.status === "Paid").length;
 
   // ── generate invoice with prev balance carried forward ───────────────────
   function openNewInvoice() {
-    // Only carry forward the LATEST unpaid/partial invoice's balance
-    // (that invoice already includes previous balances in its own items)
-    // Use actualAmount-based status to avoid carrying forward already-paid invoices
-    const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
-    const getActualBalance = inv => {
-      const actualAmt = inv.actualAmount != null
-        ? Number(inv.actualAmount)
-        : (inv.items || []).filter(it => !isPrevBalItem(it))
-            .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
-      return Math.max(0, actualAmt - (Number(inv.amountPaid) || 0));
-    };
+    // Carry forward the TOTAL outstanding balance across ALL unpaid/partial invoices
+    // isPrevBalItem and getActualBalance are defined in computed section above
 
-    const pendingInvoices = custInvoices.filter(inv => {
-      const actualBal = getActualBalance(inv);
-      return actualBal > 0;
-    });
+    const pendingInvoices = custInvoices.filter(inv => getActualBalance(inv) > 0);
 
-    // Sort by createdAt descending — take only the most recent one
+    // Sort by createdAt descending — latest first
     const sorted = [...pendingInvoices].sort((a, b) => {
       const aTime = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
       const bTime = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
@@ -314,10 +313,13 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
     });
     const latestPending = sorted[0];
 
+    // Sum balances of ALL pending invoices for the carry-forward row
+    const totalPendingBalance = sorted.reduce((sum, inv) => sum + getActualBalance(inv), 0);
+
     const prevBalItems = latestPending ? [{
       description: `Previous Balance · INV-${(latestPending.id || "").slice(-4).toUpperCase()}`,
       qty:         1,
-      unitPrice:   String(getActualBalance(latestPending)),
+      unitPrice:   String(totalPendingBalance),
       productId:   "",
       variantId:   "",
       variantLabel: "",
@@ -336,7 +338,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         ? [...prevBalItems, { description: "", qty: 1, unitPrice: "", productId: "", variantId: "", variantLabel: "", variantUnit: "", stock: "" }]
         : [{ description: "", qty: 1, unitPrice: "", productId: "", variantId: "", variantLabel: "", variantUnit: "", stock: "" }],
       note: latestPending
-        ? `Includes previous outstanding balance from INV-${(latestPending.id || "").slice(-4).toUpperCase()} (Rs. ${getActualBalance(latestPending).toLocaleString("en-PK")}).`
+        ? `Includes total outstanding balance of Rs. ${totalPendingBalance.toLocaleString("en-PK")} from ${sorted.length} pending invoice(s).`
         : "",
     };
     setEditInv(null);
@@ -539,10 +541,16 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         if (retData && retData.description && Number(retData.qty) > 0 && Number(retData.rate) > 0) {
           const returnAmount  = Number(retData.qty) * Number(retData.rate);
           const currentPaid   = Number(formData.amountPaid) || 0;
-          // Current actual amount before return
-          const currentActual = payload.actualAmount || actualAmountAfterDiscount;
+          // Use Firestore's current stored amounts (already reduced by previous returns)
+          // NOT payload.amount/actualAmount which recalculates from raw items every time
+          const currentActual = formData._actualAmount != null
+            ? Number(formData._actualAmount)
+            : (payload.actualAmount || actualAmountAfterDiscount);
+          const currentFullAmount = formData._amount != null
+            ? Number(formData._amount)
+            : payload.amount;
           const newActual     = Math.max(0, currentActual - returnAmount);
-          const newFullAmount = Math.max(0, payload.amount - returnAmount);
+          const newFullAmount = Math.max(0, currentFullAmount - returnAmount);
           const newBalance    = Math.max(0, newFullAmount - currentPaid);
           const newStatus     = newBalance === 0 ? "Paid" : currentPaid > 0 ? "Partial" : "Unpaid";
 
@@ -853,7 +861,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
     setDeleteInvId(null);
   }
 
-  function docToForm(inv) {
+  function docToForm(inv, pastReturns = []) {
     return {
       logoDataUrl:          inv.logoDataUrl || "",
       customerName:         inv.customerName || customer.name,
@@ -869,6 +877,10 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
       earlyDiscountDays:    inv.earlyDiscountDays ? String(inv.earlyDiscountDays) : "",
       earlyDiscountPercent: inv.earlyDiscountPercent ? String(inv.earlyDiscountPercent) : "",
       note:                 inv.note || "",
+      // ── snapshot fields so InvoiceModal can show correct balance & past returns ──
+      _amount:              inv.amount,        // current reduced total (after all returns)
+      _actualAmount:        inv.actualAmount,  // current reduced actual amount
+      _pastReturns:         pastReturns,       // [{description, qty, rate, returnAmount, createdAt}]
     };
   }
 
@@ -1040,7 +1052,11 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
                     .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0)
                   || Number(inv.amount) || 0;
               const amtPaid = Number(inv.amountPaid) || 0;
-              const displayBalance = Math.max(0, displayAmount - amtPaid);
+              // Include goods returns from payments for accurate balance
+              const invReturnsTotal = customerPayments
+                .filter(p => p.type === "return" && p.invoiceId === inv.id)
+                .reduce((s, p) => s + (Number(p.returnAmount) || 0), 0);
+              const displayBalance = Math.max(0, displayAmount - amtPaid - invReturnsTotal);
 
               // Recalculate status from actualAmount — don't trust stored status (may be stale)
               const effectiveStatus = displayBalance === 0 && displayAmount > 0
@@ -1085,8 +1101,14 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
                   <div className="flex items-center gap-3 flex-shrink-0">
                     <div className="text-right hidden sm:block">
                       <p className="text-white text-sm font-bold">{formatRs(displayAmount)}</p>
+                      {amtPaid > 0 && (
+                        <p className="text-[10px]" style={{ color: "#34d399" }}>Paid: {formatRs(amtPaid)}</p>
+                      )}
+                      {invReturnsTotal > 0 && (
+                        <p className="text-[10px]" style={{ color: "#f87171" }}>Return: -{formatRs(invReturnsTotal)}</p>
+                      )}
                       {displayBalance > 0 && (
-                        <p className="text-xs" style={{ color: "#f87171" }}>Bal: {formatRs(displayBalance)}</p>
+                        <p className="text-xs font-semibold" style={{ color: "#f87171" }}>Bal: {formatRs(displayBalance)}</p>
                       )}
                     </div>
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
@@ -1102,7 +1124,11 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
                         title="Invoice Payment History"
                         className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
                         style={{ background: "rgba(139,92,246,0.1)", color: "#a78bfa" }}>📊</button>
-                      <button onClick={() => { setEditInv({ id: inv.id, form: docToForm(inv) }); setShowInvModal(true); }}
+                      <button onClick={() => { 
+                          const invReturns = customerPayments.filter(p => p.type === "return" && p.invoiceId === inv.id);
+                          setEditInv({ id: inv.id, form: docToForm(inv, invReturns) }); 
+                          setShowInvModal(true); 
+                        }}
                         className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
                         style={{ background: "rgba(37,99,235,0.1)", color: "#60A5FA" }}>✏️</button>
                       <button onClick={() => setDeleteInvId(inv.id)}
@@ -1128,6 +1154,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         defaultValues={!editInv ? (showInvModal?.prefilled || null) : null}
         products={products}
         settingsLogo={userDoc?.logoDataUrl || ""}
+        customerTotalBalance={editInv ? totalBalance : null}
       />
     )}
 
