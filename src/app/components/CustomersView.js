@@ -407,20 +407,8 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
           const existingItems = [...(formData.items || [])];
           const mergedItems = [...existingItems];
           newItems.forEach(newIt => {
-            // If same product+variant already exists, add qty; otherwise push new row
-            const existIdx = mergedItems.findIndex(ex =>
-              ex.description === newIt.description &&
-              ex.productId === newIt.productId &&
-              (ex.variantId || "") === (newIt.variantId || "")
-            );
-            if (existIdx >= 0) {
-              mergedItems[existIdx] = {
-                ...mergedItems[existIdx],
-                qty: (Number(mergedItems[existIdx].qty) || 0) + (Number(newIt.qty) || 0),
-              };
-            } else {
-              mergedItems.push(newIt);
-            }
+            // Always push as a new separate row — never merge qty into existing row
+            mergedItems.push(newIt);
           });
 
           // Recalculate totals with merged items

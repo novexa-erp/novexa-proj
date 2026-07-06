@@ -1,32 +1,45 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 
 export default function EmailConfirmationDialog({ show, onConfirm, onCancel, recipientEmail, documentType = "invoice" }) {
   const [visible,  setVisible]  = useState(false);
   const [sending,  setSending]  = useState(false);
+  const sendingRef = useRef(false); // sync ref to avoid stale closure
 
   useEffect(() => {
-    if (show) setVisible(true);
-    else { setVisible(false); setSending(false); }
+    if (show) {
+      setVisible(true);
+      setSending(false);
+      sendingRef.current = false;
+    } else {
+      // Only auto-close if not currently sending
+      if (!sendingRef.current) {
+        setVisible(false);
+      }
+    }
   }, [show]);
 
-  // Keep dialog open while sending — only close after onConfirm resolves
   const handleConfirm = async () => {
     setSending(true);
+    sendingRef.current = true;
     try {
       await onConfirm();
+    } catch (e) {
+      console.error("[EmailConfirmationDialog]", e);
     } finally {
+      sendingRef.current = false;
       setSending(false);
+      setVisible(false);
     }
   };
 
   const handleCancel = () => {
-    if (sending) return; // block cancel while sending
+    if (sendingRef.current) return;
     setVisible(false);
     setTimeout(() => onCancel(), 150);
   };
 
-  if (!show) return null;
+  if (!show && !sending && !visible) return null;
 
   const label =
     documentType === "return" ? "return invoice" :

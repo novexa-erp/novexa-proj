@@ -10,10 +10,13 @@ function formatRs(n) {
 function fmtDate(str) {
   if (!str) return "—";
   try {
-    return new Date(str).toLocaleDateString("en-PK", {
-      day: "2-digit", month: "short", year: "numeric",
-    });
-  } catch { return str; }
+    if (typeof str?.toDate === "function") return str.toDate().toLocaleDateString("en-PK", { day:"2-digit", month:"short", year:"numeric" });
+    const secs = str?._seconds ?? str?.seconds;
+    if (secs != null) return new Date(secs * 1000).toLocaleDateString("en-PK", { day:"2-digit", month:"short", year:"numeric" });
+    const d = new Date(str);
+    if (!isNaN(d)) return d.toLocaleDateString("en-PK", { day:"2-digit", month:"short", year:"numeric" });
+    return "—";
+  } catch { return String(str); }
 }
 function InvoiceNumber(id) {
   return "INV-" + (id || "").slice(-6).toUpperCase();
@@ -29,11 +32,13 @@ const STATUS_META = {
 function fmtDateTime(str) {
   if (!str) return "—";
   try {
-    return new Date(str).toLocaleString("en-PK", {
-      day: "2-digit", month: "short", year: "numeric",
-      hour: "2-digit", minute: "2-digit", hour12: true,
-    });
-  } catch { return str; }
+    if (typeof str?.toDate === "function") return str.toDate().toLocaleString("en-PK", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit", hour12:true });
+    const secs = str?._seconds ?? str?.seconds;
+    if (secs != null) return new Date(secs * 1000).toLocaleString("en-PK", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit", hour12:true });
+    const d = new Date(str);
+    if (!isNaN(d)) return d.toLocaleString("en-PK", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit", hour12:true });
+    return "—";
+  } catch { return String(str); }
 }
 
 // ── Customer Invoice HTML email ───────────────────────────────────────────────
@@ -45,41 +50,50 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
   const bizEmail      = userDoc?.email || "";
   const bizPhone      = userDoc?.phone || "";
   const bizAddr       = userDoc?.address || "";
-  const subtotal        = Number(invoice.subtotal)       || 0;
-  const discount        = Number(invoice.discount)       || 0;
-  const afterDiscount   = Number(invoice.amount)         || 0;
   const amountPaid      = Number(invoice.amountPaid)     || 0;
   // Calculate goodsReturn from payments array (return records) — same as PDF
   const allPayments     = invoice.payments || [];
   const returnRecords   = allPayments.filter(p => p.type === "return");
   const paymentRecords  = allPayments.filter(p => p.type === "received" || (p.type !== "purchase" && p.type !== "return"));
   const goodsReturn     = returnRecords.reduce((s, p) => s + (Number(p.returnAmount) || 0), 0);
-  // Correct balance = afterDiscount - amountPaid - goodsReturn
-  const balance         = Math.max(0, afterDiscount - amountPaid - goodsReturn);
-  // Previous balance row total (carry-forward from prior invoice)
-  const allItems = invoice.items || [];
+  // Previous balance — DISPLAY ONLY, never added to calculations
+  // _resolvedPrevBalance = live sum of all other customer invoices' outstanding balance
+  // This is always shown in the email so the customer knows their total outstanding position
+  const allItems        = invoice.items || [];
   const prevBalItem     = allItems.find(it => (it.description || "").startsWith("Previous Balance"));
-  const prevCarryAmount = prevBalItem ? (Number(prevBalItem.unitPrice) || Number(prevBalItem.total) || 0) : 0;
-  // Current invoice only items subtotal (excluding previous carry-forward)
-  const currentInvSubtotal = afterDiscount - prevCarryAmount;
-  // Payments apply to current invoice first
-  // currentInvBalance = max(0, currentInvSubtotal - amountPaid)
-  const currentInvBalance = Math.max(0, currentInvSubtotal - amountPaid);
-  // Total balance = previous carry-forward (never reduced by current payments) + current inv remaining
-  const totalBalance      = prevCarryAmount + currentInvBalance;
+  // Always use the live-resolved server value (sum of other invoices' balances).
+  // Fall back to stored item value only if server resolve didn't run.
+  const prevCarryAmount = invoice._resolvedPrevBalance != null
+    ? Number(invoice._resolvedPrevBalance)
+    : (prevBalItem ? (Number(prevBalItem.unitPrice) || Number(prevBalItem.total) || 0) : 0);
+  // Current invoice real items only (excluding any stored previous balance carry-forward row)
+  const currentItems    = allItems.filter(it => !(it.description || "").startsWith("Previous Balance"));
+  // Subtotal = only real items (NO previous balance)
+  const subtotal        = currentItems.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+  const discount        = Number(invoice.discount) || 0;
+  const afterDiscount   = subtotal > 0
+    ? (invoice.discountType === "percent"
+        ? Math.max(subtotal - subtotal * (Number(invoice.discountValue) || 0) / 100, 0)
+        : Math.max(subtotal - discount, 0))
+    : (Number(invoice.amount) || 0);
+  // Balance = ONLY current invoice — previous balance NOT included anywhere
+  const balance         = Math.max(0, afterDiscount - amountPaid - goodsReturn);
+  // totalBalance = same as balance (prev balance is display-only, not added)
+  const totalBalance    = balance;
 
-  // Separate previous balance row from regular items
-  const items = allItems.filter(it => !(it.description || "").startsWith("Previous Balance · INV-"));
+  // Separate previous balance row from regular items (currentItems already computed above)
+  const items = currentItems;
 
-  // Previous balance row (orange, italic — same style as PDF)
-  const prevBalRow = prevBalItem ? `
+  // Previous balance row (orange, italic — shows customer's total outstanding from all other invoices)
+  // Only shown when prevCarryAmount > 0 (display only, never affects any totals)
+  const prevBalRow = prevCarryAmount > 0 ? `
     <tr style="background:#fffbeb;">
       <td style="padding:12px 16px;font-size:14px;color:#d97706;font-style:italic;font-weight:600;border-bottom:1px solid #e5e7eb;">
-        ${prevBalItem.description}
+        Previous Balance
       </td>
       <td style="padding:12px 16px;text-align:center;font-size:14px;color:#9ca3af;border-bottom:1px solid #e5e7eb;">—</td>
       <td style="padding:12px 16px;text-align:right;font-size:14px;color:#9ca3af;border-bottom:1px solid #e5e7eb;">—</td>
-      <td style="padding:12px 16px;text-align:right;font-size:14px;font-weight:700;color:#d97706;border-bottom:1px solid #e5e7eb;">${formatRs(prevBalItem.unitPrice || prevBalItem.total)}</td>
+      <td style="padding:12px 16px;text-align:right;font-size:14px;font-weight:700;color:#d97706;border-bottom:1px solid #e5e7eb;">${formatRs(prevCarryAmount)}</td>
     </tr>` : "";
 
   const itemRows = items.map((it, i) => `
@@ -210,35 +224,11 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
         : `<tr><td style="padding:6px 0;font-size:13px;color:#16a34a;">Amount Paid</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#16a34a;">${formatRs(amountPaid)}</td></tr>`
       }` : ""}
       ${goodsReturn > 0 ? `<tr><td style="padding:6px 0;font-size:13px;color:#dc2626;">Goods Return</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#dc2626;">− ${formatRs(goodsReturn)}</td></tr>` : ""}
-      ${prevCarryAmount > 0 ? `
-      <tr style="border-top:1px solid #e5e7eb;">
-        <td colspan="2" style="padding-top:10px;padding-bottom:4px;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8faff;border:1px solid #dbeafe;border-radius:8px;">
-            <tr>
-              <td style="padding:10px 14px;font-size:13px;font-weight:700;color:#1d4ed8;">Total Balance</td>
-              <td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:700;color:#1d4ed8;">${formatRs(totalBalance)}</td>
-            </tr>
-          </table>
-        </td>
-      </tr>
-      <tr>
-        <td colspan="2" style="padding-bottom:6px;">
-          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;">
-            <tr>
-              <td style="padding:10px 14px;font-size:13px;font-weight:700;color:#16a34a;">Current Invoice Balance</td>
-              <td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:700;color:#16a34a;">${formatRs(currentInvBalance)}</td>
-            </tr>
-          </table>
-        </td>
-      </tr>` : ""}
-      <tr><td colspan="2" style="padding-top:${prevCarryAmount > 0 ? "2" : "6"}px;">
-        <table width="100%" cellpadding="0" cellspacing="0" style="background:${sm.bg};border-radius:8px;">
+      <tr><td colspan="2" style="padding-top:10px;">
+        <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8faff;border:1px solid #dbeafe;border-radius:8px;">
           <tr>
-            <td style="padding:12px 14px;">
-              <div style="font-size:15px;font-weight:800;color:${sm.color};">Balance Due</div>
-              ${prevCarryAmount > 0 && currentInvBalance >= 0 ? `<div style="font-size:11px;color:black;opacity:0.75;margin-top:3px;">(Current Invoice: ${formatRs(currentInvBalance)})</div>` : ""}
-            </td>
-            <td style="padding:12px 14px;text-align:right;font-size:15px;font-weight:800;color:${sm.color};">${formatRs(prevCarryAmount > 0 ? totalBalance : balance)}</td>
+            <td style="padding:10px 14px;font-size:13px;font-weight:700;color:#1d4ed8;">Total Balance</td>
+            <td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:700;color:#1d4ed8;">${formatRs(balance)}</td>
           </tr>
         </table>
       </td></tr>
@@ -251,7 +241,7 @@ ${invoice.note ? `<tr><td style="padding:0 40px 28px;"><div style="background:#f
 <tr><td style="padding:20px 40px;background:linear-gradient(135deg,#f0f9ff,#e0f2fe);border-top:1px solid #e5e7eb;">
   <table width="100%" cellpadding="0" cellspacing="0"><tr>
     <td><div style="font-size:14px;font-weight:700;color:#1d4ed8;">📎 Invoice PDF Attached</div><div style="font-size:12px;color:#6b7280;margin-top:4px;">Your invoice is attached as a PDF.</div></td>
-    <td align="right"><div style="padding:8px 18px;background:${status==="Paid"?"#dcfce7":"#1d4ed8"};color:${status==="Paid"?"#16a34a":"#fff"};border-radius:8px;font-size:13px;font-weight:700;white-space:nowrap;">${balance === 0 ?"✓ Fully Paid":`Balance: ${formatRs(balance)}`}</div></td>
+    <td align="right"><div style="padding:8px 18px;background:${status==="Paid"?"#dcfce7":"#1d4ed8"};color:${status==="Paid"?"#16a34a":"#fff"};border-radius:8px;font-size:13px;font-weight:700;white-space:nowrap;">${balance === 0 ? "✓ Fully Paid" : `Balance: ${formatRs(balance)}`}</div></td>
   </tr></table>
 </td></tr>
 <tr><td style="padding:24px 40px;text-align:center;border-top:1px solid #e5e7eb;">
@@ -265,7 +255,7 @@ ${invoice.note ? `<tr><td style="padding:0 40px 28px;"><div style="background:#f
 }
 
 // ── Supplier Purchase Order HTML email ────────────────────────────────────────
-function buildSupplierOrderEmailHTML({ order, supplier, userDoc, isUpdate }) {
+function buildSupplierOrderEmailHTML({ order, supplier, userDoc, isUpdate, receipts = [], returns = [], payments = [] }) {
   const poNum    = "PO-" + (order.id || "").slice(-4).toUpperCase();
   const status   = order.status || "Pending";
   const sm       = STATUS_META[status] || STATUS_META.Pending;
@@ -283,27 +273,107 @@ function buildSupplierOrderEmailHTML({ order, supplier, userDoc, isUpdate }) {
     if (!it.hasVariant || !it.variantType || it.variantType === "none") return `${it.qty || 1} pcs`;
     return `${effQty(it)} ${VTYPES[it.variantType] || it.variantType}`;
   }
+  function fmtTS(val) {
+    if (!val) return "—";
+    try {
+      // Firestore Timestamp object (client-side, has toDate method)
+      if (typeof val?.toDate === "function") return val.toDate().toLocaleString("en-PK", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit", hour12:true });
+      // Firestore serialized: { _seconds } or { seconds } (both forms appear in JSON)
+      const secs = val?._seconds ?? val?.seconds;
+      if (secs != null) return new Date(secs * 1000).toLocaleString("en-PK", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit", hour12:true });
+      // ISO string or plain date string
+      const d = new Date(val);
+      if (!isNaN(d)) return d.toLocaleString("en-PK", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit", hour12:true });
+      return "—";
+    } catch { return "—"; }
+  }
 
   const items = order.items || [];
+  // Smart unit price column header
+  const variantTypes = [...new Set(items.map(it => it.variantType || "none").filter(v => v !== "none"))];
+  const VMAP = { kg:"Per kg", meter:"Per mtr", liter:"Per ltr", length:"Per ft", piece:"Per pcs" };
+  const unitPriceHeader = variantTypes.length === 1
+    ? (VMAP[variantTypes[0]] || "Unit Price")
+    : items.every(it => !it.hasVariant || !it.variantType || it.variantType === "none")
+      ? "Per Unit" : "Unit Price";
+
   const itemRows = items.map((it, i) => {
     const lineTotal = effQty(it) * (Number(it.unitPrice) || 0);
+    const isVariant = it.hasVariant && it.variantType && it.variantType !== "none";
+    const unitLabel = isVariant ? (VTYPES[it.variantType] || it.variantType) : "unit";
     return `<tr style="background:${i % 2 === 0 ? "#fffbeb" : "#ffffff"};">
-      <td style="padding:11px 14px;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">
+      <td style="padding:10px 12px;font-size:11px;color:#4b5563;border-bottom:1px solid #e5e7eb;white-space:nowrap;">${fmtTS(order.createdAt || order.orderDate)}</td>
+      <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;"><span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;background:#fffbeb;color:#b45309;border:1px solid #fde68a;">Order</span></td>
+      <td style="padding:10px 12px;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">
         ${it.description || "—"}
-        ${it.hasVariant && it.variantType && it.variantType !== "none"
-          ? `<span style="display:block;font-size:11px;color:#9ca3af;margin-top:2px;">${it.variantQty} ${VTYPES[it.variantType]||it.variantType} × ${it.qty} units</span>` : ""}
+        ${isVariant ? `<span style="display:block;font-size:10px;color:#9ca3af;margin-top:2px;">${it.variantQty} ${unitLabel} × ${it.qty} units</span>` : ""}
       </td>
-      <td style="padding:11px 14px;text-align:center;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">${qtyLabel(it)}</td>
-      <td style="padding:11px 14px;text-align:right;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">${formatRs(it.unitPrice)}</td>
-      <td style="padding:11px 14px;text-align:right;font-size:13px;font-weight:600;color:#111827;border-bottom:1px solid #e5e7eb;">${formatRs(lineTotal)}</td>
+      <td style="padding:10px 12px;text-align:center;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">${qtyLabel(it)}</td>
+      <td style="padding:10px 12px;text-align:right;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">${isVariant ? `${formatRs(it.unitPrice)}/${unitLabel}` : formatRs(it.unitPrice)}</td>
+      <td style="padding:10px 12px;text-align:right;font-size:13px;font-weight:600;color:#111827;border-bottom:1px solid #e5e7eb;">${formatRs(lineTotal)}</td>
     </tr>`;
   }).join("");
 
+  // ── Receipt rows (additional purchases) ──────────────────────────────────
+  const receiptRows = (receipts || []).flatMap((r) =>
+    (r.items || []).map((it) => {
+      const eQty = effQty(it);
+      const isVariant = it.hasVariant && it.variantType && it.variantType !== "none";
+      const unitLabel = isVariant ? (VTYPES[it.variantType] || it.variantType) : "pcs";
+      const tot = eQty * (Number(it.unitPrice) || 0);
+      return `<tr style="background:#f0fdf4;">
+        <td style="padding:10px 12px;font-size:11px;color:#4b5563;border-bottom:1px solid #e5e7eb;white-space:nowrap;">${fmtTS(r.createdAt)}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;"><span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;background:#dcfce7;color:#15803d;border:1px solid #86efac;">Purchased</span></td>
+        <td style="padding:10px 12px;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">
+          ${it.description || "—"}
+          ${isVariant ? `<span style="display:block;font-size:10px;color:#9ca3af;margin-top:2px;">${it.variantQty} ${unitLabel} × ${it.qty} units</span>` : ""}
+        </td>
+        <td style="padding:10px 12px;text-align:center;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">${eQty} ${unitLabel}</td>
+        <td style="padding:10px 12px;text-align:right;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">${isVariant ? `${formatRs(it.unitPrice)}/${unitLabel}` : formatRs(it.unitPrice)}</td>
+        <td style="padding:10px 12px;text-align:right;font-size:13px;font-weight:600;color:#15803d;border-bottom:1px solid #e5e7eb;">+ ${formatRs(tot)}</td>
+      </tr>`;
+    })
+  ).join("");
+
+  // ── Return rows ───────────────────────────────────────────────────────────
+  const returnRows = (returns || []).flatMap((r) =>
+    (r.items || []).map((it) => {
+      const isVariant = it.variantType && it.variantType !== "none";
+      const unit      = isVariant ? (VTYPES[it.variantType] || it.variantType) : "pcs";
+      // effectiveQty stored by new modal; fallback to qty for old records
+      const eQty      = Number(it.effectiveQty) || (isVariant
+        ? (Number(it.variantQty) || 0) * (Number(it.qty) || 0)
+        : Number(it.qty) || 0);
+      const tot       = eQty * (Number(it.unitPrice) || 0);
+      const qtyCell   = isVariant && it.variantQty
+        ? `${it.variantQty} ${unit} × ${it.qty} = ${eQty} ${unit}`
+        : `${eQty} ${unit}`;
+      return `<tr style="background:#fef2f2;">
+        <td style="padding:10px 12px;font-size:11px;color:#4b5563;border-bottom:1px solid #e5e7eb;white-space:nowrap;">${fmtTS(r.createdAt)}</td>
+        <td style="padding:10px 12px;border-bottom:1px solid #e5e7eb;"><span style="display:inline-block;padding:1px 7px;border-radius:10px;font-size:9px;font-weight:700;background:#fee2e2;color:#dc2626;border:1px solid #fca5a5;">Return</span></td>
+        <td style="padding:10px 12px;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">${it.description || "—"}</td>
+        <td style="padding:10px 12px;text-align:center;font-size:12px;color:#374151;border-bottom:1px solid #e5e7eb;">${qtyCell}</td>
+        <td style="padding:10px 12px;text-align:right;font-size:13px;color:#374151;border-bottom:1px solid #e5e7eb;">${isVariant ? `${formatRs(it.unitPrice)}/${unit}` : formatRs(it.unitPrice)}</td>
+        <td style="padding:10px 12px;text-align:right;font-size:13px;font-weight:600;color:#dc2626;border-bottom:1px solid #e5e7eb;">− ${formatRs(tot)}</td>
+      </tr>`;
+    })
+  ).join("");
+
   const origSubtotal = items.reduce((s, it) => s + effQty(it) * (Number(it.unitPrice) || 0), 0);
+  const totalReceipts = (receipts || []).reduce((s, r) =>
+    s + (r.items || []).reduce((rs, it) => rs + effQty(it) * (Number(it.unitPrice) || 0), 0), 0);
+  const totalReturns = (returns || []).reduce((s, r) =>
+    s + (r.items || []).reduce((rs, it) => {
+      const eQty = Number(it.effectiveQty) || (it.variantType && it.variantType !== "none"
+        ? (Number(it.variantQty) || 0) * (Number(it.qty) || 0)
+        : Number(it.qty) || 0);
+      return rs + eQty * (Number(it.unitPrice) || 0);
+    }, 0), 0);
   const discountVal  = order.discountType === "percent"
     ? origSubtotal * (Number(order.discountValue) || 0) / 100
     : (Number(order.discountValue) || 0);
-  const totalAmount  = Number(order.totalAmount) || Math.max(origSubtotal - discountVal, 0);
+  // totalAmount = original order amount (frozen) + all additional receipts
+  const totalAmount  = (Number(order.totalAmount) || Math.max(origSubtotal - discountVal, 0)) + totalReceipts;
   const paidAmount   = Number(order.paidAmount)  || 0;
   const balance      = Number(order.balance)     != null ? Number(order.balance) : Math.max(totalAmount - paidAmount, 0);
   const supName      = supplier?.name  || order.supplierName  || order.customerName || "Supplier";
@@ -311,6 +381,35 @@ function buildSupplierOrderEmailHTML({ order, supplier, userDoc, isUpdate }) {
   const supEmail     = supplier?.email || order.email || "";
   const supCity      = supplier?.city  || "";
   const supShop      = supplier?.shopName || "";
+
+  // ── Payment history section ─────────────────────────────────────────────
+  const hasPaidBy     = (payments || []).some(p => p.payerName?.trim());
+  const hasReceivedBy = (payments || []).some(p => p.receiverName?.trim());
+  const paymentHistorySection = (payments || []).length > 0 ? `
+  <tr><td style="padding:8px 40px 24px;">
+    <div style="font-size:11px;font-weight:700;color:#d97706;text-transform:uppercase;letter-spacing:1.5px;margin-bottom:10px;">💸 Payment History</div>
+    <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:10px;overflow:hidden;border:1px solid #fde68a;">
+      <thead><tr style="background:linear-gradient(to right,#d97706,#f59e0b);">
+        <th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase;">Date &amp; Time</th>
+        <th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase;">Method</th>
+        <th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase;">Amount Paid</th>
+        <th style="padding:10px 12px;text-align:right;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase;">Balance After</th>
+        ${hasPaidBy     ? `<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase;">Paid By</th>`      : ""}
+        ${hasReceivedBy ? `<th style="padding:10px 12px;text-align:left;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase;">Received By</th>` : ""}
+      </tr></thead>
+      <tbody>
+        ${(payments || []).map((p, i) => `
+        <tr style="background:${i % 2 === 0 ? "#fffbeb" : "#ffffff"};">
+          <td style="padding:10px 12px;font-size:12px;color:#374151;border-bottom:1px solid #fde68a;">${fmtDateTime(p.createdAt || p.payDate)}</td>
+          <td style="padding:10px 12px;font-size:12px;color:#374151;border-bottom:1px solid #fde68a;">${p.method || "cash"}</td>
+          <td style="padding:10px 12px;text-align:right;font-size:12px;font-weight:600;color:#16a34a;border-bottom:1px solid #fde68a;">${formatRs(p.amount)}</td>
+          <td style="padding:10px 12px;text-align:right;font-size:12px;font-weight:600;color:#dc2626;border-bottom:1px solid #fde68a;">${formatRs(p.balanceAfter ?? p.balance)}</td>
+          ${hasPaidBy     ? `<td style="padding:10px 12px;font-size:12px;color:#374151;border-bottom:1px solid #fde68a;">${p.payerName    || "—"}</td>` : ""}
+          ${hasReceivedBy ? `<td style="padding:10px 12px;font-size:12px;color:#374151;border-bottom:1px solid #fde68a;">${p.receiverName || "—"}</td>` : ""}
+        </tr>`).join("")}
+      </tbody>
+    </table>
+  </td></tr>` : "";
 
   return `<!DOCTYPE html><html lang="en"><head><meta charset="UTF-8"/><meta name="viewport" content="width=device-width,initial-scale=1.0"/><title>Purchase Order ${poNum}</title></head>
 <body style="margin:0;padding:0;background:#f1f5f9;font-family:'Segoe UI',Arial,sans-serif;">
@@ -356,21 +455,27 @@ function buildSupplierOrderEmailHTML({ order, supplier, userDoc, isUpdate }) {
 <tr><td style="padding:24px 40px;">
   <table width="100%" cellpadding="0" cellspacing="0" style="border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;">
     <thead><tr style="background:linear-gradient(to right,#d97706,#f59e0b);">
-      <th style="padding:12px 14px;text-align:left;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;letter-spacing:1px;">Item / Description</th>
-      <th style="padding:12px 14px;text-align:center;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;width:70px;">Qty</th>
-      <th style="padding:12px 14px;text-align:right;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">Unit Price</th>
-      <th style="padding:12px 14px;text-align:right;font-size:11px;font-weight:700;color:#fff;text-transform:uppercase;">Total</th>
+      <th style="padding:10px 11px;text-align:left;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase;width:115px;">Date &amp; Time</th>
+      <th style="padding:10px 11px;text-align:left;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase;width:70px;">Type</th>
+      <th style="padding:10px 11px;text-align:left;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase;">Item / Description</th>
+      <th style="padding:10px 11px;text-align:center;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase;width:65px;">Qty</th>
+      <th style="padding:10px 11px;text-align:right;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase;">${unitPriceHeader}</th>
+      <th style="padding:10px 11px;text-align:right;font-size:10px;font-weight:700;color:#fff;text-transform:uppercase;">Total</th>
     </tr></thead>
-    <tbody>${itemRows || `<tr><td colspan="4" style="padding:16px;text-align:center;color:#9ca3af;">No items</td></tr>`}</tbody>
+    <tbody>${itemRows}${receiptRows}${returnRows}${!itemRows && !receiptRows ? `<tr><td colspan="6" style="padding:16px;text-align:center;color:#9ca3af;">No items</td></tr>` : ""}</tbody>
   </table>
 </td></tr>
 <tr><td style="padding:0 40px 32px;">
   <table width="100%" cellpadding="0" cellspacing="0"><tr><td width="55%"></td><td width="45%">
     <table width="100%" cellpadding="0" cellspacing="0" style="border-top:2px solid #e5e7eb;padding-top:16px;">
-      <tr><td style="padding:6px 0;font-size:13px;color:#6b7280;">Subtotal</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#374151;">${formatRs(origSubtotal)}</td></tr>
+      <tr><td style="padding:6px 0;font-size:13px;color:#6b7280;">Subtotal (Order)</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#374151;">${formatRs(origSubtotal)}</td></tr>
+      ${totalReceipts > 0 ? `<tr><td style="padding:3px 0;font-size:13px;color:#15803d;">+ Additional Purchasing</td><td style="padding:3px 0;text-align:right;font-size:13px;font-weight:600;color:#15803d;">+ ${formatRs(totalReceipts)}</td></tr>` : ""}
       ${discountVal > 0 ? `<tr><td style="padding:6px 0;font-size:13px;color:#16a34a;">Discount</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#16a34a;">− ${formatRs(discountVal)}</td></tr>` : ""}
       <tr style="border-top:1px solid #e5e7eb;"><td style="padding:10px 0 6px;font-size:14px;font-weight:700;color:#111827;">Order Total</td><td style="padding:10px 0 6px;text-align:right;font-size:14px;font-weight:700;color:#d97706;">${formatRs(totalAmount)}</td></tr>
-      ${paidAmount > 0 ? `<tr><td style="padding:6px 0;font-size:13px;color:#16a34a;">Amount Paid</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#16a34a;">− ${formatRs(paidAmount)}</td></tr>` : ""}
+      ${(payments || []).length > 0
+        ? (payments || []).map(p => `<tr><td style="padding:3px 0;font-size:12px;color:#16a34a;">Paid (${fmtDateTime(p.createdAt || p.payDate)})</td><td style="padding:3px 0;text-align:right;font-size:12px;color:#16a34a;">− ${formatRs(p.amount)}</td></tr>`).join("")
+        : paidAmount > 0 ? `<tr><td style="padding:6px 0;font-size:13px;color:#16a34a;">Amount Paid</td><td style="padding:6px 0;text-align:right;font-size:13px;color:#16a34a;">− ${formatRs(paidAmount)}</td></tr>` : ""}
+      ${totalReturns > 0 ? `<tr><td style="padding:4px 0;font-size:13px;color:#dc2626;">📦 Goods Return</td><td style="padding:4px 0;text-align:right;font-size:13px;color:#dc2626;">− ${formatRs(totalReturns)}</td></tr>` : ""}
       <tr><td colspan="2" style="padding-top:6px;"><table width="100%" cellpadding="0" cellspacing="0" style="background:${sm.bg};border-radius:8px;"><tr>
         <td style="padding:12px 14px;font-size:15px;font-weight:800;color:${sm.color};">Balance Payable</td>
         <td style="padding:12px 14px;text-align:right;font-size:15px;font-weight:800;color:${sm.color};">${formatRs(balance)}</td>
@@ -378,6 +483,7 @@ function buildSupplierOrderEmailHTML({ order, supplier, userDoc, isUpdate }) {
     </table>
   </td></tr></table>
 </td></tr>
+${paymentHistorySection}
 ${order.note ? `<tr><td style="padding:0 40px 28px;"><div style="background:#fffbeb;border-left:4px solid #f59e0b;border-radius:6px;padding:14px 16px;"><div style="font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;margin-bottom:4px;">Note / Remarks</div><div style="font-size:13px;color:#374151;">${order.note}</div></div></td></tr>` : ""}
 <tr><td style="padding:20px 40px;background:linear-gradient(135deg,#fffbeb,#fef3c7);border-top:1px solid #e5e7eb;">
   <table width="100%" cellpadding="0" cellspacing="0"><tr>
@@ -399,7 +505,7 @@ ${order.note ? `<tr><td style="padding:0 40px 28px;"><div style="background:#fff
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { invoice, userDoc, pdfBase64, uid, isSupplierOrder, supplier, isUpdate } = body;
+    const { invoice, userDoc, pdfBase64, uid, isSupplierOrder, supplier, isUpdate, receipts, returns, payments } = body;
 
     if (!invoice?.email) {
       return NextResponse.json(
@@ -417,6 +523,100 @@ export async function POST(request) {
       return NextResponse.json({ error: "User not found." }, { status: 404 });
     }
     const userData  = userSnap.data();
+
+    // ── Fetch fresh invoice data + resolve live Previous Balance ─────────
+    if (!isSupplierOrder && invoice.id) {
+      try {
+        const custId = invoice.customerId;
+        let freshData = null;
+
+        // 1. Fetch fresh invoice doc
+        if (custId) {
+          const snap = await adminDb
+            .collection("users").doc(uid)
+            .collection("customers").doc(custId)
+            .collection("invoices").doc(invoice.id)
+            .get();
+          if (snap.exists) freshData = snap.data();
+        }
+        if (!freshData) {
+          const snap = await adminDb
+            .collection("users").doc(uid)
+            .collection("invoices").doc(invoice.id)
+            .get();
+          if (snap.exists) freshData = snap.data();
+        }
+
+        if (freshData) {
+          invoice.items         = freshData.items         ?? invoice.items;
+          invoice.subtotal      = freshData.subtotal      ?? invoice.subtotal;
+          invoice.amount        = freshData.amount        ?? invoice.amount;
+          invoice.actualAmount  = freshData.actualAmount  ?? invoice.actualAmount;
+          invoice.amountPaid    = freshData.amountPaid    ?? invoice.amountPaid;
+          invoice.balance       = freshData.balance       ?? invoice.balance;
+          invoice.discount      = freshData.discount      ?? invoice.discount;
+          invoice.discountType  = freshData.discountType  ?? invoice.discountType;
+          invoice.discountValue = freshData.discountValue ?? invoice.discountValue;
+          invoice.status        = freshData.status        ?? invoice.status;
+        }
+
+        // 2. Always calculate customer's total outstanding balance across ALL other invoices.
+        //    This is shown in the "Previous Balance" display row in the email — for info only.
+        //    It does NOT affect any invoice totals/calculations.
+        const resolvedCustId = custId || freshData?.customerId;
+
+        if (resolvedCustId) {
+          // Customer invoices sub-collection
+          const allSnap = await adminDb
+            .collection("users").doc(uid)
+            .collection("customers").doc(resolvedCustId)
+            .collection("invoices")
+            .get();
+
+          let prevSum = 0;
+          for (const d of allSnap.docs) {
+            if (d.id === invoice.id) continue; // skip current invoice
+            const rd = d.data();
+            if (rd.deleted) continue; // skip soft-deleted invoices
+
+            // Calculate balance the same way CustomersView.getActualBalance does:
+            // actualAmount (real items, no prev-balance carry-forward) - amountPaid - goods returns
+            const isPrevBalItem = desc => (desc || "").startsWith("Previous Balance");
+            const actualAmt = rd.actualAmount != null
+              ? Number(rd.actualAmount)
+              : (rd.items || [])
+                  .filter(it => !isPrevBalItem(it.description))
+                  .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+
+            // Sum goods returns from the payments sub-collection for this invoice
+            // These are stored as type="return" with returnAmount field
+            let returnTotal = 0;
+            try {
+              const retSnap = await adminDb
+                .collection("users").doc(uid)
+                .collection("payments")
+                .where("invoiceId", "==", d.id)
+                .where("type", "==", "return")
+                .get();
+              returnTotal = retSnap.docs.reduce((s, pd) => s + (Number(pd.data().returnAmount) || 0), 0);
+            } catch (_) {}
+
+            const rdBalance = Math.max(0, actualAmt - (Number(rd.amountPaid) || 0) - returnTotal);
+            if (rdBalance > 0) prevSum += rdBalance;
+          }
+          // Store resolved value — used in buildInvoiceEmailHTML for display only (never added to totals)
+          invoice._resolvedPrevBalance = prevSum;
+        } else if (!resolvedCustId && invoice.customerId == null) {
+          // Direct invoice (not linked to a customer) — check top-level invoices collection
+          // for invoices with same customerName/email
+          // (Optional: skip for direct invoices since they have no customerId linkage)
+          invoice._resolvedPrevBalance = 0;
+        }
+
+      } catch (fetchErr) {
+        console.warn("[send-invoice] Fresh fetch error:", fetchErr.message);
+      }
+    }
     const gmailUser = userData?.gmailSender;
     const gmailPass = userData?.gmailAppPassword;
 
@@ -447,7 +647,7 @@ export async function POST(request) {
 
     if (isSupplierOrder) {
       const poNum   = "PO-" + (invoice.id || "").slice(-4).toUpperCase();
-      htmlBody      = buildSupplierOrderEmailHTML({ order: invoice, supplier, userDoc: mergedUserDoc, isUpdate: !!isUpdate });
+      htmlBody      = buildSupplierOrderEmailHTML({ order: invoice, supplier, userDoc: mergedUserDoc, isUpdate: !!isUpdate, receipts: receipts || [], returns: returns || [], payments: payments || [] });
       subject       = isUpdate
         ? `Purchase Order ${poNum} Updated — ${bizName}`
         : `New Purchase Order ${poNum} from ${bizName}`;

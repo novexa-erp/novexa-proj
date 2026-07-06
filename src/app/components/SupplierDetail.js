@@ -96,6 +96,8 @@ function VariantItemRow({ item, idx, locked, newLocked, isEdit, onChange, onRemo
 
   const disabledStyle = { opacity: 0.45, cursor: "not-allowed", background: "rgba(255,255,255,0.02)", borderColor: "rgba(245,158,11,0.15)" };
   const isLocked = locked || newLocked;
+  // Description is always locked for new rows in edit mode (pre-filled from original item)
+  const isDescLocked = isLocked || (isEdit && item.isNew);
 
   // In edit mode for new rows: must choose variant before proceeding
   const needsVariant = isEdit && item.isNew && !item.variantType;
@@ -106,13 +108,13 @@ function VariantItemRow({ item, idx, locked, newLocked, isEdit, onChange, onRemo
       <div className="flex items-center gap-2">
         <div className="relative flex-1">
           <input
-            placeholder={isLocked ? "" : "e.g. Cotton Fabric"}
+            placeholder={isDescLocked ? "" : "e.g. Cotton Fabric"}
             value={item.description}
             onChange={e => onChange("description", e.target.value)}
             required
-            readOnly={isLocked}
-            style={{ ...base, padding: "7px 10px", fontSize: 12, width: "100%", ...(isLocked ? disabledStyle : {}) }} />
-          {isLocked && <span style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "#f59e0b", pointerEvents: "none" }}>🔒</span>}
+            readOnly={isDescLocked}
+            style={{ ...base, padding: "7px 10px", fontSize: 12, width: "100%", ...(isDescLocked ? disabledStyle : {}) }} />
+          {isDescLocked && <span style={{ position: "absolute", right: 6, top: "50%", transform: "translateY(-50%)", fontSize: 10, color: "#f59e0b", pointerEvents: "none" }}>🔒</span>}
         </div>
         <button type="button" onClick={onRemove} disabled={!canRemove || locked}
           className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
@@ -624,24 +626,88 @@ function PaySupplierModal({ order, supplier, onClose, onSave, saving }) {
 }
 
 // ── Return Goods Modal ────────────────────────────────────────────────────────
-function ReturnGoodsModal({ order, supplier, onClose, onSave, saving }) {
-  const [items, setItems] = useState([{ description: "", qty: "", unitPrice: "" }]);
+function ReturnGoodsModal({ order, supplier, receipts = [], onClose, onSave, saving }) {
+  const VTYPES = { kg:"kg", meter:"mtr", liter:"ltr", length:"ft", piece:"pcs" };
+
+  // Build all purchased item groups: original order items + receipt items
+  // Group by description (item name) — each group holds all variants ever purchased
+  function buildPurchasedGroups() {
+    const groups = {}; // key = description
+
+    // Original order items
+    (order.items || []).forEach(it => {
+      if (!it.description?.trim()) return;
+      const key = it.description.trim();
+      if (!groups[key]) groups[key] = { description: key, variantType: it.variantType || "none", unitPrice: it.unitPrice || "", entries: [] };
+      groups[key].entries.push({ variantQty: it.variantQty || "", qty: it.qty || 1, unitPrice: it.unitPrice || "" });
+      // Use latest unitPrice as default
+      groups[key].unitPrice = it.unitPrice || groups[key].unitPrice;
+      groups[key].variantType = it.variantType || groups[key].variantType || "none";
+    });
+
+    // Receipt items (additional purchases)
+    receipts.forEach(r => {
+      (r.items || []).forEach(it => {
+        if (!it.description?.trim()) return;
+        const key = it.description.trim();
+        if (!groups[key]) groups[key] = { description: key, variantType: it.variantType || "none", unitPrice: it.unitPrice || "", entries: [] };
+        groups[key].entries.push({ variantQty: it.variantQty || "", qty: it.qty || 1, unitPrice: it.unitPrice || "" });
+        groups[key].unitPrice = it.unitPrice || groups[key].unitPrice;
+        groups[key].variantType = it.variantType || groups[key].variantType || "none";
+      });
+    });
+
+    return Object.values(groups);
+  }
+
+  const purchasedGroups = buildPurchasedGroups();
+
+  // For each group, init a return item with variant picker
+  const initItems = purchasedGroups.map(g => ({
+    description: g.description,
+    variantType: g.variantType,
+    variantQty:  "",          // user picks variant size
+    qty:         "",          // user enters number of units
+    unitPrice:   g.unitPrice, // pre-filled, editable
+    isVariant:   g.variantType && g.variantType !== "none",
+  }));
+
+  // Fallback: if no items from order, show one blank row
+  const [items, setItems] = useState(
+    initItems.length > 0
+      ? initItems
+      : [{ description: "", variantType: "none", variantQty: "", qty: "", unitPrice: "", isVariant: false }]
+  );
   const [returnDate, setReturnDate] = useState(new Date().toISOString().slice(0, 10));
   const [note, setNote] = useState("");
 
-  const returnTotal = items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
-  const maxReturnable = Number(order.totalAmount) || 0;
+  const VARIANT_META = { kg:{unit:"kg", qtys:[0.25,0.5,0.75,1,2,5,10,20,50]}, meter:{unit:"mtr", qtys:[0.5,1,2,5,10,20,50]}, liter:{unit:"ltr", qtys:[0.25,0.5,1,2,5,10,20]}, length:{unit:"ft", qtys:[1,2,3,5,10,20,50]}, piece:{unit:"pcs", qtys:[1,5,10,25,50,100,200]} };
+
+  function effQty(it) {
+    if (!it.isVariant || !it.variantQty) return Number(it.qty) || 0;
+    return (Number(it.variantQty) || 0) * (Number(it.qty) || 0);
+  }
+
+  const returnTotal = items.reduce((s, it) => s + effQty(it) * (Number(it.unitPrice) || 0), 0);
+  const balanceAfter = Math.max(0, (Number(order.balance) || 0) - returnTotal);
 
   function setItem(idx, k, v) {
     setItems(p => { const arr = [...p]; arr[idx] = { ...arr[idx], [k]: v }; return arr; });
   }
-  function addItem() { setItems(p => [...p, { description: "", qty: "", unitPrice: "" }]); }
-  function removeItem(idx) { if (items.length <= 1) return; setItems(p => p.filter((_, i) => i !== idx)); }
+
+  function addBlankItem() {
+    setItems(p => [...p, { description: "", variantType: "none", variantQty: "", qty: "", unitPrice: "", isVariant: false }]);
+  }
+
+  function removeItem(idx) {
+    if (items.length <= 1) return;
+    setItems(p => p.filter((_, i) => i !== idx));
+  }
 
   return (
     <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 overflow-y-auto"
       style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)" }}>
-      <div className="w-full max-w-lg my-6 rounded-2xl"
+      <div className="w-full max-w-xl my-6 rounded-2xl"
         style={{ background: "#0d1117", border: "1px solid rgba(239,68,68,0.3)" }}>
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.07]">
@@ -657,58 +723,127 @@ function ReturnGoodsModal({ order, supplier, onClose, onSave, saving }) {
 
         <form onSubmit={e => {
           e.preventDefault();
-          const validItems = items.filter(it => it.description?.trim() && Number(it.qty) > 0 && Number(it.unitPrice) > 0);
+          const validItems = items
+            .filter(it => it.description?.trim() && effQty(it) > 0 && Number(it.unitPrice) > 0)
+            .map(it => ({
+              description: it.description,
+              variantType: it.variantType || "none",
+              variantQty:  it.variantQty || "",
+              qty:         it.isVariant ? it.qty : it.qty,
+              unitPrice:   it.unitPrice,
+              effectiveQty: effQty(it),
+            }));
           if (validItems.length === 0) return;
-          if (returnTotal > maxReturnable) { alert(`Return amount (${formatRs(returnTotal)}) cannot exceed order total (${formatRs(maxReturnable)})`); return; }
           onSave({ items: validItems, returnTotal, returnDate, note });
         }} className="flex flex-col gap-4 p-6">
 
           {/* Return Date */}
           <div>
             <label style={lbl}>Return Date</label>
-            <input type="date" value={returnDate} onChange={e => setReturnDate(e.target.value)}
-              style={{ ...base }} />
+            <input type="date" value={returnDate} onChange={e => setReturnDate(e.target.value)} style={{ ...base }} />
           </div>
 
-          {/* Items Table */}
+          {/* Return Items */}
           <div>
             <label style={lbl}>Return Items <span style={{ color: "#f87171" }}>*</span></label>
-            <div className="rounded-xl overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
-              <div className="grid gap-2 px-3 py-2" style={{ gridTemplateColumns: "1fr 70px 110px 80px 32px", background: "rgba(255,255,255,0.03)" }}>
-                {["Item / Description", "Qty", "Unit Price", "Total", ""].map((h, i) => (
-                  <span key={i} className="text-[10px] font-bold uppercase tracking-widest text-gray-500"
-                    style={{ textAlign: i >= 3 ? "right" : "left" }}>{h}</span>
-                ))}
-              </div>
-              <div className="flex flex-col gap-1 p-2">
-                {items.map((item, idx) => {
-                  const lineTotal = (Number(item.qty) || 0) * (Number(item.unitPrice) || 0);
-                  return (
-                    <div key={idx} className="grid gap-2 items-center" style={{ gridTemplateColumns: "1fr 70px 110px 80px 32px" }}>
-                      <input placeholder="e.g. Night Suit" value={item.description}
-                        onChange={e => setItem(idx, "description", e.target.value)} required
-                        style={{ ...base, padding: "7px 10px", fontSize: 12 }} />
-                      <input type="number" min="1" placeholder="1" value={item.qty}
-                        onChange={e => setItem(idx, "qty", e.target.value)}
-                        style={{ ...base, padding: "7px 6px", fontSize: 12, textAlign: "center" }} />
-                      <input type="number" min="0" placeholder="0" value={item.unitPrice}
-                        onChange={e => setItem(idx, "unitPrice", e.target.value)}
-                        style={{ ...base, padding: "7px 8px", fontSize: 12, textAlign: "right" }} />
-                      <p className="text-xs font-semibold text-right pr-1" style={{ color: lineTotal > 0 ? "#fff" : "#4b5563" }}>
-                        {lineTotal > 0 ? formatRs(lineTotal) : "—"}
-                      </p>
-                      <button type="button" onClick={() => removeItem(idx)}
-                        disabled={items.length <= 1}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center transition-colors"
-                        style={{ color: "#f87171", background: "rgba(248,113,113,0.08)", opacity: items.length <= 1 ? 0.2 : 1 }}>
-                        ✕
-                      </button>
+            <div className="flex flex-col gap-2">
+              {items.map((item, idx) => {
+                const meta = VARIANT_META[item.variantType] || null;
+                const eff  = effQty(item);
+                const tot  = eff * (Number(item.unitPrice) || 0);
+                return (
+                  <div key={idx} className="flex flex-col gap-1.5 p-3 rounded-xl"
+                    style={{ background: "rgba(239,68,68,0.04)", border: "1px solid rgba(239,68,68,0.15)" }}>
+                    {/* Row 1: Item name (locked if from order) + remove */}
+                    <div className="flex items-center gap-2">
+                      <div className="relative flex-1">
+                        <input
+                          placeholder="Item name"
+                          value={item.description}
+                          onChange={e => setItem(idx, "description", e.target.value)}
+                          required
+                          readOnly={!!purchasedGroups.find(g => g.description === item.description)}
+                          style={{ ...base, fontSize: 13, padding: "7px 10px",
+                            ...(purchasedGroups.find(g => g.description === item.description)
+                              ? { opacity: 0.7, cursor: "not-allowed", background: "rgba(255,255,255,0.02)" }
+                              : {})
+                          }} />
+                        {purchasedGroups.find(g => g.description === item.description) && (
+                          <span style={{ position:"absolute", right:8, top:"50%", transform:"translateY(-50%)", fontSize:10, color:"#f59e0b" }}>🔒</span>
+                        )}
+                      </div>
+                      <button type="button" onClick={() => removeItem(idx)} disabled={items.length <= 1}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0"
+                        style={{ color: "#f87171", background: "rgba(239,68,68,0.08)", opacity: items.length <= 1 ? 0.2 : 1 }}>✕</button>
                     </div>
-                  );
-                })}
-              </div>
+
+                    {/* Row 2: Variant chips (if variant item) */}
+                    {item.isVariant && meta && (
+                      <div className="flex flex-wrap gap-1.5 items-center">
+                        <span className="text-[10px] text-gray-500 mr-1">{meta.unit} per unit:</span>
+                        {meta.qtys.map(q => (
+                          <button key={q} type="button"
+                            onClick={() => setItem(idx, "variantQty", String(q))}
+                            className="text-[11px] font-bold px-2 py-0.5 rounded-full transition-all hover:scale-105"
+                            style={{
+                              background: String(item.variantQty) === String(q) ? "rgba(239,68,68,0.2)" : "rgba(255,255,255,0.05)",
+                              border: `1px solid ${String(item.variantQty) === String(q) ? "rgba(239,68,68,0.5)" : "rgba(255,255,255,0.1)"}`,
+                              color: String(item.variantQty) === String(q) ? "#f87171" : "#9ca3af",
+                            }}>
+                            {q} {meta.unit}
+                          </button>
+                        ))}
+                        <input type="number" min="0" step="any" placeholder="custom"
+                          value={item.variantQty}
+                          onChange={e => setItem(idx, "variantQty", e.target.value)}
+                          style={{ ...base, width: 72, padding: "4px 8px", fontSize: 11 }} />
+                      </div>
+                    )}
+
+                    {/* Row 3: Qty + Price + Total */}
+                    <div className="flex items-center gap-2 flex-wrap">
+                      {item.isVariant ? (
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-[10px] text-gray-500">Units to return</span>
+                          <input type="number" min="1" placeholder="0" value={item.qty}
+                            onChange={e => setItem(idx, "qty", e.target.value)}
+                            style={{ ...base, width: 70, padding: "6px 6px", fontSize: 12, textAlign: "center" }} />
+                          {item.variantQty && Number(item.qty) > 0 && (
+                            <span className="text-[11px] font-semibold px-2 py-0.5 rounded-full"
+                              style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171", whiteSpace:"nowrap" }}>
+                              = {eff} {meta?.unit || ""}
+                            </span>
+                          )}
+                        </div>
+                      ) : (
+                        <div className="flex items-center gap-1">
+                          <span className="text-[10px] text-gray-500">Qty</span>
+                          <input type="number" min="1" placeholder="0" value={item.qty}
+                            onChange={e => setItem(idx, "qty", e.target.value)}
+                            style={{ ...base, width: 70, padding: "6px 6px", fontSize: 12, textAlign: "center" }} />
+                        </div>
+                      )}
+
+                      <div className="flex items-center gap-1 flex-1 min-w-[130px]">
+                        <span className="text-[10px] text-gray-500 whitespace-nowrap">
+                          {item.isVariant && meta ? `Per ${meta.unit}` : "Unit Price"}
+                        </span>
+                        <input type="number" min="0" placeholder="0" value={item.unitPrice}
+                          onChange={e => setItem(idx, "unitPrice", e.target.value)}
+                          style={{ ...base, flex: 1, padding: "6px 8px", fontSize: 12, textAlign: "right" }} />
+                      </div>
+
+                      <div className="text-right flex-shrink-0 min-w-[90px]">
+                        <p className="text-sm font-bold" style={{ color: tot > 0 ? "#f87171" : "#4b5563" }}>
+                          {tot > 0 ? `- ${formatRs(tot)}` : "—"}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
             </div>
-            <button type="button" onClick={addItem}
+            <button type="button" onClick={addBlankItem}
               className="mt-2 text-xs font-semibold px-3 py-1.5 rounded-lg transition-all hover:scale-105"
               style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171" }}>
               + Add Item
@@ -726,8 +861,8 @@ function ReturnGoodsModal({ order, supplier, onClose, onSave, saving }) {
             </div>
             <div className="flex justify-between text-xs text-gray-500 border-t border-white/10 pt-2 mt-1">
               <span>Balance after return</span>
-              <span style={{ color: Math.max(0, (Number(order.balance) || 0) - returnTotal) > 0 ? "#f87171" : "#34d399", fontWeight: 700 }}>
-                {formatRs(Math.max(0, (Number(order.balance) || 0) - returnTotal))}
+              <span style={{ color: balanceAfter > 0 ? "#f87171" : "#34d399", fontWeight: 700 }}>
+                {formatRs(balanceAfter)}
               </span>
             </div>
           </div>
@@ -780,7 +915,7 @@ function DeleteConfirmSD({ name, label, onConfirm, onCancel }) {
 }
 
 // ── Purchase Order PDF Template ───────────────────────────────────────────────
-function PurchaseOrderPDFTemplate({ order, supplier, userDoc = {}, receipts, returns, payments }) {
+export function PurchaseOrderPDFTemplate({ order, supplier, userDoc = {}, receipts, returns, payments }) {
   const num = `PO-${(order.id || "").slice(-4).toUpperCase()}`;
   const generatedOn = new Date().toLocaleDateString("en-PK", { day: "2-digit", month: "long", year: "numeric" });
 
@@ -908,7 +1043,17 @@ function PurchaseOrderPDFTemplate({ order, supplier, userDoc = {}, receipts, ret
       <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 20 }}>
         <thead>
           <tr style={{ background: "#d97706", color: "#fff" }}>
-            {["Date & Time", "Type", "Item / Description", "Qty", "Unit Price", "Total"].map((h, i) => (
+            {["Date & Time", "Type", "Item / Description", "Qty",
+              // Smart unit price header: if all original items share same variant type → use it, else generic
+              (() => {
+                const origItems = order.items || [];
+                const variantTypes = [...new Set(origItems.map(it => it.variantType || "none").filter(v => v !== "none"))];
+                const VMAP = { kg:"Per kg", meter:"Per mtr", liter:"Per ltr", length:"Per ft", piece:"Per pcs" };
+                if (variantTypes.length === 1) return VMAP[variantTypes[0]] || "Per Unit";
+                const allNoVariant = origItems.every(it => !it.hasVariant || !it.variantType || it.variantType === "none");
+                return allNoVariant ? "Per Unit" : "Unit Price";
+              })(),
+              "Total"].map((h, i) => (
               <th key={h} style={{
                 padding: "9px 10px", fontSize: 9, fontWeight: 700,
                 textTransform: "uppercase", letterSpacing: "0.05em",
@@ -941,7 +1086,12 @@ function PurchaseOrderPDFTemplate({ order, supplier, userDoc = {}, receipts, ret
                   )}
                 </td>
                 <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11 }}>{itemQtyDisplay(it)}</td>
-                <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11 }}>Rs. {Number(it.unitPrice || 0).toLocaleString("en-PK")}</td>
+                <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11 }}>
+                  {it.hasVariant && it.variantType && it.variantType !== "none"
+                    ? `Rs. ${Number(it.unitPrice || 0).toLocaleString("en-PK")} / ${VTYPES[it.variantType] || it.variantType}`
+                    : `Rs. ${Number(it.unitPrice || 0).toLocaleString("en-PK")}`
+                  }
+                </td>
                 <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 700 }}>
                   Rs. {tot.toLocaleString("en-PK")}
                 </td>
@@ -978,7 +1128,12 @@ function PurchaseOrderPDFTemplate({ order, supplier, userDoc = {}, receipts, ret
                     )}
                   </td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11 }}>{effQty} {unit}</td>
-                  <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11 }}>Rs. {Number(it.unitPrice || 0).toLocaleString("en-PK")}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11 }}>
+                    {it.hasVariant && it.variantType && it.variantType !== "none"
+                      ? `Rs. ${Number(it.unitPrice || 0).toLocaleString("en-PK")} / ${unit}`
+                      : `Rs. ${Number(it.unitPrice || 0).toLocaleString("en-PK")}`
+                    }
+                  </td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 700, color: "#15803d" }}>
                     + Rs. {tot.toLocaleString("en-PK")}
                   </td>
@@ -990,7 +1145,15 @@ function PurchaseOrderPDFTemplate({ order, supplier, userDoc = {}, receipts, ret
           {/* ── Goods Returned ── */}
           {(returns || []).map((r, ri) =>
             (r.items || []).map((it, ii) => {
-              const lineTotal = (Number(it.qty) || 0) * (Number(it.unitPrice) || 0);
+              const isVariant = it.variantType && it.variantType !== "none";
+              const unit      = isVariant ? (VTYPES[it.variantType] || it.variantType) : "pcs";
+              const eQty      = Number(it.effectiveQty) || (isVariant
+                ? (Number(it.variantQty) || 0) * (Number(it.qty) || 0)
+                : Number(it.qty) || 0);
+              const lineTotal = eQty * (Number(it.unitPrice) || 0);
+              const qtyDisplay = isVariant && it.variantQty
+                ? `${it.variantQty}${unit}×${it.qty}=${eQty}${unit}`
+                : `${eQty} ${unit}`;
               const ts = r.createdAt?.toDate ? r.createdAt.toDate() : new Date(r.createdAt || 0);
               const dtStr = ts.toLocaleDateString("en-PK", { day:"2-digit", month:"short", year:"numeric" })
                 + "  " + ts.toLocaleTimeString("en-PK", { hour:"2-digit", minute:"2-digit", hour12:true });
@@ -1003,8 +1166,10 @@ function PurchaseOrderPDFTemplate({ order, supplier, userDoc = {}, receipts, ret
                       border: "1px solid #fca5a5" }}>Return</span>
                   </td>
                   <td style={{ padding: "8px 10px", fontSize: 11, fontWeight: 600 }}>{it.description}</td>
-                  <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11 }}>{it.qty} pcs</td>
-                  <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11 }}>Rs. {Number(it.unitPrice || 0).toLocaleString("en-PK")}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 10 }}>{qtyDisplay}</td>
+                  <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11 }}>
+                    {isVariant ? `Rs. ${Number(it.unitPrice||0).toLocaleString("en-PK")}/${unit}` : `Rs. ${Number(it.unitPrice||0).toLocaleString("en-PK")}`}
+                  </td>
                   <td style={{ padding: "8px 10px", textAlign: "right", fontSize: 11, fontWeight: 700, color: "#dc2626" }}>
                     - Rs. {lineTotal.toLocaleString("en-PK")}
                   </td>
@@ -2565,7 +2730,30 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
           balance:    newBalance,
           status:     newStatus,
         };
-        setEmailConfirm({ show: true, order: updatedOrder, isUpdate: true });
+        // Include the new payment directly — don't wait for Firestore listener to update supplierPayments state
+        const newPaymentRecord = {
+          supplierId:      supplier.id,
+          supplierName:    supplier.name,
+          orderId:         payOrder.id,
+          orderRef:        `PO-${payOrder.id.slice(-4).toUpperCase()}`,
+          amount,
+          balanceBefore:   Number(payOrder.balance) || 0,
+          balanceAfter:    newBalance,
+          method,
+          payerName:       payerName || "",
+          receiverName:    receiverName || supplier.name,
+          receiverContact: receiverContact || supplier.phone || "",
+          payDate,
+          note:            note || "",
+          status:          newStatus,
+          createdAt:       new Date(),
+        };
+        setEmailConfirm({
+          show: true,
+          order: updatedOrder,
+          isUpdate: true,
+          extraPayment: newPaymentRecord,
+        });
       }
 
       setPayOrder(null);
@@ -2984,6 +3172,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
         <ReturnGoodsModal
           order={returnOrder}
           supplier={supplier}
+          receipts={supplierReceipts.filter(r => r.orderId === returnOrder.id)}
           onClose={() => setReturnOrder(null)}
           onSave={handleReturnGoods}
           saving={savingReturn}
@@ -3005,17 +3194,29 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
         show={emailConfirm.show}
         recipientEmail={supplier?.email}
         documentType="order"
-        onConfirm={() => {
-          // User clicked "Yes" - send email
+        onConfirm={async () => {
+          // User clicked "Yes" - send email with proper PO PDF
           if (emailConfirm.order) {
-            autoEmailSupplierOrder({
-              order: emailConfirm.order,
+            // filter receipts/returns/payments for this order
+            const orderId = emailConfirm.order.id;
+            const orderReceipts = supplierReceipts.filter(r => r.orderId === orderId);
+            const orderReturns  = supplierReturns.filter(r => r.orderId === orderId);
+            // Merge state payments with any extraPayment (new payment not yet in state)
+            const statePayments = supplierPayments.filter(p => p.orderId === orderId);
+            const orderPayments = emailConfirm.extraPayment
+              ? [...statePayments.filter(p => p.id !== emailConfirm.extraPayment.id), emailConfirm.extraPayment]
+              : statePayments;
+            await autoEmailSupplierOrder({
+              order:    emailConfirm.order,
               supplier,
               userDoc,
               uid,
               setAlert,
               isUpdate: emailConfirm.isUpdate,
-              onConfirm: (sendEmailFn) => sendEmailFn()
+              receipts: orderReceipts,
+              returns:  orderReturns,
+              payments: orderPayments,
+              onConfirm: async (sendEmailFn) => { await sendEmailFn(); },
             });
           }
           setEmailConfirm({ show: false, order: null, isUpdate: false });
