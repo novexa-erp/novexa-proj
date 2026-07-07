@@ -57,8 +57,8 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
   const paymentRecords  = allPayments.filter(p => p.type === "received" || (p.type !== "purchase" && p.type !== "return"));
   const goodsReturn     = returnRecords.reduce((s, p) => s + (Number(p.returnAmount) || 0), 0);
   // Previous balance — DISPLAY ONLY, never added to calculations
-  // _resolvedPrevBalance = live sum of all other customer invoices' outstanding balance
-  // This is always shown in the email so the customer knows their total outstanding position
+  // _resolvedPrevBalance = live sum of all OTHER customer invoices' outstanding balance (not current)
+  // _resolvedTotalBalance = grand total across ALL invoices including current (for summary display)
   const allItems        = invoice.items || [];
   const prevBalItem     = allItems.find(it => (it.description || "").startsWith("Previous Balance"));
   // Always use the live-resolved server value (sum of other invoices' balances).
@@ -66,10 +66,22 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
   const prevCarryAmount = invoice._resolvedPrevBalance != null
     ? Number(invoice._resolvedPrevBalance)
     : (prevBalItem ? (Number(prevBalItem.unitPrice) || Number(prevBalItem.total) || 0) : 0);
+  // Total outstanding across ALL invoices (including current) — for info summary row
+  const totalOutstanding = invoice._resolvedTotalBalance != null
+    ? Number(invoice._resolvedTotalBalance)
+    : null; // null means we don't have this data, skip summary row
   // Current invoice real items only (excluding any stored previous balance carry-forward row)
   const currentItems    = allItems.filter(it => !(it.description || "").startsWith("Previous Balance"));
-  // Subtotal = only real items (NO previous balance)
-  const subtotal        = currentItems.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+
+  // Helper: get variant multiplier from variantLabel (e.g. "0.5 kg" → 0.5, "XL" → 1)
+  function getVarMult(it) {
+    if (!it.variantLabel || it.productId) return 1; // inventory products: price is already per-variant
+    const num = parseFloat(it.variantLabel);
+    return (!isNaN(num) && num > 0) ? num : 1;
+  }
+
+  // Subtotal = only real items (NO previous balance), with variant multiplier
+  const subtotal        = currentItems.reduce((s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0);
   const discount        = Number(invoice.discount) || 0;
   const afterDiscount   = subtotal > 0
     ? (invoice.discountType === "percent"
@@ -84,28 +96,52 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
   // Separate previous balance row from regular items (currentItems already computed above)
   const items = currentItems;
 
-  // Previous balance row (orange, italic — shows customer's total outstanding from all other invoices)
-  // Only shown when prevCarryAmount > 0 (display only, never affects any totals)
-  const prevBalRow = prevCarryAmount > 0 ? `
+  // Previous balance row:
+  // - Value = _resolvedPrevBalance (OTHER invoices only, current invoice excluded)
+  // - Label = "Previous Balance (Excl. This Invoice)"
+  // - Fallback to stored prevCarryAmount if server resolve didn't run
+  const prevBalDisplayAmount = invoice._resolvedPrevBalance != null
+    ? Number(invoice._resolvedPrevBalance)   // always use live server value = other invoices only
+    : prevCarryAmount;                        // fallback = stored item value
+
+  const prevBalRow = prevBalDisplayAmount > 0 ? `
     <tr style="background:#fffbeb;">
       <td style="padding:12px 16px;font-size:14px;color:#d97706;font-style:italic;font-weight:600;border-bottom:1px solid #e5e7eb;">
-        Previous Balance
+        Previous Balance <span style="font-size:11px;font-weight:500;color:#b45309;">(Excl. This Invoice)</span>
       </td>
       <td style="padding:12px 16px;text-align:center;font-size:14px;color:#9ca3af;border-bottom:1px solid #e5e7eb;">—</td>
       <td style="padding:12px 16px;text-align:right;font-size:14px;color:#9ca3af;border-bottom:1px solid #e5e7eb;">—</td>
-      <td style="padding:12px 16px;text-align:right;font-size:14px;font-weight:700;color:#d97706;border-bottom:1px solid #e5e7eb;">${formatRs(prevCarryAmount)}</td>
+      <td style="padding:12px 16px;text-align:right;font-size:14px;font-weight:700;color:#d97706;border-bottom:1px solid #e5e7eb;">${formatRs(prevBalDisplayAmount)}</td>
     </tr>` : "";
 
-  const itemRows = items.map((it, i) => `
+  const itemRows = items.map((it, i) => {
+    const varMult     = getVarMult(it);
+    const hasCustomVar = !it.productId && it.variantLabel && it.variantUnit && varMult !== 1;
+    const totalQty    = (Number(it.qty) || 0) * varMult;  // e.g. 250 × 0.5 = 125 kg
+    const lineTotal   = totalQty * (Number(it.unitPrice) || 0);
+
+    // Qty cell: "0.5 kg × 250 = 125 kg" for custom variants, plain qty otherwise
+    const qtyCell = hasCustomVar
+      ? `<span style="font-weight:600;">${it.variantLabel} × ${it.qty}</span>
+         <span style="display:block;font-size:11px;color:#6b7280;margin-top:2px;">= ${totalQty % 1 === 0 ? totalQty : totalQty.toFixed(2)} ${it.variantUnit} total</span>`
+      : `${it.qty}${it.variantLabel ? `<span style="display:block;font-size:11px;color:#9ca3af;margin-top:1px;">${it.variantLabel}</span>` : ""}`;
+
+    // Unit price cell: "Rs. 100/kg" for custom variants, plain price otherwise
+    const priceCell = hasCustomVar
+      ? `${formatRs(it.unitPrice)}<span style="display:block;font-size:11px;color:#6b7280;margin-top:1px;">per ${it.variantUnit}</span>`
+      : formatRs(it.unitPrice);
+
+    return `
     <tr style="background:${i % 2 === 0 ? "#f8faff" : "#ffffff"};">
       <td style="padding:12px 16px;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">
         ${it.description || "—"}
-        ${it.variantLabel ? `<span style="display:block;font-size:11px;color:#9ca3af;margin-top:2px;">${it.variantLabel}</span>` : ""}
+        ${!hasCustomVar && it.variantLabel ? `<span style="display:block;font-size:11px;color:#9ca3af;margin-top:2px;">${it.variantLabel}</span>` : ""}
       </td>
-      <td style="padding:12px 16px;text-align:center;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">${it.qty}</td>
-      <td style="padding:12px 16px;text-align:right;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">${formatRs(it.unitPrice)}</td>
-      <td style="padding:12px 16px;text-align:right;font-size:14px;font-weight:600;color:#111827;border-bottom:1px solid #e5e7eb;">${formatRs((Number(it.qty)||0)*(Number(it.unitPrice)||0))}</td>
-    </tr>`).join("");
+      <td style="padding:12px 16px;text-align:center;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">${qtyCell}</td>
+      <td style="padding:12px 16px;text-align:right;font-size:14px;color:#374151;border-bottom:1px solid #e5e7eb;">${priceCell}</td>
+      <td style="padding:12px 16px;text-align:right;font-size:14px;font-weight:600;color:#111827;border-bottom:1px solid #e5e7eb;">${formatRs(lineTotal)}</td>
+    </tr>`;
+  }).join("");
 
   // Payment history rows
   const payments = paymentRecords;
@@ -230,6 +266,11 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
             <td style="padding:10px 14px;font-size:13px;font-weight:700;color:#1d4ed8;">Total Balance</td>
             <td style="padding:10px 14px;text-align:right;font-size:13px;font-weight:700;color:#1d4ed8;">${formatRs(balance)}</td>
           </tr>
+          ${totalOutstanding != null && totalOutstanding > balance ? `
+          <tr style="border-top:1px solid #dbeafe;">
+            <td style="padding:8px 14px;font-size:12px;font-weight:600;color:#d97706;">Total Outstanding (All Invoices)</td>
+            <td style="padding:8px 14px;text-align:right;font-size:12px;font-weight:700;color:#d97706;">${formatRs(totalOutstanding)}</td>
+          </tr>` : ""}
         </table>
       </td></tr>
     </table>
@@ -560,9 +601,10 @@ export async function POST(request) {
           invoice.status        = freshData.status        ?? invoice.status;
         }
 
-        // 2. Always calculate customer's total outstanding balance across ALL other invoices.
-        //    This is shown in the "Previous Balance" display row in the email — for info only.
-        //    It does NOT affect any invoice totals/calculations.
+        // 2. Calculate customer's total outstanding balance across ALL other invoices (not current one).
+        //    The "Previous Balance" row in the email shows this sum so the customer knows
+        //    what was already pending BEFORE the current invoice.
+        //    We also compute the grand total (other invoices + current) for the summary line.
         const resolvedCustId = custId || freshData?.customerId;
 
         if (resolvedCustId) {
@@ -573,20 +615,33 @@ export async function POST(request) {
             .collection("invoices")
             .get();
 
-          let prevSum = 0;
+          let prevSum = 0;      // sum of OTHER invoices (not current)
+          let currentBal = 0;   // current invoice's remaining balance
+
           for (const d of allSnap.docs) {
-            if (d.id === invoice.id) continue; // skip current invoice
-            const rd = d.data();
+            const isCurrent = d.id === invoice.id;
+            const rd = isCurrent ? (freshData || d.data()) : d.data();
             if (rd.deleted) continue; // skip soft-deleted invoices
 
             // Calculate balance the same way CustomersView.getActualBalance does:
             // actualAmount (real items, no prev-balance carry-forward) - amountPaid - goods returns
             const isPrevBalItem = desc => (desc || "").startsWith("Previous Balance");
-            const actualAmt = rd.actualAmount != null
+            let actualAmt = rd.actualAmount != null
               ? Number(rd.actualAmount)
-              : (rd.items || [])
-                  .filter(it => !isPrevBalItem(it.description))
-                  .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+              : (() => {
+                  // Fallback: calculate from items and apply discount
+                  const realItems = (rd.items || []).filter(it => !isPrevBalItem(it.description));
+                  const subtotal = realItems.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+
+                  // Apply discount if exists
+                  const discountValue = Number(rd.discountValue) || 0;
+                  const discountType = rd.discountType || "percent";
+                  const discount = discountType === "percent"
+                    ? subtotal * discountValue / 100
+                    : Math.min(discountValue, subtotal);
+
+                  return Math.max(0, subtotal - discount);
+                })();
 
             // Sum goods returns from the payments sub-collection for this invoice
             // These are stored as type="return" with returnAmount field
@@ -602,10 +657,19 @@ export async function POST(request) {
             } catch (_) {}
 
             const rdBalance = Math.max(0, actualAmt - (Number(rd.amountPaid) || 0) - returnTotal);
-            if (rdBalance > 0) prevSum += rdBalance;
+
+            if (isCurrent) {
+              currentBal = rdBalance;
+            } else {
+              if (rdBalance > 0) prevSum += rdBalance;
+            }
           }
-          // Store resolved value — used in buildInvoiceEmailHTML for display only (never added to totals)
+
+          // Store resolved values:
+          // _resolvedPrevBalance = other invoices' outstanding (shown in "Previous Balance" row)
+          // _resolvedTotalBalance = ALL invoices total (shown in "Total Outstanding" summary)
           invoice._resolvedPrevBalance = prevSum;
+          invoice._resolvedTotalBalance = prevSum + currentBal;
         } else if (!resolvedCustId && invoice.customerId == null) {
           // Direct invoice (not linked to a customer) — check top-level invoices collection
           // for invoices with same customerName/email

@@ -34,7 +34,7 @@ export function InvoiceTemplateForEmail({ inv, userDoc, payments = [] }) {
   return <InvoiceTemplate inv={inv} userDoc={userDoc} payments={payments} />;
 }
 
-function InvoiceTemplate({ inv, userDoc, payments = [] }) {
+function InvoiceTemplate({ inv, userDoc, payments = [], customerTotalBalance = null }) {
   const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
 
   // Separate items: prev balance entries, original real items, purchase additions (from payments)
@@ -187,16 +187,29 @@ function InvoiceTemplate({ inv, userDoc, payments = [] }) {
         <tbody>
           {/* Previous Balance rows */}
           {prevBalItems.map((it, idx) => {
-            const lineTotal = (Number(it.qty) || 1) * (Number(it.unitPrice) || 0);
+            // Use live customer balance (other invoices only) if passed in, else fall back to stored value
+            // prevBalDisplayAmount = total outstanding EXCLUDING this invoice (same as email logic)
+            const storedPrevBal = (Number(it.qty) || 1) * (Number(it.unitPrice) || 0);
+            // customerTotalBalance = ALL invoices total; subtract current invoice's actualBalance = other invoices only
+            const otherInvoicesBalance = customerTotalBalance != null
+              ? Math.max(0, customerTotalBalance - actualBalance)
+              : storedPrevBal;
             return (
               <tr key={"pb" + idx} style={{ background: "#fffbeb" }}>
                 <td style={{ padding: "7px 8px", textAlign: "center", color: "#9ca3af", fontSize: 10 }}>{idx + 1}</td>
                 <td style={{ padding: "7px 8px", fontSize: 9, color: "#b45309", whiteSpace: "nowrap" }}>{fmtDateTime(inv.createdAt)}</td>
-                <td style={{ padding: "7px 8px", fontSize: 11, color: "#b45309", fontStyle: "italic" }}>{it.description}</td>
+                <td style={{ padding: "7px 8px", fontSize: 11, color: "#b45309", fontStyle: "italic" }}>
+                  {it.description}
+                  {customerTotalBalance != null && (
+                    <span style={{ display: "block", fontSize: 9, color: "#92400e", fontStyle: "normal", marginTop: 2 }}>
+                      (Excl. This Invoice)
+                    </span>
+                  )}
+                </td>
                 <td style={{ padding: "7px 8px", fontSize: 10, color: "#9ca3af", textAlign: "center" }}>—</td>
                 <td style={{ padding: "7px 8px", fontSize: 10, color: "#9ca3af", textAlign: "left" }}>—</td>
-                <td style={{ padding: "7px 8px", textAlign: "right", fontSize: 11, color: "#b45309", whiteSpace: "nowrap" }}>{formatRs(it.unitPrice)}</td>
-                <td style={{ padding: "7px 8px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "#b45309", whiteSpace: "nowrap" }}>{formatRs(lineTotal)}</td>
+                <td style={{ padding: "7px 8px", textAlign: "right", fontSize: 11, color: "#b45309", whiteSpace: "nowrap" }}>{formatRs(otherInvoicesBalance)}</td>
+                <td style={{ padding: "7px 8px", textAlign: "right", fontSize: 11, fontWeight: 600, color: "#b45309", whiteSpace: "nowrap" }}>{formatRs(otherInvoicesBalance)}</td>
               </tr>
             );
           })}
@@ -254,10 +267,7 @@ function InvoiceTemplate({ inv, userDoc, payments = [] }) {
                   <td style={{ padding: "8px 8px", fontSize: 11, color: "#7c3aed", fontWeight: 600, whiteSpace: "nowrap" }}>
                     {variantLabel || "—"}
                   </td>
-                  <td style={{ padding: "8px 8px", fontSize: 11, color: "#6b7280", whiteSpace: "nowrap" }}>
-                    {variantUnit ? `per ${variantUnit}` : "—"}
-                  </td>
-                  <td style={{ padding: "8px 8px", textAlign: "right", fontSize: 11, color: "#b45309" }}>{it.qty}</td>
+                  <td style={{ padding: "8px 8px", textAlign: "left", fontSize: 11, color: "#b45309" }}>{it.qty}</td>
                   <td style={{ padding: "8px 8px", textAlign: "right", fontSize: 11, color: "#b45309", whiteSpace: "nowrap" }}>{formatRs(it.unitPrice)}</td>
                   <td style={{ padding: "8px 8px", textAlign: "right", fontSize: 12, fontWeight: 600, color: "#b45309", whiteSpace: "nowrap" }}>{formatRs(lineTotal)}</td>
                 </tr>
@@ -423,7 +433,7 @@ function InvoiceTemplate({ inv, userDoc, payments = [] }) {
 }
 
 // ── InvoicePDF modal (view + download + share) ────────────────────────────────
-export default function InvoicePDFModal({ inv, userDoc, onClose, payments = [] }) {
+export default function InvoicePDFModal({ inv, userDoc, onClose, payments = [], customerTotalBalance = null }) {
   const printRef   = useRef(null);
   const [loading,  setLoading]  = useState(false);
   const [shareMsg, setShareMsg] = useState("");
@@ -554,7 +564,7 @@ export default function InvoicePDFModal({ inv, userDoc, onClose, payments = [] }
         {/* invoice preview — white card */}
         <div className="overflow-hidden rounded-xl shadow-2xl" style={{ border: "1px solid rgba(255,255,255,0.1)" }}>
           <div ref={printRef}>
-            <InvoiceTemplate inv={inv} userDoc={userDoc} payments={payments} />
+            <InvoiceTemplate inv={inv} userDoc={userDoc} payments={payments} customerTotalBalance={customerTotalBalance} />
           </div>
         </div>
 

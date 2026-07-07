@@ -527,7 +527,31 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         // ── Handle Goods Return ──────────────────────────────────────────────
         const retData = formData.returnItem;
         if (retData && retData.description && Number(retData.qty) > 0 && Number(retData.rate) > 0) {
-          const returnAmount  = Number(retData.qty) * Number(retData.rate);
+          // Variant multiplier for custom (non-inventory) return items
+          // e.g. 0.5 kg variant → multiplier = 0.5, so returnAmount = qty × 0.5 × rate
+          const retVarMult = (!retData.productId && retData.variantLabel)
+            ? (() => { const n = parseFloat(retData.variantLabel); return (!isNaN(n) && n > 0) ? n : 1; })()
+            : 1;
+
+          // Server-side max qty guard — cannot return more than invoice qty minus past returns
+          const invoiceItem = (formData.items || []).find(it => it.description === retData.description);
+          if (invoiceItem) {
+            const pastReturnedQty = (formData._pastReturns || [])
+              .filter(r => r.description === retData.description)
+              .reduce((s, r) => s + (Number(r.qty) || 0), 0);
+            const maxReturnQty = Math.max(0, (Number(invoiceItem.qty) || 0) - pastReturnedQty);
+            if (Number(retData.qty) > maxReturnQty) {
+              setAlert({
+                show: true, type: "error",
+                title: "Return Qty Exceeded! ⚠️",
+                message: `You can only return up to ${maxReturnQty} units of "${retData.description}".`,
+              });
+              setSavingInv(false);
+              return;
+            }
+          }
+
+          const returnAmount  = Number(retData.qty) * retVarMult * Number(retData.rate);
           const currentPaid   = Number(formData.amountPaid) || 0;
           // Use Firestore's current stored amounts (already reduced by previous returns)
           // NOT payload.amount/actualAmount which recalculates from raw items every time
@@ -590,6 +614,9 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             returnAmount,
             qty:            Number(retData.qty),
             rate:           Number(retData.rate),
+            variantLabel:   retData.variantLabel  || "",
+            variantUnit:    retData.variantUnit   || "",
+            variantMult:    retVarMult,
             description:    retData.description,
             balanceBefore:  Math.max(0, currentActual - currentPaid),
             historyBalance: Math.max(0, newActual - currentPaid),
@@ -612,10 +639,13 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
               documentType: "return"
             });
           } else {
+            const retQtyDisplay = retVarMult !== 1
+              ? `${retData.qty} × ${retData.variantLabel} = ${(Number(retData.qty) * retVarMult).toFixed(2).replace(/\.?0+$/, "")} ${retData.variantUnit}`
+              : `${retData.qty}`;
             setAlert({
               show: true, type: "success",
               title: "Goods Return Recorded! ↩️",
-              message: `${retData.description} × ${retData.qty} returned. ${formatRs(returnAmount)} deducted. New balance: ${formatRs(newBalance)}.`,
+              message: `${retData.description} × ${retQtyDisplay} returned. ${formatRs(returnAmount)} deducted. New balance: ${formatRs(newBalance)}.`,
             });
           }
 
@@ -1152,6 +1182,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         inv={pdfInv}
         userDoc={userDoc}
         payments={customerPayments.filter(p => p.invoiceId === pdfInv.id)}
+        customerTotalBalance={totalBalance}
         onClose={() => setPdfInv(null)}
       />
     )}
@@ -1633,12 +1664,61 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
   const [search,       setSearch]       = useState("");
   const [detailCust,   setDetailCust]   = useState(null);
   const [statusFilter, setStatusFilter] = useState("All");
+  // map: customerId → { balance, invoiceCount } — from subcollection (same as CustomerDetail)
+  const [customerBalances, setCustomerBalances] = useState({});
   
   // Sweet Alert State
   const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
   
   // Email Confirmation Dialog State
   const [emailConfirm, setEmailConfirm] = useState({ show: false, invoice: null, isUpdate: false, documentType: "invoice" });
+
+  // ── Real-time balance per customer from subcollection (same source as CustomerDetail) ──
+  useEffect(() => {
+    if (!uid || customers.length === 0) return;
+    const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+
+    const unsubs = customers.map(c => {
+      let custInvs = [];
+      let custPays = [];
+
+      function recalc() {
+        // Exact same logic as CustomerDetail.getActualBalance + totalBalance
+        const balance = custInvs.reduce((s, inv) => {
+          const actualAmt = inv.actualAmount != null
+            ? Number(inv.actualAmount)
+            : (inv.items || [])
+                .filter(it => !isPrevBalItem(it))
+                .reduce((a, it) => a + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+          const invReturnsTotal = custPays
+            .filter(p => p.type === "return" && p.invoiceId === inv.id)
+            .reduce((sum, p) => sum + (Number(p.returnAmount) || 0), 0);
+          return s + Math.max(0, actualAmt - (Number(inv.amountPaid) || 0) - invReturnsTotal);
+        }, 0);
+        setCustomerBalances(prev => ({ ...prev, [c.id]: { balance, invoiceCount: custInvs.length } }));
+      }
+
+      const unsubInv = onSnapshot(
+        collection(db, "users", uid, "customers", c.id, "invoices"),
+        (snap) => {
+          custInvs = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(i => !i.deleted);
+          recalc();
+        }
+      );
+
+      const unsubPay = onSnapshot(
+        query(collection(db, "users", uid, "payments"), where("customerId", "==", c.id)),
+        (snap) => {
+          custPays = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          recalc();
+        }
+      );
+
+      return () => { unsubInv(); unsubPay(); };
+    });
+
+    return () => unsubs.forEach(u => u());
+  }, [uid, customers]);
 
   // ── Restore detailCust from URL on load / refresh ──────────────────────────
   useEffect(() => {
@@ -1779,23 +1859,8 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
   const totalRevenue = custLinkedInvoices.filter(i => i.status === "Paid").reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const totalPaid    = custLinkedInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
 
-  // Exclude carry-forward invoices from balance to avoid double-counting
-  // Group by customerId, find which invoices are already carried forward in newer ones
-  const carriedForwardGlobal = new Set();
-  custLinkedInvoices.forEach(inv => {
-    (inv.items || []).forEach(it => {
-      const desc = it.description || "";
-      if (desc.startsWith("Previous Balance · INV-")) {
-        const suffix = desc.replace("Previous Balance · INV-", "").trim().slice(0, 4).toUpperCase();
-        const matched = custLinkedInvoices.find(i => (i.id || "").slice(-4).toUpperCase() === suffix);
-        if (matched) carriedForwardGlobal.add(matched.id);
-      }
-    });
-  });
-  const totalBalance = custLinkedInvoices.reduce((s, i) => {
-    if (carriedForwardGlobal.has(i.id)) return s;
-    return s + (Number(i.balance) || 0);
-  }, 0);
+  // totalBalance = sum of all customerBalances (same source as cards — most accurate)
+  const totalBalance = Object.values(customerBalances).reduce((s, b) => s + (b.balance || 0), 0);
 
   const filtered = customers.filter(c => {
     const matchStatus = statusFilter === "All" || c.status === statusFilter || (!c.status && statusFilter === "active");
@@ -2035,23 +2100,10 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
       ) : (
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4">
           {filtered.map((c, idx) => {
-            const custInv = invoices.filter(i => i.customerId === c.id && !i.deleted);
-            // Exclude carry-forward invoices from balance (avoid double-counting)
-            const custCarriedIds = new Set();
-            custInv.forEach(inv => {
-              (inv.items || []).forEach(it => {
-                const desc = it.description || "";
-                if (desc.startsWith("Previous Balance · INV-")) {
-                  const suffix = desc.replace("Previous Balance · INV-", "").trim().slice(0, 4).toUpperCase();
-                  const matched = custInv.find(i => (i.id || "").slice(-4).toUpperCase() === suffix);
-                  if (matched) custCarriedIds.add(matched.id);
-                }
-              });
-            });
-            const custBal = custInv.reduce((s, i) => {
-              if (custCarriedIds.has(i.id)) return s;
-              return s + (Number(i.balance) || 0);
-            }, 0);
+            // Use subcollection-based balance — exact same source as CustomerDetail
+            const balData = customerBalances[c.id];
+            const custBal = balData?.balance ?? 0;
+            const custInvLen = balData?.invoiceCount ?? 0;
             return (
               <div key={c.id}
                 onClick={() => openCustomer(c)}
@@ -2108,13 +2160,13 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
                   <div className="flex items-center justify-between pt-3 border-t border-white/5">
                     <div className="text-left">
                       <p className="text-[10px] text-gray-500 uppercase font-semibold tracking-wide">Invoices</p>
-                      <p className="text-white font-bold text-sm">{custInv.length}</p>
+                      <p className="text-white font-bold text-sm">{custInvLen}</p>
                     </div>
                     <div className="text-right">
                       <p className="text-[10px] text-gray-500 uppercase font-semibold tracking-wide">Balance</p>
                       {custBal > 0 ? (
                         <p className="text-rose-400 font-bold text-sm">{formatRs(custBal).replace('Rs. ', '₨')}</p>
-                      ) : custInv.length > 0 ? (
+                      ) : custInvLen > 0 ? (
                         <p className="text-emerald-400 font-bold text-sm">Cleared ✓</p>
                       ) : (
                         <p className="text-gray-600 font-bold text-sm">—</p>

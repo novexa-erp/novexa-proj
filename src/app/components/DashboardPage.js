@@ -738,7 +738,7 @@ function DashboardContent() {
           ) : activeNav === "inventory" ? (
             <InventoryView uid={user?.uid} />
           ) : activeNav === "payments" ? (
-            <PaymentsView uid={user?.uid} />
+            <PaymentsView uid={user?.uid} onNavigate={handleNavChange} />
           ) : activeNav === "purchases" ? (
             <PurchasesView uid={user?.uid} userDoc={userDoc} />
           ) : activeNav === "order-form" ? (

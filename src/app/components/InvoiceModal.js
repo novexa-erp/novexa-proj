@@ -24,7 +24,10 @@ export const EMPTY_FORM = {
 export function calcTotals(form) {
   const isPrevBal = it => (it.description || "").startsWith("Previous Balance · INV-");
   const subtotal = form.items.reduce(
-    (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0
+    (s, it) => {
+      const varMult = (!it.productId && it.variantLabel) ? getVariantMultiplier(it.variantLabel) : 1;
+      return s + (Number(it.qty) || 0) * varMult * (Number(it.unitPrice) || 0);
+    }, 0
   );
   const discount =
     form.discountType === "percent"
@@ -38,7 +41,10 @@ export function calcTotals(form) {
   // This is used for payment collection — user only pays for their own products
   const actualSubtotal = form.items
     .filter(it => !isPrevBal(it))
-    .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+    .reduce((s, it) => {
+      const varMult = (!it.productId && it.variantLabel) ? getVariantMultiplier(it.variantLabel) : 1;
+      return s + (Number(it.qty) || 0) * varMult * (Number(it.unitPrice) || 0);
+    }, 0);
   const actualDiscount = form.discountType === "percent"
     ? actualSubtotal * (Number(form.discountValue) || 0) / 100
     : Math.min(Number(form.discountValue) || 0, actualSubtotal);
@@ -187,6 +193,13 @@ const VARIANT_TYPES_INV = [
   { id: "custom", label: "Custom",      icon: "⚙️", unit: "",   presets: [] },
 ];
 
+// Helper: extract numeric multiplier from variantLabel (e.g. "0.5 kg" → 0.5, "XL" → 1)
+function getVariantMultiplier(variantLabel) {
+  if (!variantLabel) return 1;
+  const num = parseFloat(variantLabel);
+  return (!isNaN(num) && num > 0) ? num : 1;
+}
+
 // ── Item row with autocomplete + variant support ─────────────────────────────
 function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPicker, onStockError }) {
   // Custom variant state for non-inventory items
@@ -306,7 +319,10 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const lineTotal = (Number(item.qty) || 0) * (Number(item.unitPrice) || 0);
+  const variantMultiplier = (!item.productId && item.variantLabel)
+    ? getVariantMultiplier(item.variantLabel)
+    : 1;
+  const lineTotal = (Number(item.qty) || 0) * variantMultiplier * (Number(item.unitPrice) || 0);
   const stock = Number(item.stock) || 0;
   const qty = Number(item.qty) || 0;
   const stockStatus = qty > stock ? "low" : "ok";
@@ -388,7 +404,11 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
             color: isRowLocked ? "#9ca3af" : "#fff",
           }} />
 
-        <input type="number" min="0" placeholder="Unit price" value={item.unitPrice}
+        <input type="number" min="0" placeholder={
+          (!item.productId && item.variantLabel && item.variantUnit)
+            ? `Price per ${item.variantUnit}`
+            : "Unit price"
+        } value={item.unitPrice}
           onChange={e => isRowLocked ? undefined : onChange(idx, "unitPrice", e.target.value)}
           readOnly={isRowLocked}
           disabled={!isRowLocked && (hasVariants && item.variantId)}
@@ -567,8 +587,11 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
                     {customVarLabel && customVarPrice && (
                       <div className="text-[10px] px-2 py-1 rounded-lg"
                         style={{ background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.2)", color: "#34d399" }}>
-                        ✓ <strong>{item.description}</strong> · {customVarLabel} · Rs. {customVarPrice}/unit
-                        · Qty: {item.qty || 1} · Total: {formatRs((Number(item.qty) || 1) * (Number(customVarPrice) || 0))}
+                        ✓ <strong>{item.description}</strong> · {customVarLabel}
+                        {vt.unit && <span style={{ color: "#9ca3af" }}> · Rs. {customVarPrice}/{vt.unit}</span>}
+                        · Qty: {item.qty || 1}
+                        · Total: {formatRs((Number(item.qty) || 1) * getVariantMultiplier(customVarLabel) * (Number(customVarPrice) || 0))}
+                        {vt.unit && Number(item.qty) > 1 && <span style={{ color: "#6b7280" }}> ({(Number(item.qty) || 1) * getVariantMultiplier(customVarLabel)} {vt.unit} × Rs. {customVarPrice})</span>}
                       </div>
                     )}
                   </div>
@@ -584,7 +607,10 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
         <div className="pl-2">
           <span className="text-[10px] px-2 py-0.5 rounded-md font-semibold"
             style={{ background: "rgba(139,92,246,0.1)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.2)" }}>
-            ⚙️ {item.variantLabel} · Rs. {item.unitPrice}/unit
+            ⚙️ {item.variantLabel} · Rs. {item.unitPrice}/{item.variantUnit || "unit"}
+            {item.variantUnit && variantMultiplier !== 1 && (
+              <span style={{ color: "#9ca3af" }}> · {item.qty || 1} × {variantMultiplier} {item.variantUnit} = {(Number(item.qty) || 1) * variantMultiplier} {item.variantUnit} total</span>
+            )}
           </span>
         </div>
       )}
@@ -617,7 +643,11 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
 
   // ── Goods Return state ───────────────────────────────────────────────────────
   const [showReturn, setShowReturn] = useState(false);
-  const [returnItem, setReturnItem] = useState({ description: "", qty: "", rate: "" });
+  const [returnItem, setReturnItem] = useState({
+    description: "", qty: "", rate: "",
+    productId: "", variantId: "", variantLabel: "", variantUnit: "",
+    maxQty: 0,  // max returnable qty (invoice qty minus past returns)
+  });
   
   // Sweet Alert State for stock validation
   const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
@@ -696,7 +726,11 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
   );
 
   // ── goods return helpers (edit mode) ────────────────────────────────────────
-  const returnTotal = (Number(returnItem.qty) || 0) * (Number(returnItem.rate) || 0);
+  // variant multiplier for custom (non-inventory) return items
+  const retVarMult = (!returnItem.productId && returnItem.variantLabel)
+    ? getVariantMultiplier(returnItem.variantLabel)
+    : 1;
+  const returnTotal = (Number(returnItem.qty) || 0) * retVarMult * (Number(returnItem.rate) || 0);
   const hasReturn   = returnItem.description && Number(returnItem.qty) > 0 && Number(returnItem.rate) > 0;
 
   // Stock validation error handler
@@ -1092,11 +1126,33 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
 
           {/* ── Goods Return (Edit mode only) ── */}
           {initial && (() => {
-            const firstRealItem = form.items.find(
-              it => it.description && !it.description.startsWith("Previous Balance · INV-")
-            );
-            const productName = firstRealItem?.description || "";
+            const isPrevBal = it => (it.description || "").startsWith("Previous Balance · INV-");
+            // Real items on this invoice (no prev balance carry-forward)
+            const realItems = (form.items || []).filter(it => it.description && !isPrevBal(it));
             const pastReturns = initial._pastReturns || [];
+
+            // Build per-item max returnable qty (invoice qty - already returned qty)
+            function getMaxReturnQty(it) {
+              const alreadyReturned = pastReturns
+                .filter(r => r.description === it.description)
+                .reduce((s, r) => s + (Number(r.qty) || 0), 0);
+              return Math.max(0, (Number(it.qty) || 0) - alreadyReturned);
+            }
+
+            // When user selects a product from dropdown
+            function handleSelectReturnItem(it) {
+              const maxQty = getMaxReturnQty(it);
+              setReturnItem({
+                description:  it.description,
+                qty:          maxQty > 0 ? String(maxQty) : "",
+                rate:         it.unitPrice || "",
+                productId:    it.productId || "",
+                variantId:    it.variantId || "",
+                variantLabel: it.variantLabel || "",
+                variantUnit:  it.variantUnit  || "",
+                maxQty,
+              });
+            }
 
             return (
               <div className="flex flex-col gap-3">
@@ -1112,7 +1168,6 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                       </p>
                     </div>
                     <div className="p-4 flex flex-col gap-2">
-                      {/* Column headers */}
                       <div className="grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
                         style={{ gridTemplateColumns: "1fr 80px 100px 90px" }}>
                         <span>Product</span>
@@ -1148,7 +1203,10 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                 {!showReturn ? (
                   <button type="button"
                     onClick={() => {
-                      setReturnItem({ description: productName, qty: "", rate: firstRealItem?.unitPrice || "" });
+                      // Auto-select first item with remaining returnable qty
+                      const firstReturnable = realItems.find(it => getMaxReturnQty(it) > 0);
+                      if (firstReturnable) handleSelectReturnItem(firstReturnable);
+                      else setReturnItem({ description: "", qty: "", rate: "", productId: "", variantId: "", variantLabel: "", variantUnit: "", maxQty: 0 });
                       setShowReturn(true);
                     }}
                     className="flex items-center gap-2 text-xs font-semibold px-4 py-2.5 rounded-xl transition-all hover:scale-105 w-fit"
@@ -1169,46 +1227,122 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                     </div>
 
                     <div className="p-4 flex flex-col gap-3">
-                      {/* Column headers */}
-                      <div className="grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
-                        style={{ gridTemplateColumns: "1fr 90px 110px 90px" }}>
-                        <span>Product</span>
-                        <span className="text-center">Qty Returned</span>
-                        <span className="text-right">Rate</span>
-                        <span className="text-right">Return Amount</span>
+
+                      {/* Product selector dropdown */}
+                      <div>
+                        <p className="text-[10px] font-bold uppercase tracking-widest mb-1.5" style={{ color: "#9ca3af" }}>Select Product to Return</p>
+                        <div className="flex flex-wrap gap-2">
+                          {realItems.map((it, i) => {
+                            const maxQ = getMaxReturnQty(it);
+                            const isSelected = returnItem.description === it.description && returnItem.productId === (it.productId || "");
+                            const isExhausted = maxQ <= 0;
+                            return (
+                              <button key={i} type="button"
+                                onClick={() => !isExhausted && handleSelectReturnItem(it)}
+                                disabled={isExhausted}
+                                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                                style={{
+                                  background: isSelected ? "rgba(248,113,113,0.2)" : "rgba(255,255,255,0.04)",
+                                  border: `1px solid ${isSelected ? "rgba(248,113,113,0.6)" : "rgba(255,255,255,0.1)"}`,
+                                  color: isExhausted ? "#4b5563" : isSelected ? "#f87171" : "#9ca3af",
+                                  cursor: isExhausted ? "not-allowed" : "pointer",
+                                  opacity: isExhausted ? 0.5 : 1,
+                                }}>
+                                {it.description}
+                                {it.variantLabel && <span style={{ color: "#6b7280" }}> · {it.variantLabel}</span>}
+                                <span style={{ color: isExhausted ? "#4b5563" : "#34d399", fontWeight: 700 }}>
+                                  ({isExhausted ? "fully returned" : `max ${maxQ}`})
+                                </span>
+                              </button>
+                            );
+                          })}
+                        </div>
                       </div>
 
-                      <div className="grid gap-2 items-center"
-                        style={{ gridTemplateColumns: "1fr 90px 110px 90px" }}>
-                        {/* Product — read only */}
-                        <div className="px-3 py-2 rounded-xl text-sm truncate"
-                          style={{ background: "rgba(255,255,255,0.03)", border: "1.5px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
-                          {returnItem.description || "—"}
-                        </div>
-                        {/* Qty */}
-                        <input type="number" min="1" placeholder="Qty"
-                          value={returnItem.qty}
-                          onChange={e => setReturnItem(p => ({ ...p, qty: e.target.value }))}
-                          style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(248,113,113,0.3)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" }}
-                        />
-                        {/* Rate */}
-                        <input type="number" min="0" placeholder="Rate"
-                          value={returnItem.rate}
-                          onChange={e => setReturnItem(p => ({ ...p, rate: e.target.value }))}
-                          style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(248,113,113,0.3)", borderRadius:10, padding:"9px 10px", color:"#fff", fontSize:13, textAlign:"right" }}
-                        />
-                        {/* Return total */}
-                        <p className="text-xs font-bold text-right pr-1"
-                          style={{ color: returnTotal > 0 ? "#f87171" : "#4b5563" }}>
-                          {returnTotal > 0 ? `- ${formatRs(returnTotal)}` : "—"}
-                        </p>
-                      </div>
+                      {returnItem.description && (
+                        <>
+                          {/* Column headers */}
+                          <div className="grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
+                            style={{ gridTemplateColumns: "1fr 100px 110px 90px" }}>
+                            <span>Product</span>
+                            <span className="text-center">
+                              Qty {returnItem.variantLabel ? `(units)` : ""}
+                            </span>
+                            <span className="text-right">
+                              Rate {returnItem.variantUnit ? `(per ${returnItem.variantUnit})` : ""}
+                            </span>
+                            <span className="text-right">Return Amount</span>
+                          </div>
 
-                      {hasReturn && (
-                        <div className="mt-1 px-3 py-2 rounded-lg text-xs"
-                          style={{ background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>
-                          ↩️ Save hone par <strong>{formatRs(returnTotal)}</strong> balance se minus ho jaayega
-                        </div>
+                          <div className="grid gap-2 items-start"
+                            style={{ gridTemplateColumns: "1fr 100px 110px 90px" }}>
+                            {/* Product — read only */}
+                            <div>
+                              <div className="px-3 py-2 rounded-xl text-sm truncate"
+                                style={{ background: "rgba(255,255,255,0.03)", border: "1.5px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
+                                {returnItem.description}
+                              </div>
+                              {returnItem.variantLabel && (
+                                <p className="text-[10px] text-gray-500 mt-1 pl-1">
+                                  {returnItem.variantLabel} × qty units
+                                  {retVarMult !== 1 && Number(returnItem.qty) > 0 &&
+                                    ` = ${((Number(returnItem.qty) || 0) * retVarMult).toFixed(2).replace(/\.?0+$/, "")} ${returnItem.variantUnit} total`}
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Qty input with max cap */}
+                            <div>
+                              <input type="number"
+                                min="1"
+                                max={returnItem.maxQty || undefined}
+                                placeholder="Qty"
+                                value={returnItem.qty}
+                                onChange={e => {
+                                  const val = Number(e.target.value);
+                                  const capped = returnItem.maxQty > 0 ? Math.min(val, returnItem.maxQty) : val;
+                                  setReturnItem(p => ({ ...p, qty: String(capped > 0 ? capped : e.target.value) }));
+                                }}
+                                style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(248,113,113,0.3)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" }}
+                              />
+                              {returnItem.maxQty > 0 && (
+                                <p className="text-[10px] text-center mt-1" style={{ color: "#6b7280" }}>
+                                  max {returnItem.maxQty}
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Rate input */}
+                            <div>
+                              <input type="number" min="0" placeholder="Rate"
+                                value={returnItem.rate}
+                                onChange={e => setReturnItem(p => ({ ...p, rate: e.target.value }))}
+                                style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(248,113,113,0.3)", borderRadius:10, padding:"9px 10px", color:"#fff", fontSize:13, textAlign:"right" }}
+                              />
+                              {returnItem.variantUnit && (
+                                <p className="text-[10px] text-right mt-1" style={{ color: "#6b7280" }}>
+                                  per {returnItem.variantUnit}
+                                </p>
+                              )}
+                            </div>
+
+                            {/* Return total */}
+                            <p className="text-xs font-bold text-right pr-1 pt-2"
+                              style={{ color: returnTotal > 0 ? "#f87171" : "#4b5563" }}>
+                              {returnTotal > 0 ? `- ${formatRs(returnTotal)}` : "—"}
+                            </p>
+                          </div>
+
+                          {hasReturn && (
+                            <div className="mt-1 px-3 py-2 rounded-lg text-xs"
+                              style={{ background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>
+                              ↩️ <strong>{returnItem.description}</strong>
+                              {returnItem.variantLabel && ` · ${returnItem.variantLabel} × ${returnItem.qty} units`}
+                              {retVarMult !== 1 && ` = ${((Number(returnItem.qty)||0)*retVarMult).toFixed(2).replace(/\.?0+$/,"")} ${returnItem.variantUnit} total`}
+                              {` · `}<strong>{formatRs(returnTotal)}</strong> balance se minus ho jaayega
+                            </div>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
