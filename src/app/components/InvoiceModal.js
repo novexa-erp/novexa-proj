@@ -620,6 +620,9 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
 
 // ── Main Modal ────────────────────────────────────────────────────────────────
 export default function InvoiceModal({ onClose, onSave, saving, initial, defaultValues, products = [], settingsLogo = "", customerTotalBalance = null }) {
+  // filter out deleted products — they should not show in suggestions or picker
+  const activeProducts = products.filter(p => !p.deleted);
+
   // if no initial logo provided, use settingsLogo as default
   const defaultForm = settingsLogo
     ? { ...EMPTY_FORM, logoDataUrl: settingsLogo }
@@ -940,7 +943,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
               ) : (
                 <>
                   {form.items.map((item, idx) => (
-                    <ItemRow key={idx} item={item} idx={idx} products={products}
+                    <ItemRow key={idx} item={item} idx={idx} products={activeProducts}
                       onChange={setItem} onRemove={removeItem}
                       canRemove={form.items.length > 1}
                       onOpenPicker={(i) => setPickerIdx(i)}
@@ -1608,7 +1611,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
     {/* product picker modal — for existing items */}
     {pickerIdx !== null && (
       <ProductPickerModal
-        products={products}
+        products={activeProducts}
         onSelect={handlePickerSelect}
         onClose={() => setPickerIdx(null)}
       />
@@ -1616,7 +1619,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
     {/* product picker modal — for additional items */}
     {addPickerIdx !== null && (
       <ProductPickerModal
-        products={products}
+        products={activeProducts}
         onSelect={handleAddPickerSelect}
         onClose={() => setAddPickerIdx(null)}
       />

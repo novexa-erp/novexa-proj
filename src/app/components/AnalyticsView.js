@@ -1,7 +1,13 @@
-"use client";
+﻿"use client";
 import { useState, useEffect } from "react";
 import { collection, getDocs, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import {
+  ResponsiveContainer,
+  PieChart, Pie, Cell, Tooltip, Legend,
+  BarChart, Bar, XAxis, YAxis, CartesianGrid, LabelList,
+  LineChart, Line,
+} from "recharts";
 
 const cardStyle = { 
   background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", 
@@ -33,6 +39,9 @@ export default function AnalyticsView({ uid }) {
   const [loading, setLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState("month");
   const [activeSection, setActiveSection] = useState("overview");
+  const [invMoveDays, setInvMoveDays] = useState(30);
+  const [invReportTab, setInvReportTab] = useState("valuation");
+  const [profitDateFilter, setProfitDateFilter] = useState("all");
   
   // Data states
   const [invoices, setInvoices] = useState([]);
@@ -59,11 +68,11 @@ export default function AnalyticsView({ uid }) {
     );
     unsubscribers.push(unsubInvoices);
 
-    // Real-time listener for products
+    // Real-time listener for products — filter deleted ones immediately
     const unsubProducts = onSnapshot(
       collection(db, `users/${uid}/products`),
       (snap) => {
-        setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })));
+        setProducts(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => !p.deleted));
       },
       (err) => console.error("Products listener error:", err)
     );
@@ -147,6 +156,10 @@ export default function AnalyticsView({ uid }) {
 
   // Helper: Filter data by date
   function filterByDate(items, dateField = 'createdAt') {
+    return filterByCustomDate(items, dateField, dateFilter);
+  }
+
+  function filterByCustomDate(items, dateField = 'createdAt', filter = 'all') {
     const now = new Date();
     const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
     
@@ -154,7 +167,7 @@ export default function AnalyticsView({ uid }) {
       if (!item[dateField]) return false;
       const itemDate = item[dateField].toDate ? item[dateField].toDate() : new Date(item[dateField]);
       
-      switch(dateFilter) {
+      switch(filter) {
         case 'today':
           return itemDate >= today;
         case 'week':
@@ -236,26 +249,13 @@ export default function AnalyticsView({ uid }) {
   // Sales by category (approximate from product names)
   const salesByCategory = {};
   filteredInvoices.forEach(inv => {
-    if (inv.items && Array.isArray(inv.items)) {
-      inv.items.forEach(item => {
-        const category = item.category || "General";
-        salesByCategory[category] = (salesByCategory[category] || 0) + ((Number(item.quantity) || 0) * (Number(item.price) || 0));
-      });
-    }
+    (inv.items || []).forEach(item => {
+      const category = item.category || "General";
+      const qty = Number(item.qty) || Number(item.quantity) || 0;
+      const price = Number(item.unitPrice) || Number(item.price) || 0;
+      salesByCategory[category] = (salesByCategory[category] || 0) + (qty * price);
+    });
   });
-  
-  // Top & least selling products
-  const productSales = {};
-  filteredInvoices.forEach(inv => {
-    if (inv.items && Array.isArray(inv.items)) {
-      inv.items.forEach(item => {
-        const productName = item.productName || item.name || "Unknown";
-        productSales[productName] = (productSales[productName] || 0) + (Number(item.quantity) || 0);
-      });
-    }
-  });
-  const topSellingProducts = Object.entries(productSales).sort((a, b) => b[1] - a[1]).slice(0, 5);
-  const leastSellingProducts = Object.entries(productSales).sort((a, b) => a[1] - b[1]).slice(0, 5);
 
   // Sales trend
   const salesByMonth = {};
@@ -266,42 +266,248 @@ export default function AnalyticsView({ uid }) {
   });
 
   // ========== INVENTORY ANALYTICS ==========
-  const totalStockValue = products.reduce((sum, p) => {
-    const stock = p.variantType !== "none" && p.variants?.length > 0
-      ? p.variants.reduce((s, v) => s + (parseInt(v.stock) || 0), 0)
-      : parseInt(p.stock) || 0;
-    const price = Number(p.price) || 0;
-    return sum + (stock * price);
+  // helper — total stock of a product (variants or simple)
+  function getProductStock(p) {
+    if (p.variantType !== "none" && p.variants?.length > 0)
+      return p.variants.reduce((s, v) => s + (parseInt(v.stock) || 0), 0);
+    return parseInt(p.stock) || 0;
+  }
+  // helper — selling price of a product
+  function getProductPrice(p) {
+    return Number(p.sellingPrice || p.price) || 0;
+  }
+
+  // products state is already filtered (!deleted) by the listener
+  const activeProducts = products; // alias for clarity
+
+  const totalStockValue = activeProducts.reduce((sum, p) => {
+    return sum + getProductStock(p) * getProductPrice(p);
   }, 0);
 
-  const lowStockItems = products.filter(p => {
-    const stock = p.variantType !== "none" && p.variants?.length > 0
-      ? p.variants.reduce((s, v) => s + (parseInt(v.stock) || 0), 0)
-      : parseInt(p.stock) || 0;
+  const lowStockItems = activeProducts.filter(p => {
+    const stock = getProductStock(p);
     const threshold = parseInt(p.lowStockThreshold) || 10;
-    return stock <= threshold && stock > 0;
+    return stock > 0 && stock <= threshold;
   });
 
-  const outOfStockProducts = products.filter(p => {
-    const stock = p.variantType !== "none" && p.variants?.length > 0
-      ? p.variants.reduce((s, v) => s + (parseInt(v.stock) || 0), 0)
-      : parseInt(p.stock) || 0;
-    return stock === 0;
-  });
+  const outOfStockProducts = activeProducts.filter(p => getProductStock(p) === 0);
 
-  // Fast & Slow moving products
-  const fastMovingProducts = topSellingProducts.slice(0, 5);
-  const slowMovingProducts = leastSellingProducts.slice(0, 5);
-  
-  // Inventory turnover (simplified)
-  const totalProductsSold = Object.values(productSales).reduce((a, b) => a + b, 0);
-  const avgInventory = products.reduce((sum, p) => {
-    const stock = p.variantType !== "none" && p.variants?.length > 0
-      ? p.variants.reduce((s, v) => s + (parseInt(v.stock) || 0), 0)
-      : parseInt(p.stock) || 0;
-    return sum + stock;
-  }, 0) / (products.length || 1);
+  // Fast & Slow moving — ONLY inventory-linked items (productId must exist)
+  const productSalesByDesc = {};
+  filteredInvoices.forEach(inv => {
+    (inv.items || []).forEach(item => {
+      if (!item.productId) return; // skip non-inventory items
+      if ((item.description || "").startsWith("Previous Balance")) return;
+      // Use inventory product name if available, else fall back to description
+      const prod = activeProducts.find(p => p.id === item.productId);
+      if (!prod) return; // product deleted from inventory → skip
+      const name = prod.name || item.description || "Unknown";
+      const qty = Number(item.qty) || Number(item.quantity) || 0;
+      productSalesByDesc[name] = (productSalesByDesc[name] || 0) + qty;
+    });
+  });
+  const topSellingProducts    = Object.entries(productSalesByDesc).sort((a, b) => b[1] - a[1]).slice(0, 5);
+  const leastSellingProducts  = Object.entries(productSalesByDesc).sort((a, b) => a[1] - b[1]).slice(0, 5);
+  const fastMovingProducts    = topSellingProducts;
+  const slowMovingProducts    = leastSellingProducts;
+  const totalProductsSold     = Object.values(productSalesByDesc).reduce((a, b) => a + b, 0);
+
+  // Inventory turnover
+  const avgInventory = activeProducts.length > 0
+    ? activeProducts.reduce((sum, p) => sum + getProductStock(p), 0) / activeProducts.length
+    : 0;
   const inventoryTurnover = avgInventory > 0 ? (totalProductsSold / avgInventory).toFixed(2) : 0;
+
+  // ========== EXTENDED INVENTORY ANALYTICS ==========
+  // Cost price helper — variant-aware weighted average
+  function getProductCostPrice(p) {
+    if (p.variantType !== "none" && p.variants?.length > 0) {
+      let totalStock = 0, totalCost = 0;
+      p.variants.forEach(v => {
+        const s = parseInt(v.stock) || 0;
+        totalStock += s;
+        totalCost += s * (Number(v.costPrice) || 0);
+      });
+      return totalStock > 0 ? totalCost / totalStock : (Number(p.costPrice) || 0);
+    }
+    return Number(p.costPrice) || 0;
+  }
+
+  // Total products & stock units
+  const totalProducts = activeProducts.length;
+  const totalStockUnits = activeProducts.reduce((sum, p) => sum + getProductStock(p), 0);
+
+  // Inventory value at cost — variant-aware (each variant × its own costPrice)
+  const totalInventoryCostValue = activeProducts.reduce((sum, p) => {
+    if (p.variantType !== "none" && p.variants?.length > 0) {
+      return sum + p.variants.reduce((s, v) =>
+        s + (parseInt(v.stock) || 0) * (Number(v.costPrice) || 0), 0);
+    }
+    return sum + getProductStock(p) * (Number(p.costPrice) || 0);
+  }, 0);
+
+  // Potential sales value — variant-aware (each variant × its own sellingPrice)
+  const totalPotentialSalesValue = activeProducts.reduce((sum, p) => {
+    if (p.variantType !== "none" && p.variants?.length > 0) {
+      return sum + p.variants.reduce((s, v) =>
+        s + (parseInt(v.stock) || 0) * (Number(v.sellingPrice || v.price) || 0), 0);
+    }
+    return sum + getProductStock(p) * getProductPrice(p);
+  }, 0);
+
+  // Potential profit = if all current stock is sold at selling price
+  const totalPotentialProfit = totalPotentialSalesValue - totalInventoryCostValue;
+
+  // Recently added products (last 30 days)
+  const thirtyDaysAgo = new Date();
+  thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+  const recentlyAddedProducts = activeProducts.filter(p => {
+    if (!p.createdAt) return false;
+    const d = p.createdAt.toDate ? p.createdAt.toDate() : new Date(p.createdAt);
+    return d >= thirtyDaysAgo;
+  });
+
+  // Stock by category (pie chart)
+  const stockByCategory = {};
+  activeProducts.forEach(p => {
+    const cat = p.category || "Uncategorized";
+    stockByCategory[cat] = (stockByCategory[cat] || 0) + getProductStock(p);
+  });
+  const stockByCategoryData = Object.entries(stockByCategory)
+    .map(([name, value]) => ({ name, value }))
+    .sort((a, b) => b.value - a.value);
+
+  // Inventory value by category (bar chart)
+  const invValueByCategory = {};
+  activeProducts.forEach(p => {
+    const cat = p.category || "Uncategorized";
+    invValueByCategory[cat] = (invValueByCategory[cat] || 0) + getProductStock(p) * getProductCostPrice(p);
+  });
+  const invValueByCategoryData = Object.entries(invValueByCategory)
+    .map(([name, value]) => ({ name, value: Math.round(value) }))
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 8);
+
+  // Stock movement trend: last 7/30/90 days
+  // Added = from purchase orders; Sold = from invoices
+  function getStockMovement(days) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+    const buckets = {};
+    for (let i = days - 1; i >= 0; i--) {
+      const d = new Date();
+      d.setDate(d.getDate() - i);
+      const key = days <= 7
+        ? d.toLocaleDateString("en-US", { weekday: "short" })
+        : days <= 30
+          ? `${d.getDate()}/${d.getMonth() + 1}`
+          : `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
+      buckets[key] = { date: new Date(d), sold: 0, added: 0, returned: 0 };
+    }
+    // Count sold from invoices
+    invoices.forEach(inv => {
+      if (!inv.createdAt) return;
+      const d = inv.createdAt.toDate ? inv.createdAt.toDate() : new Date(inv.createdAt);
+      if (d < cutoff) return;
+      const key = days <= 7
+        ? d.toLocaleDateString("en-US", { weekday: "short" })
+        : days <= 30
+          ? `${d.getDate()}/${d.getMonth() + 1}`
+          : `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
+      if (buckets[key] !== undefined) {
+        (inv.items || []).forEach(item => {
+          const qty = Number(item.qty) || Number(item.quantity) || 0;
+          buckets[key].sold += qty;
+        });
+      }
+    });
+    // Count added from purchase orders
+    allOrders.forEach(order => {
+      if (!order.createdAt) return;
+      const d = order.createdAt.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
+      if (d < cutoff) return;
+      const key = days <= 7
+        ? d.toLocaleDateString("en-US", { weekday: "short" })
+        : days <= 30
+          ? `${d.getDate()}/${d.getMonth() + 1}`
+          : `${d.toLocaleString("en-US", { month: "short" })} ${d.getDate()}`;
+      if (buckets[key] !== undefined) {
+        const qty = Number(order.totalQty) || Number(order.quantity) || 0;
+        buckets[key].added += qty;
+      }
+    });
+    // Return as sorted array, deduplicating by key label
+    const seen = new Set();
+    return Object.entries(buckets)
+      .sort((a, b) => a[1].date - b[1].date)
+      .filter(([key]) => { if (seen.has(key)) return false; seen.add(key); return true; })
+      .map(([name, v]) => ({ name, sold: v.sold, added: v.added, returned: v.returned }));
+  }
+
+  // Top selling products (for inventory table)
+  const topSellingInvProducts = Object.entries(productSalesByDesc)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, 10)
+    .map(([name, sold]) => ({ name, sold }));
+
+  // Slow-moving products — sold less than 20% of original/current stock in N days
+  // OR not sold at all in N days (whichever applies)
+  function getSlowMoving(days) {
+    const cutoff = new Date();
+    cutoff.setDate(cutoff.getDate() - days);
+
+    // Build per-product sold qty within the window
+    const soldQtyInWindow = {};
+    invoices.forEach(inv => {
+      if (!inv.createdAt) return;
+      const d = inv.createdAt.toDate ? inv.createdAt.toDate() : new Date(inv.createdAt);
+      if (d < cutoff) return;
+      (inv.items || []).forEach(item => {
+        if (!item.productId) return;
+        const qty = Number(item.qty) || Number(item.quantity) || 0;
+        soldQtyInWindow[item.productId] = (soldQtyInWindow[item.productId] || 0) + qty;
+      });
+    });
+
+    return activeProducts
+      .filter(p => {
+        const currentStock = getProductStock(p);
+        if (currentStock <= 0) return false; // out of stock — not dead, just empty
+        const soldQty = soldQtyInWindow[p.id] || 0;
+        // Dead/slow if: sold nothing OR sold less than 20% of current stock
+        const totalUnits = currentStock + soldQty; // approximate original stock
+        const soldRatio = totalUnits > 0 ? soldQty / totalUnits : 0;
+        return soldRatio < 0.2; // less than 20% sold → slow/dead
+      })
+      .map(p => ({
+        ...p,
+        soldInWindow: soldQtyInWindow[p.id] || 0,
+        currentStock: getProductStock(p),
+      }));
+  }
+
+  // Highest inventory value products
+  const highestInvValueProducts = activeProducts
+    .map(p => ({ name: p.name, value: getProductStock(p) * getProductCostPrice(p) }))
+    .filter(p => p.value > 0)
+    .sort((a, b) => b.value - a.value)
+    .slice(0, 10);
+
+  // Stock aging
+  const now_inv = new Date();
+  const invAgingBuckets = { "0–30 Days": 0, "31–90 Days": 0, "90+ Days": 0 };
+  const invAgingProducts = { "0–30 Days": [], "31–90 Days": [], "90+ Days": [] };
+  activeProducts.forEach(p => {
+    if (!p.createdAt) return;
+    const d = p.createdAt.toDate ? p.createdAt.toDate() : new Date(p.createdAt);
+    const ageDays = Math.floor((now_inv - d) / (1000 * 60 * 60 * 24));
+    const stock = getProductStock(p);
+    if (stock <= 0) return;
+    const bucket = ageDays <= 30 ? "0–30 Days" : ageDays <= 90 ? "31–90 Days" : "90+ Days";
+    invAgingBuckets[bucket] += stock;
+    invAgingProducts[bucket].push({ name: p.name, stock, ageDays });
+  });
+  const invAgingData = Object.entries(invAgingBuckets).map(([name, value]) => ({ name, value }));
 
   // ========== CUSTOMER ANALYTICS ==========
   const totalCustomersCount = customers.length;
@@ -384,53 +590,151 @@ export default function AnalyticsView({ uid }) {
   }).length;
   const avgInvoiceAmount = totalInvoicesCount > 0 ? totalSales / totalInvoicesCount : 0;
 
-  // ========== PROFIT ANALYTICS ==========
-  const totalPurchases = filteredOrders.reduce((sum, order) => {
-    if (order.items && Array.isArray(order.items)) {
-      const subtotal = order.items.reduce((s, item) => s + (Number(item.qty) || 0) * (Number(item.unitPrice) || 0), 0);
-      const discount = order.discountType === "percent" 
-        ? subtotal * ((Number(order.discountValue) || 0) / 100)
-        : (Number(order.discountValue) || 0);
-      return sum + Math.max(subtotal - discount, 0);
-    }
-    return sum;
-  }, 0);
+  // ========== PROFIT ANALYTICS (inventory-linked items only) ==========
+  // Profit has its own independent date filter (defaults to "all") so it 
+  // doesn't go blank when the main analytics date filter is changed.
+  const profitFilteredInvoices = filterByCustomDate(
+    invoices.filter(i => !i.deleted), 'createdAt', profitDateFilter
+  );
 
-  const grossProfit = actualRevenue - totalPurchases;
-  const netProfit = grossProfit; // Simplified (no expenses module)
-  const profitMargin = actualRevenue > 0 ? ((grossProfit / actualRevenue) * 100).toFixed(1) : 0;
+  // Build a quick lookup map: productId → product (non-deleted only)
+  const productMap = {};
+  // Also build name-based lookup for items created before productId was linked
+  const productNameMap = {};
+  products.filter(p => !p.deleted).forEach(p => {
+    productMap[p.id] = p;
+    if (p.name) productNameMap[p.name.trim().toLowerCase()] = p;
+  });
+
+  // Helper: get cost price for an invoice item
+  // item.productId must exist AND product must exist in inventory
+  function getItemCost(item) {
+    // Try productId first, then fall back to name matching
+    let prod = item.productId ? productMap[item.productId] : null;
+
+    // Fallback: match by description/name (for items without productId)
+    if (!prod && item.description) {
+      prod = productNameMap[(item.description || "").trim().toLowerCase()] || null;
+    }
+
+    if (!prod) return null; // no matching product found → skip
+
+    const qty = Number(item.qty) || 1;
+    const effQty = (() => {
+      if (item.variantLabel) {
+        const num = parseFloat(item.variantLabel);
+        return (!isNaN(num) && num > 0) ? num * qty : qty;
+      }
+      return qty;
+    })();
+
+    let costPricePerUnit = 0;
+
+    if (typeof item.costPriceAtTime === "number" && item.costPriceAtTime >= 0) {
+      costPricePerUnit = item.costPriceAtTime;
+    } else if (prod.variants?.length > 0) {
+      let variant = null;
+      if (item.variantId) {
+        variant = prod.variants.find(v => v.id === item.variantId);
+        if (!variant) {
+          const idx = Number(item.variantId);
+          if (!isNaN(idx) && prod.variants[idx]) variant = prod.variants[idx];
+        }
+      }
+      if (!variant && item.variantLabel) {
+        variant = prod.variants.find(
+          v => (v.label || "").toLowerCase() === (item.variantLabel || "").toLowerCase()
+        );
+        if (!variant) {
+          const labelNum = parseFloat(item.variantLabel);
+          if (!isNaN(labelNum)) {
+            variant = prod.variants.find(v => parseFloat(v.label) === labelNum);
+          }
+        }
+      }
+      if (!variant && prod.variants.length === 1) variant = prod.variants[0];
+      costPricePerUnit = variant ? (Number(variant.costPrice) || 0) : (Number(prod.costPrice) || 0);
+    } else {
+      costPricePerUnit = Number(prod.costPrice) || 0;
+    }
+
+    const sellingPricePerUnit = Number(item.unitPrice) || 0;
+    const resolvedProductId = prod.id; // use resolved product id (handles name-matched items too)
+    return {
+      revenue:   sellingPricePerUnit * effQty,
+      cost:      costPricePerUnit    * effQty,
+      profit:    (sellingPricePerUnit - costPricePerUnit) * effQty,
+      qty:       effQty,
+      name:      item.description || prod.name || "—",
+      productId: resolvedProductId,
+    };
+  }
+
+  // Aggregate profit from profitFilteredInvoices (non-deleted)
+  let totalInventoryRevenue  = 0;
+  let totalInventoryCost     = 0;
+  let totalInventoryProfit   = 0;
+  let inventoryItemCount     = 0;
+  let skippedItemCount       = 0;
+
+  const profitByProduct = {};
+
+  profitFilteredInvoices
+    .forEach(inv => {
+      (inv.items || []).forEach(item => {
+        if ((item.description || "").startsWith("Previous Balance · INV-")) return;
+        const result = getItemCost(item);
+        if (!result) { skippedItemCount++; return; }
+        totalInventoryRevenue += result.revenue;
+        totalInventoryCost    += result.cost;
+        totalInventoryProfit  += result.profit;
+        inventoryItemCount++;
+        if (!profitByProduct[result.productId]) {
+          profitByProduct[result.productId] = { name: result.name, revenue: 0, cost: 0, profit: 0, qty: 0 };
+        }
+        profitByProduct[result.productId].revenue += result.revenue;
+        profitByProduct[result.productId].cost    += result.cost;
+        profitByProduct[result.productId].profit  += result.profit;
+        profitByProduct[result.productId].qty     += result.qty;
+      });
+    });
+
+  const grossProfit    = totalInventoryProfit;
+  const netProfit      = grossProfit; // simplified
+  const profitMargin   = totalInventoryRevenue > 0
+    ? ((grossProfit / totalInventoryRevenue) * 100).toFixed(1)
+    : "0.0";
+
+  // Top profitable & least profitable products
+  const topProfitableProducts = Object.values(profitByProduct)
+    .sort((a, b) => b.profit - a.profit)
+    .slice(0, 5);
+  const leastProfitableProducts = Object.values(profitByProduct)
+    .sort((a, b) => a.profit - b.profit)
+    .slice(0, 5);
+
+  // Most profitable products for inventory section (top 10)
+  const mostProfitableInvProducts = Object.values(profitByProduct)
+    .sort((a, b) => b.profit - a.profit)
+    .slice(0, 10);
+
+  // Backward-compat: keep totalPurchases for any existing JSX that uses it
+  const totalPurchases = totalInventoryCost;
   
   // Monthly profit trend
   const monthlyProfit = {};
-  const monthlyRevenueTrend = {};
-  const monthlyExpenseTrend = {};
   
-  filteredInvoices.forEach(inv => {
-    if (inv.status === "Paid" || inv.status === "Partial") {
+  profitFilteredInvoices
+    .forEach(inv => {
       const date = inv.createdAt?.toDate ? inv.createdAt.toDate() : new Date(inv.createdAt);
       const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-      const rev = inv.status === "Paid" ? (Number(inv.amount) || 0) : ((Number(inv.amount) || 0) - (Number(inv.balance) || 0));
-      monthlyRevenueTrend[monthKey] = (monthlyRevenueTrend[monthKey] || 0) + rev;
-    }
-  });
-  
-  filteredOrders.forEach(order => {
-    const date = order.createdAt?.toDate ? order.createdAt.toDate() : new Date(order.createdAt);
-    const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    if (order.items && Array.isArray(order.items)) {
-      const subtotal = order.items.reduce((s, item) => s + (Number(item.qty) || 0) * (Number(item.unitPrice) || 0), 0);
-      const discount = order.discountType === "percent" 
-        ? subtotal * ((Number(order.discountValue) || 0) / 100)
-        : (Number(order.discountValue) || 0);
-      monthlyExpenseTrend[monthKey] = (monthlyExpenseTrend[monthKey] || 0) + Math.max(subtotal - discount, 0);
-    }
-  });
-  
-  Object.keys(monthlyRevenueTrend).forEach(month => {
-    const rev = monthlyRevenueTrend[month] || 0;
-    const exp = monthlyExpenseTrend[month] || 0;
-    monthlyProfit[month] = rev - exp;
-  });
+      (inv.items || []).forEach(item => {
+        if ((item.description || "").startsWith("Previous Balance · INV-")) return;
+        const result = getItemCost(item);
+        if (!result) return;
+        monthlyProfit[monthKey] = (monthlyProfit[monthKey] || 0) + result.profit;
+      });
+    });
 
   // Helper function to get previous period data
   function getPreviousPeriodData(data, filter) {
@@ -491,8 +795,8 @@ export default function AnalyticsView({ uid }) {
     </div>
   );
 
-  // Bar Chart Component
-  const BarChart = ({ data, title, color = "from-blue-500 to-purple-600" }) => {
+  // CSS Bar Chart Component (custom, no external lib)
+  const CssBarChart = ({ data, title, color = "from-blue-500 to-purple-600" }) => {
     const maxValue = Math.max(...Object.values(data));
     return (
       <div className="rounded-xl p-5" style={cardStyle}>
@@ -520,8 +824,8 @@ export default function AnalyticsView({ uid }) {
     );
   };
 
-  // Pie/Doughnut Chart Component
-  const DoughnutChart = ({ data, title, colors }) => {
+  // CSS Doughnut/Pie legend Component (custom, no external lib)
+  const CssDoughnutChart = ({ data, title, colors }) => {
     const total = Object.values(data).reduce((a, b) => a + b, 0);
     const segments = Object.entries(data).map(([key, value], idx) => ({
       key,
@@ -603,22 +907,22 @@ export default function AnalyticsView({ uid }) {
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         <StatCard label="Total Sales" value={totalSalesCount.toLocaleString()} icon="📈" color="from-blue-500 to-indigo-600" subtitle={`Rs. ${totalSales.toLocaleString()}`} />
         <StatCard label="Total Customers" value={totalCustomersCount.toLocaleString()} icon="👥" color="from-cyan-500 to-blue-600" subtitle={`${newCustomers} new`} />
-        <StatCard label="Total Products" value={products.length.toLocaleString()} icon="📦" color="from-indigo-500 to-purple-600" subtitle={`${lowStockItems.length} low stock`} />
+        <StatCard label="Total Products" value={activeProducts.length.toLocaleString()} icon="📦" color="from-indigo-500 to-purple-600" subtitle={`${lowStockItems.length} low stock`} />
         <StatCard label="Avg Order Value" value={`Rs. ${Math.round(averageOrderValue).toLocaleString()}`} icon="💳" color="from-pink-500 to-rose-600" subtitle="per invoice" />
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <BarChart data={salesByMonth} title="📈 Sales Trend (Monthly)" color="from-blue-500 to-purple-600" />
+        <CssBarChart data={salesByMonth} title="📈 Sales Trend (Monthly)" color="from-blue-500 to-purple-600" />
         <div className="rounded-xl p-5" style={cardStyle}>
           <h3 className="text-white font-bold text-base mb-4">💰 Profit & Loss</h3>
           <div className="space-y-3">
             <div className="flex justify-between items-center p-3 rounded-lg" style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)" }}>
-              <span className="text-green-400 text-sm font-semibold">Revenue</span>
-              <span className="text-white font-bold">Rs. {actualRevenue.toLocaleString()}</span>
+              <span className="text-green-400 text-sm font-semibold">Inventory Revenue</span>
+              <span className="text-white font-bold">Rs. {totalInventoryRevenue.toLocaleString()}</span>
             </div>
             <div className="flex justify-between items-center p-3 rounded-lg" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)" }}>
-              <span className="text-red-400 text-sm font-semibold">Purchases</span>
-              <span className="text-white font-bold">Rs. {totalPurchases.toLocaleString()}</span>
+              <span className="text-red-400 text-sm font-semibold">Total Cost</span>
+              <span className="text-white font-bold">Rs. {totalInventoryCost.toLocaleString()}</span>
             </div>
             <div className={`flex justify-between items-center p-3 rounded-lg`} style={{ 
               background: netProfit >= 0 ? "rgba(16,185,129,0.15)" : "rgba(239,68,68,0.15)", 
@@ -631,6 +935,11 @@ export default function AnalyticsView({ uid }) {
                 Rs. {Math.abs(netProfit).toLocaleString()}
               </span>
             </div>
+            {skippedItemCount > 0 && (
+              <p className="text-gray-600 text-[10px] text-center">
+                ⚠️ {skippedItemCount} item{skippedItemCount > 1 ? "s" : ""} skipped (not linked to inventory)
+              </p>
+            )}
           </div>
         </div>
       </div>
@@ -651,7 +960,7 @@ export default function AnalyticsView({ uid }) {
         <TopList items={topRevenueProducts} title="Revenue by Product" icon="📦" valuePrefix="Rs. " />
       </div>
 
-      <BarChart data={revenueByPeriod} title="📊 Revenue Trend" color="from-amber-500 to-orange-600" />
+      <CssBarChart data={revenueByPeriod} title="📊 Revenue Trend" color="from-amber-500 to-orange-600" />
     </>
   );
 
@@ -665,8 +974,8 @@ export default function AnalyticsView({ uid }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <BarChart data={salesByMonth} title="📈 Sales Trend (Line Chart Representation)" color="from-blue-500 to-purple-600" />
-        <DoughnutChart 
+        <CssBarChart data={salesByMonth} title="📈 Sales Trend (Line Chart Representation)" color="from-blue-500 to-purple-600" />
+        <CssDoughnutChart 
           data={salesByCategory} 
           title="🥧 Sales by Category" 
           colors={["from-blue-500 to-cyan-600", "from-purple-500 to-pink-600", "from-amber-500 to-orange-600", "from-green-500 to-emerald-600"]} 
@@ -680,103 +989,1201 @@ export default function AnalyticsView({ uid }) {
     </>
   );
 
-  const renderInventory = () => (
-    <>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Stock Value" value={`Rs. ${totalStockValue.toLocaleString()}`} icon="📦" color="from-blue-500 to-indigo-600" />
-        <StatCard label="Low Stock Items" value={lowStockItems.length.toLocaleString()} icon="⚠️" color="from-yellow-500 to-amber-600" />
-        <StatCard label="Out of Stock" value={outOfStockProducts.length.toLocaleString()} icon="❌" color="from-red-500 to-rose-600" />
-        <StatCard label="Inventory Turnover" value={inventoryTurnover} icon="🔄" color="from-purple-500 to-pink-600" subtitle="times" />
-      </div>
+  const renderInventory = () => {
+    const CHART_COLORS = ["#6366f1","#f59e0b","#10b981","#ef4444","#8b5cf6","#06b6d4","#f97316","#84cc16"];
+    const movementData = getStockMovement(invMoveDays);
+    const slowMoving30 = getSlowMoving(30);
+    const slowMoving60 = getSlowMoving(60);
+    const slowMoving90 = getSlowMoving(90);
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <TopList items={fastMovingProducts} title="Fast Moving Products" icon="🚀" valuePrefix="" />
-        <TopList items={slowMovingProducts} title="Slow Moving Products" icon="🐌" valuePrefix="" />
-      </div>
+    const tooltipStyle = {
+      background: "rgba(15,15,25,0.97)",
+      border: "1px solid rgba(255,255,255,0.1)",
+      borderRadius: "10px",
+      color: "#fff",
+      fontSize: "12px",
+    };
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+    return (
+      <>
+        {/* ===== KPI CARDS ROW 1 ===== */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatCard label="Total Products" value={totalProducts.toLocaleString()} icon="📦" color="from-indigo-500 to-blue-600" subtitle="active items" />
+          <StatCard label="Total Stock Units" value={totalStockUnits.toLocaleString()} icon="📦" color="from-blue-500 to-cyan-600" subtitle="units in stock" />
+          <StatCard label="Inventory Value (Cost)" value={`Rs. ${Math.round(totalInventoryCostValue).toLocaleString()}`} icon="💰" color="from-amber-500 to-orange-600" subtitle="at cost price" />
+          <StatCard label="Potential Sales Value" value={`Rs. ${Math.round(totalPotentialSalesValue).toLocaleString()}`} icon="💵" color="from-green-500 to-emerald-600" subtitle="at selling price" />
+        </div>
+
+        {/* ===== KPI CARDS ROW 2 ===== */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatCard label="Potential Profit" value={`Rs. ${Math.round(totalPotentialProfit).toLocaleString()}`} icon="📈" color={totalPotentialProfit >= 0 ? "from-green-500 to-teal-600" : "from-red-500 to-rose-600"} subtitle="if all stock sold" />
+          <StatCard label="Low Stock Products" value={lowStockItems.length.toLocaleString()} icon="⚠️" color="from-yellow-500 to-amber-600" subtitle={`threshold ≤ 10`} />
+          <StatCard label="Out of Stock" value={outOfStockProducts.length.toLocaleString()} icon="❌" color="from-red-500 to-rose-600" subtitle="need restocking" />
+          <StatCard label="Recently Added" value={recentlyAddedProducts.length.toLocaleString()} icon="🆕" color="from-purple-500 to-pink-600" subtitle="last 30 days" />
+        </div>
+
+        {/* ===== CHARTS ROW 1: Pie + Bar ===== */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Stock by Category — Donut with clean legend */}
+          <div className="rounded-xl p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-base mb-1">🥧 Stock by Category</h3>
+            <p className="text-white-500 text-xs mb-3">Units in stock per category</p>
+            {stockByCategoryData.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-10">No category data</p>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <ResponsiveContainer width="100%" height={200}>
+                  <PieChart>
+                    <Pie
+                      data={stockByCategoryData}
+                      cx="50%" cy="50%"
+                      innerRadius={55}
+                      outerRadius={85}
+                      paddingAngle={3}
+                      color="white !important"
+                      dataKey="value"
+                      nameKey="name"
+                      label={false}
+                    >
+                      {stockByCategoryData.map((_, i) => (
+                        <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={0} />
+                      ))}
+                    </Pie>
+                    <Tooltip
+                      contentStyle={tooltipStyle}
+                      itemStyle={{ color: "#e5e7eb" }}
+                      labelStyle={{ color: "#fff", fontWeight: "600" }}
+                      formatter={(v, name) => [`${v} units`, name]}
+                    />
+                  </PieChart>
+                </ResponsiveContainer>
+                {/* Custom legend rows */}
+                <div className="space-y-2">
+                  {stockByCategoryData.map((entry, i) => {
+                    const total = stockByCategoryData.reduce((s, d) => s + d.value, 0);
+                    const pct = total > 0 ? ((entry.value / total) * 100).toFixed(1) : 0;
+                    return (
+                      <div key={entry.name} className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
+                          style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
+                        <span className="text-gray-300 text-xs flex-1 truncate">{entry.name}</span>
+                        <span className="text-white text-xs font-semibold">{entry.value}</span>
+                        <span className="text-gray-500 text-[10px] w-10 text-right">{pct}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Inventory Value by Category — Horizontal bar chart */}
+          <div className="rounded-xl p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-base mb-1">💰 Inventory Value by Category</h3>
+            <p className="text-gray-500 text-xs mb-3">Capital invested per category (cost price)</p>
+            {invValueByCategoryData.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-10">No data — set cost prices on products</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={invValueByCategoryData.length * 44 + 20}>
+                <BarChart
+                  data={invValueByCategoryData}
+                  layout="vertical"
+                  margin={{ top: 0, right: 60, left: 0, bottom: 0 }}
+                  barCategoryGap="30%"
+                >
+                  <XAxis type="number" hide />
+                  <YAxis
+                    type="category"
+                    dataKey="name"
+                    width={130}
+                    tick={{ fill: "#9ca3af", fontSize: 11 }}
+                    tickLine={false}
+                    axisLine={false}
+                  />
+                  <Tooltip
+                    contentStyle={tooltipStyle}
+                    itemStyle={{ color: "#e5e7eb" }}
+                    labelStyle={{ color: "#fff", fontWeight: "600" }}
+                    formatter={(v) => [`Rs. ${Number(v).toLocaleString()}`, "Value"]}
+                    cursor={{ fill: "rgba(255,255,255,0.04)" }}
+                  />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={20}>
+                    {invValueByCategoryData.map((_, i) => (
+                      <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
+                    ))}
+                    <LabelList
+                      dataKey="value"
+                      position="right"
+                      formatter={(v) => `Rs. ${v >= 1000 ? (v/1000).toFixed(0)+"k" : v}`}
+                      style={{ fill: "#9ca3af", fontSize: 11 }}
+                    />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* ===== STOCK MOVEMENT TREND LINE CHART ===== */}
         <div className="rounded-xl p-5" style={cardStyle}>
-          <h3 className="text-white font-bold text-base mb-4">⚠️ Low Stock Alert</h3>
-          {lowStockItems.length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-8">All items well stocked ✅</p>
-          ) : (
-            <div className="space-y-2">
-              {lowStockItems.map(product => {
-                const stock = product.variantType !== "none" && product.variants?.length > 0
-                  ? product.variants.reduce((s, v) => s + (parseInt(v.stock) || 0), 0)
-                  : parseInt(product.stock) || 0;
+          <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
+            <h3 className="text-white font-bold text-base">📈 Stock Movement Trend</h3>
+            <div className="flex gap-2">
+              {[7, 30, 90].map(d => (
+                <button key={d} onClick={() => setInvMoveDays(d)}
+                  className="px-3 py-1 rounded-lg text-xs font-semibold transition-all"
+                  style={{
+                    background: invMoveDays === d ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "rgba(255,255,255,0.05)",
+                    border: `1px solid ${invMoveDays === d ? "#6366f1" : "rgba(255,255,255,0.1)"}`,
+                    color: invMoveDays === d ? "#fff" : "#9ca3af",
+                  }}>
+                  {d} Days
+                </button>
+              ))}
+            </div>
+          </div>
+          <ResponsiveContainer width="100%" height={260}>
+            <LineChart data={movementData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+              <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 10 }} interval={invMoveDays <= 7 ? 0 : Math.floor(movementData.length / 6)} />
+              <YAxis tick={{ fill: "#9ca3af", fontSize: 10 }} allowDecimals={false} />
+              <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: "#e5e7eb" }} labelStyle={{ color: "#fff", fontWeight: "600" }} />
+              <Legend wrapperStyle={{ color: "#9ca3af", fontSize: "12px" }} />
+              <Line type="monotone" dataKey="added" stroke="#10b981" strokeWidth={2} dot={false} name="Stock Added" />
+              <Line type="monotone" dataKey="sold" stroke="#f59e0b" strokeWidth={2} dot={false} name="Stock Sold" />
+              <Line type="monotone" dataKey="returned" stroke="#6366f1" strokeWidth={2} dot={false} name="Returned" />
+            </LineChart>
+          </ResponsiveContainer>
+        </div>
+
+        {/* ===== TOP SELLING + SLOW MOVING ===== */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Top Selling */}
+          <div className="rounded-xl overflow-hidden" style={cardStyle}>
+            <div className="px-5 py-3 border-b border-white/[0.07]">
+              <h3 className="text-white font-bold text-base">🏆 Top Selling Products</h3>
+            </div>
+            {topSellingInvProducts.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-10">No sales data</p>
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.05]">
+                    <th className="px-5 py-2 text-left">#</th>
+                    <th className="px-5 py-2 text-left">Product</th>
+                    <th className="px-5 py-2 text-right">Units Sold</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {topSellingInvProducts.map((p, i) => (
+                    <tr key={i} className="border-b border-white/[0.04] hover:bg-white/[0.025]">
+                      <td className="px-5 py-2.5 text-gray-500 text-sm">{i + 1}</td>
+                      <td className="px-5 py-2.5 text-white text-sm font-semibold truncate max-w-[180px]">{p.name}</td>
+                      <td className="px-5 py-2.5 text-amber-400 text-sm font-bold text-right">{p.sold}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Slow Moving */}
+          <div className="rounded-xl overflow-hidden" style={cardStyle}>
+            <div className="px-5 py-3 border-b border-white/[0.07]">
+              <h3 className="text-white font-bold text-base">🐢 Slow Moving Products</h3>
+            </div>
+            <div className="flex border-b border-white/[0.07]">
+              {[30, 60, 90].map(d => (
+                <button key={d}
+                  onClick={() => {}}
+                  className="flex-1 py-1.5 text-xs font-semibold text-gray-400 hover:text-white transition-colors">
+                  Not sold in {d}d
+                </button>
+              ))}
+            </div>
+            <div className="divide-y divide-white/[0.04] max-h-64 overflow-y-auto">
+              {[...new Map([...slowMoving30,...slowMoving60,...slowMoving90].map(p=>[p.id,p])).values()].slice(0,10).map(p => {
+                const d30 = slowMoving30.some(x=>x.id===p.id);
+                const d60 = slowMoving60.some(x=>x.id===p.id);
+                const d90 = slowMoving90.some(x=>x.id===p.id);
                 return (
-                  <div key={product.id} className="flex justify-between items-center p-2 rounded-lg bg-yellow-500/5 border border-yellow-500/20">
-                    <span className="text-gray-300 text-sm truncate max-w-[200px]">{product.name}</span>
-                    <span className="text-yellow-400 font-semibold text-sm">{stock} left</span>
+                  <div key={p.id} className="flex items-center justify-between px-5 py-2.5 hover:bg-white/[0.025]">
+                    <span className="text-white text-sm truncate max-w-[160px]">{p.name}</span>
+                    <div className="flex gap-1">
+                      {d30 && <span className="px-1.5 py-0.5 rounded text-[10px] bg-yellow-500/20 text-yellow-400">30d</span>}
+                      {d60 && <span className="px-1.5 py-0.5 rounded text-[10px] bg-orange-500/20 text-orange-400">60d</span>}
+                      {d90 && <span className="px-1.5 py-0.5 rounded text-[10px] bg-red-500/20 text-red-400">90d</span>}
+                    </div>
                   </div>
                 );
               })}
+              {slowMoving30.length === 0 && slowMoving60.length === 0 && slowMoving90.length === 0 && (
+                <p className="text-gray-500 text-sm text-center py-8">All products sold recently ✅</p>
+              )}
             </div>
-          )}
+          </div>
         </div>
 
-        <div className="rounded-xl p-5" style={cardStyle}>
-          <h3 className="text-white font-bold text-base mb-4">❌ Out of Stock</h3>
-          {outOfStockProducts.length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-8">No stock issues ✅</p>
-          ) : (
-            <div className="space-y-2">
-              {outOfStockProducts.slice(0, 8).map(product => (
-                <div key={product.id} className="flex items-center gap-2 p-2 rounded-lg bg-red-500/5 border border-red-500/20">
-                  <span className="text-red-400 text-lg">⚠️</span>
-                  <span className="text-gray-300 text-sm truncate flex-1">{product.name}</span>
-                  <span className="text-red-400 font-semibold text-xs">0 stock</span>
+        {/* ===== LOW STOCK + OUT OF STOCK REPORTS ===== */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Low Stock */}
+          <div className="rounded-xl overflow-hidden" style={cardStyle}>
+            <div className="px-5 py-3 border-b border-yellow-500/20 flex items-center gap-2">
+              <span className="text-yellow-400 text-lg">⚠️</span>
+              <h3 className="text-white font-bold text-base">Low Stock Report</h3>
+              <span className="ml-auto px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 text-xs font-bold">{lowStockItems.length}</span>
+            </div>
+            {lowStockItems.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-10">All items well stocked ✅</p>
+            ) : (
+              <div className="divide-y divide-white/[0.04] max-h-64 overflow-y-auto">
+                <div className="grid px-5 py-2 text-[10px] uppercase tracking-widest text-gray-600" style={{gridTemplateColumns:"1fr auto auto"}}>
+                  <span>Product</span><span className="text-right mr-4">Stock</span><span className="text-right">Threshold</span>
+                </div>
+                {lowStockItems.map(p => {
+                  const stock = getProductStock(p);
+                  const threshold = parseInt(p.lowStockThreshold) || 10;
+                  return (
+                    <div key={p.id} className="grid px-5 py-2.5 hover:bg-yellow-500/5 items-center" style={{gridTemplateColumns:"1fr auto auto"}}>
+                      <span className="text-white text-sm truncate max-w-[160px]">{p.name}</span>
+                      <span className="text-yellow-400 font-bold text-sm mr-4 text-right">{stock}</span>
+                      <span className="text-gray-500 text-xs text-right">/{threshold}</span>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+
+          {/* Out of Stock */}
+          <div className="rounded-xl overflow-hidden" style={cardStyle}>
+            <div className="px-5 py-3 border-b border-red-500/20 flex items-center gap-2">
+              <span className="text-red-400 text-lg">❌</span>
+              <h3 className="text-white font-bold text-base">Out of Stock Report</h3>
+              <span className="ml-auto px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 text-xs font-bold">{outOfStockProducts.length}</span>
+            </div>
+            {outOfStockProducts.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-10">No stock issues ✅</p>
+            ) : (
+              <div className="divide-y divide-white/[0.04] max-h-64 overflow-y-auto">
+                {outOfStockProducts.map(p => (
+                  <div key={p.id} className="flex items-center gap-3 px-5 py-2.5 hover:bg-red-500/5">
+                    <span className="text-red-400">•</span>
+                    <span className="text-white text-sm flex-1 truncate">{p.name}</span>
+                    <span className="text-red-400 font-bold text-xs">0 units</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ===== MOST PROFITABLE + HIGHEST VALUE ===== */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Most Profitable */}
+          <div className="rounded-xl overflow-hidden" style={cardStyle}>
+            <div className="px-5 py-3 border-b border-white/[0.07]">
+              <h3 className="text-white font-bold text-base">💎 Most Profitable Products</h3>
+              <p className="text-gray-500 text-xs mt-0.5">Based on sales in selected period</p>
+            </div>
+            {mostProfitableInvProducts.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-10">No profit data yet</p>
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.05]">
+                    <th className="px-5 py-2 text-left">#</th>
+                    <th className="px-5 py-2 text-left">Product</th>
+                    <th className="px-5 py-2 text-right">Profit</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {mostProfitableInvProducts.map((p, i) => (
+                    <tr key={i} className="border-b border-white/[0.04] hover:bg-white/[0.025]">
+                      <td className="px-5 py-2.5 text-gray-500 text-sm">{i + 1}</td>
+                      <td className="px-5 py-2.5 text-white text-sm font-semibold truncate max-w-[150px]">{p.name}</td>
+                      <td className="px-5 py-2.5 text-right">
+                        <span className={`text-sm font-bold ${p.profit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                          Rs. {Math.round(p.profit).toLocaleString()}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+
+          {/* Highest Inventory Value */}
+          <div className="rounded-xl overflow-hidden" style={cardStyle}>
+            <div className="px-5 py-3 border-b border-white/[0.07]">
+              <h3 className="text-white font-bold text-base">💼 Highest Inventory Value</h3>
+              <p className="text-gray-500 text-xs mt-0.5">Products with most capital invested</p>
+            </div>
+            {highestInvValueProducts.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-10">Set cost prices to see this</p>
+            ) : (
+              <table className="w-full">
+                <thead>
+                  <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.05]">
+                    <th className="px-5 py-2 text-left">#</th>
+                    <th className="px-5 py-2 text-left">Product</th>
+                    <th className="px-5 py-2 text-right">Value</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {highestInvValueProducts.map((p, i) => (
+                    <tr key={i} className="border-b border-white/[0.04] hover:bg-white/[0.025]">
+                      <td className="px-5 py-2.5 text-gray-500 text-sm">{i + 1}</td>
+                      <td className="px-5 py-2.5 text-white text-sm font-semibold truncate max-w-[150px]">{p.name}</td>
+                      <td className="px-5 py-2.5 text-amber-400 text-sm font-bold text-right">Rs. {Math.round(p.value).toLocaleString()}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </div>
+
+        {/* ===== STOCK AGING ===== */}
+        <div className="rounded-xl overflow-hidden" style={cardStyle}>
+          <div className="px-5 py-4 border-b border-white/[0.07]">
+            <h3 className="text-white font-bold text-base">⏳ Stock Aging</h3>
+            <p className="text-gray-500 text-xs mt-0.5">Based on product creation date in inventory</p>
+          </div>
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
+            {/* Aging bar chart */}
+            <div className="p-5 border-r border-white/[0.05]">
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={invAgingData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                  <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 10 }} allowDecimals={false} />
+                  <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: "#e5e7eb" }} labelStyle={{ color: "#fff", fontWeight: "600" }} formatter={(v) => [`${v} units`, "Stock"]} />
+                  <Bar dataKey="value" radius={[4,4,0,0]}>
+                    <Cell fill="#10b981" />
+                    <Cell fill="#f59e0b" />
+                    <Cell fill="#ef4444" />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+            {/* Aging breakdown */}
+            <div className="p-5 space-y-3">
+              {[
+                { label: "0–30 Days", key: "0–30 Days", color: "text-green-400", bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.2)", emoji: "🟢" },
+                { label: "31–90 Days", key: "31–90 Days", color: "text-yellow-400", bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.2)", emoji: "🟡" },
+                { label: "90+ Days (Old)", key: "90+ Days", color: "text-red-400", bg: "rgba(239,68,68,0.08)", border: "rgba(239,68,68,0.2)", emoji: "🔴" },
+              ].map(b => (
+                <div key={b.key} className="rounded-lg p-3" style={{ background: b.bg, border: `1px solid ${b.border}` }}>
+                  <div className="flex items-center justify-between mb-1">
+                    <span className="text-white text-sm font-semibold">{b.emoji} {b.label}</span>
+                    <span className={`${b.color} font-bold text-sm`}>{invAgingBuckets[b.key]} units</span>
+                  </div>
+                  <p className="text-gray-600 text-xs">{invAgingProducts[b.key].length} product{invAgingProducts[b.key].length !== 1 ? "s" : ""}</p>
+                  {b.key === "90+ Days" && invAgingProducts[b.key].length > 0 && (
+                    <p className="text-red-400 text-xs mt-1">⚠️ Consider discounting or clearing old stock</p>
+                  )}
                 </div>
               ))}
             </div>
-          )}
+          </div>
         </div>
-      </div>
-    </>
-  );
 
-  const renderCustomer = () => (
-    <>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Customers" value={totalCustomersCount.toLocaleString()} icon="👥" color="from-cyan-500 to-blue-600" />
-        <StatCard label="New Customers" value={newCustomers.toLocaleString()} icon="✨" color="from-green-500 to-emerald-600" subtitle="this period" />
-        <StatCard label="Returning Customers" value={returningCustomers.toLocaleString()} icon="🔁" color="from-purple-500 to-pink-600" />
-        <StatCard label="Avg Purchase Frequency" value={(Object.values(customerFrequency).reduce((a,b)=>a+b,0) / (Object.keys(customerFrequency).length || 1)).toFixed(1)} icon="📊" color="from-amber-500 to-orange-600" subtitle="orders/customer" />
-      </div>
-
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <TopList items={topCustomers} title="Top Customers" icon="🏆" valuePrefix="Rs. " />
-        <div className="rounded-xl p-5" style={cardStyle}>
-          <h3 className="text-white font-bold text-base mb-4">📊 Customer Purchase Frequency</h3>
-          {Object.keys(customerFrequency).length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-8">No customer data</p>
-          ) : (
-            <div className="space-y-3">
-              {Object.entries(customerFrequency).sort((a, b) => b[1] - a[1]).slice(0, 5).map(([customer, count]) => {
-                const maxFreq = Math.max(...Object.values(customerFrequency));
-                const percentage = maxFreq > 0 ? (count / maxFreq) * 100 : 0;
-                return (
-                  <div key={customer}>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="text-gray-400 truncate max-w-[150px]">{customer}</span>
-                      <span className="text-white font-semibold">{count} orders</span>
-                    </div>
-                    <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
-                      <div 
-                        className="h-full rounded-full bg-gradient-to-r from-cyan-500 to-blue-600 transition-all duration-700"
-                        style={{ width: `${percentage}%` }}
-                      />
-                    </div>
+        {/* ===== REPORTS SECTION ===== */}
+        <div className="rounded-xl overflow-hidden" style={cardStyle}>
+          <div className="px-5 py-4 border-b border-white/[0.07]">
+            <h3 className="text-white font-bold text-lg">📋 Inventory Reports</h3>
+            <p className="text-gray-500 text-xs mt-0.5">Detailed reports for analysis and decision-making</p>
+          </div>
+          {/* Report tabs */}
+          <div className="flex flex-wrap gap-2 p-4 border-b border-white/[0.07]">
+            {[
+              { id: "valuation", label: "📊 Valuation" },
+              { id: "profitability", label: "💹 Profitability" },
+              { id: "lowstock", label: "⚠️ Low Stock" },
+              { id: "outofstock", label: "❌ Out of Stock" },
+              { id: "deadstock", label: "💀 Dead Stock" },
+              { id: "category", label: "🗂️ Category" },
+            ].map(t => (
+              <button key={t.id} onClick={() => setInvReportTab(t.id)}
+                className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
+                style={{
+                  background: invReportTab === t.id ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "rgba(255,255,255,0.05)",
+                  border: `1px solid ${invReportTab === t.id ? "#6366f1" : "rgba(255,255,255,0.1)"}`,
+                  color: invReportTab === t.id ? "#fff" : "#9ca3af",
+                }}>
+                {t.label}
+              </button>
+            ))}
+          </div>
+          <div className="p-5">
+            {/* Inventory Valuation Report */}
+            {invReportTab === "valuation" && (
+              <div>
+                <p className="text-gray-400 text-xs mb-3">Complete inventory valuation at cost and selling price.</p>
+                <div className="grid grid-cols-3 gap-3 mb-4">
+                  <div className="rounded-lg p-3 text-center" style={{ background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)" }}>
+                    <p className="text-indigo-400 text-xs mb-1">Total Products</p>
+                    <p className="text-white font-bold">{totalProducts}</p>
                   </div>
-                );
-              })}
-            </div>
+                  <div className="rounded-lg p-3 text-center" style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)" }}>
+                    <p className="text-amber-400 text-xs mb-1">Cost Value</p>
+                    <p className="text-white font-bold text-sm">Rs. {Math.round(totalInventoryCostValue).toLocaleString()}</p>
+                  </div>
+                  <div className="rounded-lg p-3 text-center" style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)" }}>
+                    <p className="text-green-400 text-xs mb-1">Sales Value</p>
+                    <p className="text-white font-bold text-sm">Rs. {Math.round(totalPotentialSalesValue).toLocaleString()}</p>
+                  </div>
+                </div>
+                <div className="overflow-x-auto">
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.07]">
+                        <th className="py-2 text-left">Product</th>
+                        <th className="py-2 text-right">Stock</th>
+                        <th className="py-2 text-right">Cost/Unit</th>
+                        <th className="py-2 text-right">Sell/Unit</th>
+                        <th className="py-2 text-right">Total Cost</th>
+                        <th className="py-2 text-right">Total Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {activeProducts.slice(0, 20).map(p => {
+                        const stock = getProductStock(p);
+                        const cost = getProductCostPrice(p);
+                        const sell = getProductPrice(p);
+                        return (
+                          <tr key={p.id} className="border-b border-white/[0.04] hover:bg-white/[0.025]">
+                            <td className="py-2.5 text-white font-semibold truncate max-w-[140px]">{p.name}</td>
+                            <td className="py-2.5 text-gray-400 text-right">{stock}</td>
+                            <td className="py-2.5 text-gray-400 text-right">Rs. {cost.toLocaleString()}</td>
+                            <td className="py-2.5 text-gray-400 text-right">Rs. {sell.toLocaleString()}</td>
+                            <td className="py-2.5 text-amber-400 text-right">Rs. {(stock * cost).toLocaleString()}</td>
+                            <td className="py-2.5 text-green-400 text-right">Rs. {(stock * sell).toLocaleString()}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                  {activeProducts.length > 20 && <p className="text-gray-600 text-xs text-center mt-3">Showing 20 of {activeProducts.length} products</p>}
+                </div>
+              </div>
+            )}
+
+            {/* Product Profitability Report */}
+            {invReportTab === "profitability" && (
+              <div>
+                <p className="text-gray-400 text-xs mb-3">Profit breakdown per product from sales in the selected period.</p>
+                {Object.values(profitByProduct).length === 0 ? (
+                  <p className="text-gray-500 text-sm text-center py-8">No inventory-linked sales data</p>
+                ) : (
+                  <div className="overflow-x-auto">
+                    <table className="w-full text-sm">
+                      <thead>
+                        <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.07]">
+                          <th className="py-2 text-left">Product</th>
+                          <th className="py-2 text-right">Qty Sold</th>
+                          <th className="py-2 text-right">Revenue</th>
+                          <th className="py-2 text-right">Cost</th>
+                          <th className="py-2 text-right">Profit</th>
+                          <th className="py-2 text-right">Margin</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Object.values(profitByProduct).sort((a, b) => b.profit - a.profit).map((p, i) => {
+                          const margin = p.revenue > 0 ? ((p.profit / p.revenue) * 100).toFixed(1) : "0.0";
+                          return (
+                            <tr key={i} className="border-b border-white/[0.04] hover:bg-white/[0.025]">
+                              <td className="py-2.5 text-white font-semibold truncate max-w-[130px]">{p.name}</td>
+                              <td className="py-2.5 text-gray-400 text-right">{p.qty.toFixed(p.qty % 1 !== 0 ? 1 : 0)}</td>
+                              <td className="py-2.5 text-amber-400 text-right">Rs. {Math.round(p.revenue).toLocaleString()}</td>
+                              <td className="py-2.5 text-red-400 text-right">Rs. {Math.round(p.cost).toLocaleString()}</td>
+                              <td className={`py-2.5 text-right font-bold ${p.profit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                                {p.profit >= 0 ? "+" : ""}Rs. {Math.round(p.profit).toLocaleString()}
+                              </td>
+                              <td className={`py-2.5 text-right text-xs font-semibold ${parseFloat(margin) >= 20 ? "text-green-400" : parseFloat(margin) >= 0 ? "text-yellow-400" : "text-red-400"}`}>
+                                {margin}%
+                              </td>
+                            </tr>
+                          );
+                        })}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Low Stock Report */}
+            {invReportTab === "lowstock" && (
+              <div>
+                <p className="text-gray-400 text-xs mb-3">{lowStockItems.length} product(s) below reorder threshold.</p>
+                {lowStockItems.length === 0 ? (
+                  <p className="text-gray-500 text-sm text-center py-8">All products well stocked ✅</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.07]">
+                        <th className="py-2 text-left">Product</th>
+                        <th className="py-2 text-right">Current Stock</th>
+                        <th className="py-2 text-right">Threshold</th>
+                        <th className="py-2 text-right">Deficit</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {lowStockItems.map(p => {
+                        const stock = getProductStock(p);
+                        const threshold = parseInt(p.lowStockThreshold) || 10;
+                        return (
+                          <tr key={p.id} className="border-b border-white/[0.04] hover:bg-yellow-500/5">
+                            <td className="py-2.5 text-white font-semibold">{p.name}</td>
+                            <td className="py-2.5 text-yellow-400 font-bold text-right">{stock}</td>
+                            <td className="py-2.5 text-gray-400 text-right">{threshold}</td>
+                            <td className="py-2.5 text-red-400 text-right">-{threshold - stock}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+
+            {/* Out of Stock Report */}
+            {invReportTab === "outofstock" && (
+              <div>
+                <p className="text-gray-400 text-xs mb-3">{outOfStockProducts.length} product(s) have zero stock.</p>
+                {outOfStockProducts.length === 0 ? (
+                  <p className="text-gray-500 text-sm text-center py-8">No stock issues ✅</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.07]">
+                        <th className="py-2 text-left">Product</th>
+                        <th className="py-2 text-right">Category</th>
+                        <th className="py-2 text-right">Last Price</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {outOfStockProducts.map(p => (
+                        <tr key={p.id} className="border-b border-white/[0.04] hover:bg-red-500/5">
+                          <td className="py-2.5 text-white font-semibold">{p.name}</td>
+                          <td className="py-2.5 text-gray-400 text-right">{p.category || "—"}</td>
+                          <td className="py-2.5 text-amber-400 text-right">Rs. {getProductPrice(p).toLocaleString()}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+
+            {/* Dead Stock Report */}
+            {invReportTab === "deadstock" && (
+              <div>
+                <p className="text-gray-400 text-xs mb-3">
+                  Products where less than 20% of stock sold in 90 days — high remaining stock, low turnover.
+                </p>
+                {slowMoving90.length === 0 ? (
+                  <p className="text-gray-500 text-sm text-center py-8">No dead stock found ✅</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.07]">
+                        <th className="py-2 text-left">Product</th>
+                        <th className="py-2 text-right">Remaining</th>
+                        <th className="py-2 text-right">Sold (90d)</th>
+                        <th className="py-2 text-right">Sold %</th>
+                        <th className="py-2 text-right">Value Locked</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {slowMoving90.slice(0, 20).map(p => {
+                        const stock = p.currentStock;
+                        const sold = p.soldInWindow;
+                        const total = stock + sold;
+                        const pct = total > 0 ? ((sold / total) * 100).toFixed(0) : 0;
+                        const value = stock * getProductCostPrice(p);
+                        return (
+                          <tr key={p.id} className="border-b border-white/[0.04] hover:bg-red-500/5">
+                            <td className="py-2.5 text-white font-semibold truncate max-w-[140px]">{p.name}</td>
+                            <td className="py-2.5 text-gray-300 text-right font-semibold">{stock}</td>
+                            <td className="py-2.5 text-amber-400 text-right">{sold}</td>
+                            <td className="py-2.5 text-right">
+                              <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                                Number(pct) === 0
+                                  ? "bg-red-500/20 text-red-400"
+                                  : "bg-orange-500/20 text-orange-400"
+                              }`}>{pct}% sold</span>
+                            </td>
+                            <td className="py-2.5 text-red-400 text-right">Rs. {Math.round(value).toLocaleString()}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+
+            {/* Category Performance Report */}
+            {invReportTab === "category" && (
+              <div>
+                <p className="text-gray-400 text-xs mb-3">Performance breakdown by product category.</p>
+                {Object.keys(stockByCategory).length === 0 ? (
+                  <p className="text-gray-500 text-sm text-center py-8">No category data. Add categories to products.</p>
+                ) : (
+                  <table className="w-full text-sm">
+                    <thead>
+                      <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.07]">
+                        <th className="py-2 text-left">Category</th>
+                        <th className="py-2 text-right">Products</th>
+                        <th className="py-2 text-right">Total Stock</th>
+                        <th className="py-2 text-right">Cost Value</th>
+                        <th className="py-2 text-right">Sales Value</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {Object.entries(stockByCategory).sort((a, b) => b[1] - a[1]).map(([cat, stock]) => {
+                        const prods = activeProducts.filter(p => (p.category || "Uncategorized") === cat);
+                        const costVal = prods.reduce((s, p) => s + getProductStock(p) * getProductCostPrice(p), 0);
+                        const sellVal = prods.reduce((s, p) => s + getProductStock(p) * getProductPrice(p), 0);
+                        return (
+                          <tr key={cat} className="border-b border-white/[0.04] hover:bg-white/[0.025]">
+                            <td className="py-2.5 text-white font-semibold">{cat}</td>
+                            <td className="py-2.5 text-gray-400 text-right">{prods.length}</td>
+                            <td className="py-2.5 text-blue-400 text-right">{stock}</td>
+                            <td className="py-2.5 text-amber-400 text-right">Rs. {Math.round(costVal).toLocaleString()}</td>
+                            <td className="py-2.5 text-green-400 text-right">Rs. {Math.round(sellVal).toLocaleString()}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                )}
+              </div>
+            )}
+          </div>
+        </div>
+
+      </>
+    );
+  };
+
+  const renderCustomer = () => {
+    // ── Customer-only data (no invoice-less data) ──────────────────────────
+    const CHART_COLORS_C = ["#6366f1","#f59e0b","#10b981","#ef4444","#8b5cf6","#06b6d4","#f97316","#84cc16"];
+    const ttStyle = {
+      background: "rgba(15,15,25,0.97)", border: "1px solid rgba(255,255,255,0.1)",
+      borderRadius: "10px", color: "#fff", fontSize: "12px",
+    };
+    const ttItem  = { color: "#e5e7eb" };
+    const ttLabel = { color: "#fff", fontWeight: "600" };
+
+    const now = new Date();
+
+    // Per-customer invoice aggregation (ALL invoices, not date-filtered)
+    const custMap = {}; // customerId → { name, revenue, orders, balance, lastDate, invoices[] }
+    customers.forEach(c => {
+      custMap[c.id] = { id: c.id, name: c.name, city: c.city || "", revenue: 0, orders: 0, balance: 0, lastDate: null, invoices: [] };
+    });
+    invoices.forEach(inv => {
+      if (!inv.customerId || !custMap[inv.customerId]) return;
+      const c = custMap[inv.customerId];
+      c.revenue  += Number(inv.amount) || 0;
+      c.balance  += Number(inv.balance) || 0;
+      c.orders   += 1;
+      const d = inv.createdAt?.toDate ? inv.createdAt.toDate() : new Date(inv.createdAt);
+      if (!c.lastDate || d > c.lastDate) c.lastDate = d;
+      c.invoices.push(inv);
+    });
+    const custList = Object.values(custMap);
+
+    // ── KPI helpers ────────────────────────────────────────────────────────
+    const totalCust = customers.length;
+
+    // New customers this month
+    const newCustThisMonth = customers.filter(c => {
+      if (!c.createdAt) return false;
+      const d = c.createdAt.toDate ? c.createdAt.toDate() : new Date(c.createdAt);
+      return d.getMonth() === now.getMonth() && d.getFullYear() === now.getFullYear();
+    }).length;
+
+    // Active = purchased in last 30 days
+    const active30 = custList.filter(c => c.lastDate && (now - c.lastDate) <= 30*86400000).length;
+    const inactive  = totalCust - active30;
+
+    // Total revenue from customers (invoices that have a customerId)
+    const totalCustRevenue = custList.reduce((s, c) => s + c.revenue, 0);
+
+    // Outstanding receivables
+    const totalOutstanding = custList.reduce((s, c) => s + c.balance, 0);
+
+    // Average order value
+    const totalCustOrders = custList.reduce((s, c) => s + c.orders, 0);
+    const avgOrderVal = totalCustOrders > 0 ? totalCustRevenue / totalCustOrders : 0;
+
+    // Repeat customer rate (customers with >1 order)
+    const repeatCust = custList.filter(c => c.orders > 1).length;
+    const repeatRate = totalCust > 0 ? ((repeatCust / totalCust) * 100).toFixed(0) : 0;
+
+    // ── Chart 1: Customer Growth ───────────────────────────────────────────
+    const growthBucketsM = {};
+    customers.forEach(c => {
+      if (!c.createdAt) return;
+      const d = c.createdAt.toDate ? c.createdAt.toDate() : new Date(c.createdAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+      growthBucketsM[key] = (growthBucketsM[key] || 0) + 1;
+    });
+    const growthData = Object.entries(growthBucketsM)
+      .sort(([a],[b]) => a.localeCompare(b))
+      .map(([name, value]) => ({ name, value }));
+
+    // ── Chart 2: Revenue by Customer (top 10) ─────────────────────────────
+    const revByCust = custList
+      .filter(c => c.revenue > 0)
+      .sort((a, b) => b.revenue - a.revenue)
+      .slice(0, 10)
+      .map(c => ({ name: c.name.split(" ")[0], fullName: c.name, value: Math.round(c.revenue) }));
+
+    // ── Chart 3: Customer Segmentation ────────────────────────────────────
+    // VIP: top 20% by revenue, Regular: 21-60%, New: 0 orders or <30days, Inactive: no order 90+days
+    const sorted90 = [...custList].sort((a, b) => b.revenue - a.revenue);
+    const vipCount  = Math.max(1, Math.round(totalCust * 0.2));
+    const vipIds    = new Set(sorted90.slice(0, vipCount).map(c => c.id));
+    const newIds    = new Set(customers.filter(c => {
+      if (!c.createdAt) return false;
+      const d = c.createdAt.toDate ? c.createdAt.toDate() : new Date(c.createdAt);
+      return (now - d) <= 30*86400000;
+    }).map(c => c.id));
+    const inactiveIds = new Set(custList.filter(c => !c.lastDate || (now - c.lastDate) > 90*86400000).map(c => c.id));
+
+    let vipN = 0, regularN = 0, newN = 0, inactiveN = 0;
+    custList.forEach(c => {
+      if (inactiveIds.has(c.id))     inactiveN++;
+      else if (newIds.has(c.id))     newN++;
+      else if (vipIds.has(c.id))     vipN++;
+      else                           regularN++;
+    });
+    const segData = [
+      { name: "VIP",      value: vipN,      color: "#f59e0b" },
+      { name: "Regular",  value: regularN,  color: "#6366f1" },
+      { name: "New",      value: newN,      color: "#10b981" },
+      { name: "Inactive", value: inactiveN, color: "#ef4444" },
+    ].filter(s => s.value > 0);
+
+    // ── Chart 4: Monthly Revenue Trend from customers ─────────────────────
+    const monthRevData = {};
+    invoices.forEach(inv => {
+      if (!inv.customerId || !inv.createdAt) return;
+      const d = inv.createdAt.toDate ? inv.createdAt.toDate() : new Date(inv.createdAt);
+      const key = `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}`;
+      monthRevData[key] = (monthRevData[key] || 0) + (Number(inv.amount) || 0);
+    });
+    const monthRevChart = Object.entries(monthRevData)
+      .sort(([a],[b]) => a.localeCompare(b))
+      .slice(-12)
+      .map(([name, value]) => ({ name: name.slice(5), value: Math.round(value) }));
+
+    // ── Chart 5: Payment Status Pie ────────────────────────────────────────
+    const custInvoices = invoices.filter(inv => inv.customerId);
+    const paidN    = custInvoices.filter(i => i.status === "Paid").length;
+    const partialN = custInvoices.filter(i => i.status === "Partial").length;
+    const unpaidN  = custInvoices.filter(i => i.status === "Unpaid").length;
+    const overdueN = custInvoices.filter(i => {
+      if ((i.status==="Unpaid"||i.status==="Partial") && i.dueDate) return new Date(i.dueDate) < now;
+      return false;
+    }).length;
+    const payStatusData = [
+      { name: "Paid",         value: paidN,    color: "#10b981" },
+      { name: "Partially Paid",value: partialN, color: "#f59e0b" },
+      { name: "Unpaid",       value: unpaidN,  color: "#ef4444" },
+      { name: "Overdue",      value: overdueN, color: "#8b5cf6" },
+    ].filter(s => s.value > 0);
+
+    // ── Chart 6: Customer by City ──────────────────────────────────────────
+    const cityMap = {};
+    customers.forEach(c => {
+      const city = (c.city || "").trim() || "Unknown";
+      cityMap[city] = (cityMap[city] || 0) + 1;
+    });
+    const cityData = Object.entries(cityMap)
+      .sort((a, b) => b[1] - a[1])
+      .map(([name, value]) => ({ name, value }));
+    const hasCityData = cityData.some(c => c.name !== "Unknown");
+
+    // ── Chart 8: Most Purchased Products (from customer invoices) ─────────
+    const prodSales = {};
+    custInvoices.forEach(inv => {
+      (inv.items || []).forEach(item => {
+        const name = item.productName || item.description || "Unknown";
+        if (name.startsWith("Previous Balance")) return;
+        const qty = Number(item.qty) || Number(item.quantity) || 0;
+        prodSales[name] = (prodSales[name] || 0) + qty;
+      });
+    });
+    const topProducts = Object.entries(prodSales)
+      .sort((a,b) => b[1]-a[1])
+      .slice(0, 8)
+      .map(([name, value]) => ({ name: name.length > 20 ? name.slice(0,18)+"…" : name, value }));
+
+    // ── Customer Activity buckets ──────────────────────────────────────────
+    const actWeek  = custList.filter(c => c.lastDate && (now-c.lastDate) <= 7*86400000).length;
+    const actMonth = custList.filter(c => c.lastDate && (now-c.lastDate) <= 30*86400000).length;
+    const no30     = custList.filter(c => !c.lastDate || (now-c.lastDate) > 30*86400000).length;
+    const no90     = custList.filter(c => !c.lastDate || (now-c.lastDate) > 90*86400000).length;
+
+    // ── Outstanding balance report ─────────────────────────────────────────
+    const outstandingList = custList
+      .filter(c => c.balance > 0)
+      .sort((a, b) => b.balance - a.balance);
+
+    // ── Quick Insights ─────────────────────────────────────────────────────
+    const highestSpender  = [...custList].sort((a,b)=>b.revenue-a.revenue)[0];
+    const mostActive      = [...custList].sort((a,b)=>b.orders-a.orders)[0];
+    const highestBalance  = [...custList].sort((a,b)=>b.balance-a.balance)[0];
+    const inactive90List  = custList.filter(c => !c.lastDate || (now-c.lastDate)>90*86400000);
+
+    return (
+      <>
+        {/* ===== KPI CARDS ROW 1 ===== */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatCard label="Total Customers"       value={totalCust.toLocaleString()}          icon="👥" color="from-cyan-500 to-blue-600" />
+          <StatCard label="New This Month"         value={newCustThisMonth.toLocaleString()}   icon="🆕" color="from-green-500 to-emerald-600" subtitle="added this month" />
+          <StatCard label="Active Customers"       value={active30.toLocaleString()}           icon="🟢" color="from-teal-500 to-cyan-600" subtitle="purchased in 30d" />
+          <StatCard label="Inactive Customers"     value={inactive.toLocaleString()}           icon="🔴" color="from-red-500 to-rose-600" subtitle="no purchase 30d+" />
+        </div>
+
+        {/* ===== KPI CARDS ROW 2 ===== */}
+        <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          <StatCard label="Total Customer Revenue" value={`Rs. ${Math.round(totalCustRevenue).toLocaleString()}`} icon="💰" color="from-amber-500 to-orange-600" />
+          <StatCard label="Outstanding Receivables"value={`Rs. ${Math.round(totalOutstanding).toLocaleString()}`} icon="💳" color="from-red-500 to-pink-600" subtitle="unpaid balance" />
+          <StatCard label="Avg Order Value"         value={`Rs. ${Math.round(avgOrderVal).toLocaleString()}`}    icon="📄" color="from-purple-500 to-indigo-600" subtitle="per invoice" />
+          <StatCard label="Repeat Customer Rate"    value={`${repeatRate}%`}                  icon="⭐" color="from-yellow-500 to-amber-600" subtitle={`${repeatCust} repeat buyers`} />
+        </div>
+
+        {/* ===== CHART ROW 1: Growth + Revenue by Customer ===== */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Customer Growth Line Chart */}
+          <div className="rounded-xl p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-base mb-1">📈 Customer Growth</h3>
+            <p className="text-gray-500 text-xs mb-4">New customers added over time</p>
+            {growthData.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-10">No data yet</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={growthData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                  <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 10 }} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 10 }} allowDecimals={false} />
+                  <Tooltip contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v) => [v, "New Customers"]} />
+                  <Line type="monotone" dataKey="value" stroke="#06b6d4" strokeWidth={2.5} dot={{ fill: "#06b6d4", r: 4 }} activeDot={{ r: 6 }} name="New Customers" />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+
+          {/* Revenue by Customer Horizontal Bar */}
+          <div className="rounded-xl p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-base mb-1">💰 Revenue by Customer</h3>
+            <p className="text-gray-500 text-xs mb-4">Top 10 customers by total purchases</p>
+            {revByCust.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-10">No customer invoices yet</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={revByCust.length * 36 + 20}>
+                <BarChart data={revByCust} layout="vertical" margin={{ top: 0, right: 70, left: 0, bottom: 0 }} barCategoryGap="30%">
+                  <XAxis type="number" hide />
+                  <YAxis type="category" dataKey="name" width={80} tick={{ fill: "#9ca3af", fontSize: 11 }} tickLine={false} axisLine={false} />
+                  <Tooltip contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel}
+                    formatter={(v, _, props) => [`Rs. ${Number(v).toLocaleString()}`, props.payload.fullName]} />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={18}>
+                    {revByCust.map((_, i) => <Cell key={i} fill={CHART_COLORS_C[i % CHART_COLORS_C.length]} />)}
+                    <LabelList dataKey="value" position="right"
+                      formatter={(v) => `Rs. ${v>=1000?(v/1000).toFixed(0)+"k":v}`}
+                      style={{ fill: "#9ca3af", fontSize: 10 }} />
+                  </Bar>
+                </BarChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* ===== CHART ROW 2: Segmentation Pie + Monthly Revenue Trend ===== */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Customer Segmentation Donut */}
+          <div className="rounded-xl p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-base mb-1">🎯 Customer Segmentation</h3>
+            <p className="text-gray-500 text-xs mb-3">Based on activity and spending</p>
+            {segData.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-10">No customers yet</p>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <ResponsiveContainer width="100%" height={180}>
+                  <PieChart>
+                    <Pie data={segData} cx="50%" cy="50%" innerRadius={50} outerRadius={78} paddingAngle={3} dataKey="value" label={false}>
+                      {segData.map((s, i) => <Cell key={i} fill={s.color} strokeWidth={0} />)}
+                    </Pie>
+                    <Tooltip contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v, name) => [v, name]} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="space-y-2">
+                  {segData.map(s => {
+                    const pct = totalCust > 0 ? ((s.value/totalCust)*100).toFixed(0) : 0;
+                    return (
+                      <div key={s.name} className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: s.color }} />
+                        <span className="text-gray-300 text-xs flex-1">{s.name}</span>
+                        <span className="text-white text-xs font-semibold">{s.value}</span>
+                        <span className="text-gray-500 text-[10px] w-9 text-right">{pct}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Monthly Revenue Trend Line */}
+          <div className="rounded-xl p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-base mb-1">📅 Monthly Revenue Trend</h3>
+            <p className="text-gray-500 text-xs mb-4">Revenue from customers month by month</p>
+            {monthRevChart.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-10">No revenue data</p>
+            ) : (
+              <ResponsiveContainer width="100%" height={220}>
+                <LineChart data={monthRevChart} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+                  <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
+                  <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 10 }} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 10 }} tickFormatter={v=>`${(v/1000).toFixed(0)}k`} />
+                  <Tooltip contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v)=>[`Rs. ${Number(v).toLocaleString()}`,"Revenue"]} />
+                  <Line type="monotone" dataKey="value" stroke="#f59e0b" strokeWidth={2.5} dot={{ fill:"#f59e0b",r:3 }} activeDot={{ r:6 }} />
+                </LineChart>
+              </ResponsiveContainer>
+            )}
+          </div>
+        </div>
+
+        {/* ===== CHART ROW 3: Payment Status + City Distribution ===== */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Payment Status Pie */}
+          <div className="rounded-xl p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-base mb-1">💳 Payment Status</h3>
+            <p className="text-gray-500 text-xs mb-3">Invoice payment breakdown for customers</p>
+            {payStatusData.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-10">No customer invoices</p>
+            ) : (
+              <div className="flex flex-col gap-4">
+                <ResponsiveContainer width="100%" height={180}>
+                  <PieChart>
+                    <Pie data={payStatusData} cx="50%" cy="50%" innerRadius={50} outerRadius={78} paddingAngle={3} dataKey="value" label={false}>
+                      {payStatusData.map((s, i) => <Cell key={i} fill={s.color} strokeWidth={0} />)}
+                    </Pie>
+                    <Tooltip contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v,name)=>[v, name]} />
+                  </PieChart>
+                </ResponsiveContainer>
+                <div className="space-y-2">
+                  {payStatusData.map(s => {
+                    const total = payStatusData.reduce((a,b)=>a+b.value,0);
+                    const pct = total > 0 ? ((s.value/total)*100).toFixed(0) : 0;
+                    return (
+                      <div key={s.name} className="flex items-center gap-2">
+                        <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: s.color }} />
+                        <span className="text-gray-300 text-xs flex-1">{s.name}</span>
+                        <span className="text-white text-xs font-semibold">{s.value}</span>
+                        <span className="text-gray-500 text-[10px] w-9 text-right">{pct}%</span>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Customer by City */}
+          <div className="rounded-xl p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-base mb-1">🌍 Customer Location</h3>
+            <p className="text-gray-500 text-xs mb-4">Customers by city</p>
+            {!hasCityData ? (
+              <p className="text-gray-500 text-sm text-center py-10">No city data — add city when creating customers</p>
+            ) : (
+              <div className="space-y-2.5">
+                {cityData.filter(c=>c.name!=="Unknown").slice(0,8).map((c, i) => {
+                  const pct = totalCust > 0 ? ((c.value/totalCust)*100).toFixed(0) : 0;
+                  return (
+                    <div key={c.name}>
+                      <div className="flex justify-between text-xs mb-1">
+                        <span className="text-gray-300">{c.name}</span>
+                        <span className="text-white font-semibold">{c.value} ({pct}%)</span>
+                      </div>
+                      <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
+                        <div className="h-full rounded-full transition-all duration-700"
+                          style={{ width:`${pct}%`, background: CHART_COLORS_C[i % CHART_COLORS_C.length] }} />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ===== TOP 10 CUSTOMERS TABLE ===== */}
+        <div className="rounded-xl overflow-hidden" style={cardStyle}>
+          <div className="px-5 py-4 border-b border-white/[0.07]">
+            <h3 className="text-white font-bold text-base">🏆 Top 10 Customers</h3>
+            <p className="text-gray-500 text-xs mt-0.5">Ranked by total revenue</p>
+          </div>
+          {custList.filter(c=>c.orders>0).length === 0 ? (
+            <p className="text-gray-500 text-sm text-center py-10">No customer purchases yet</p>
+          ) : (
+            <table className="w-full text-sm">
+              <thead>
+                <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.05]">
+                  <th className="px-5 py-2 text-left">#</th>
+                  <th className="px-5 py-2 text-left">Customer</th>
+                  <th className="px-5 py-2 text-right">Revenue</th>
+                  <th className="px-5 py-2 text-right">Orders</th>
+                  <th className="px-5 py-2 text-right">Outstanding</th>
+                  <th className="px-5 py-2 text-right">Last Purchase</th>
+                </tr>
+              </thead>
+              <tbody>
+                {[...custList].filter(c=>c.orders>0).sort((a,b)=>b.revenue-a.revenue).slice(0,10).map((c, i) => (
+                  <tr key={c.id} className="border-b border-white/[0.04] hover:bg-white/[0.025]">
+                    <td className="px-5 py-3 text-gray-500 text-sm">{i+1}</td>
+                    <td className="px-5 py-3">
+                      <p className="text-white font-semibold text-sm truncate max-w-[140px]">{c.name}</p>
+                    </td>
+                    <td className="px-5 py-3 text-amber-400 font-bold text-right">Rs. {Math.round(c.revenue).toLocaleString()}</td>
+                    <td className="px-5 py-3 text-gray-300 text-right">{c.orders}</td>
+                    <td className="px-5 py-3 text-right">
+                      {c.balance > 0
+                        ? <span className="text-red-400 font-semibold">Rs. {Math.round(c.balance).toLocaleString()}</span>
+                        : <span className="text-green-400 text-xs">✓ Clear</span>}
+                    </td>
+                    <td className="px-5 py-3 text-gray-500 text-right text-xs">
+                      {c.lastDate ? c.lastDate.toLocaleDateString("en-PK",{day:"2-digit",month:"short",year:"numeric"}) : "—"}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           )}
         </div>
-      </div>
-    </>
-  );
+
+        {/* ===== MOST PURCHASED PRODUCTS ===== */}
+        <div className="rounded-xl p-5" style={cardStyle}>
+          <h3 className="text-white font-bold text-base mb-1">🛍️ Most Purchased Products</h3>
+          <p className="text-gray-500 text-xs mb-4">Products most frequently bought by customers</p>
+          {topProducts.length === 0 ? (
+            <p className="text-gray-500 text-sm text-center py-8">No product data</p>
+          ) : (
+            <ResponsiveContainer width="100%" height={topProducts.length * 38 + 20}>
+              <BarChart data={topProducts} layout="vertical" margin={{ top: 0, right: 60, left: 0, bottom: 0 }} barCategoryGap="30%">
+                <XAxis type="number" hide />
+                <YAxis type="category" dataKey="name" width={140} tick={{ fill: "#9ca3af", fontSize: 11 }} tickLine={false} axisLine={false} />
+                <Tooltip contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v)=>[`${v} units`,"Sold"]} />
+                <Bar dataKey="value" radius={[0,4,4,0]} maxBarSize={16}>
+                  {topProducts.map((_,i) => <Cell key={i} fill={CHART_COLORS_C[i % CHART_COLORS_C.length]} />)}
+                  <LabelList dataKey="value" position="right" style={{ fill:"#9ca3af", fontSize:11 }} />
+                </Bar>
+              </BarChart>
+            </ResponsiveContainer>
+          )}
+        </div>
+
+        {/* ===== CUSTOMER ACTIVITY + OUTSTANDING BALANCE ===== */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+          {/* Activity Buckets */}
+          <div className="rounded-xl p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-base mb-4">⚡ Customer Activity</h3>
+            <div className="space-y-3">
+              {[
+                { label:"Active This Week",        value: actWeek,  color:"#10b981", bg:"rgba(16,185,129,0.1)",  border:"rgba(16,185,129,0.25)" },
+                { label:"Active This Month",        value: actMonth, color:"#06b6d4", bg:"rgba(6,182,212,0.1)",   border:"rgba(6,182,212,0.25)" },
+                { label:"No Purchase in 30 Days",   value: no30,     color:"#f59e0b", bg:"rgba(245,158,11,0.1)",  border:"rgba(245,158,11,0.25)" },
+                { label:"No Purchase in 90 Days",   value: no90,     color:"#ef4444", bg:"rgba(239,68,68,0.1)",   border:"rgba(239,68,68,0.25)" },
+              ].map(row => (
+                <div key={row.label} className="flex items-center justify-between px-4 py-3 rounded-lg"
+                  style={{ background: row.bg, border:`1px solid ${row.border}` }}>
+                  <span className="text-white text-sm font-medium">{row.label}</span>
+                  <span className="text-xl font-black" style={{ color: row.color }}>{row.value}</span>
+                </div>
+              ))}
+            </div>
+          </div>
+
+          {/* Outstanding Balance Report */}
+          <div className="rounded-xl overflow-hidden" style={cardStyle}>
+            <div className="px-5 py-3 border-b border-white/[0.07] flex items-center gap-2">
+              <span className="text-red-400">💳</span>
+              <h3 className="text-white font-bold text-base">Outstanding Balance Report</h3>
+              <span className="ml-auto px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 text-xs font-bold">
+                {outstandingList.length}
+              </span>
+            </div>
+            {outstandingList.length === 0 ? (
+              <p className="text-gray-500 text-sm text-center py-10">No outstanding balances ✅</p>
+            ) : (
+              <div className="divide-y divide-white/[0.04] max-h-72 overflow-y-auto">
+                <div className="grid px-5 py-2 text-[10px] uppercase tracking-widest text-gray-600"
+                  style={{ gridTemplateColumns: "1fr auto" }}>
+                  <span>Customer</span><span className="text-right">Outstanding</span>
+                </div>
+                {outstandingList.map(c => (
+                  <div key={c.id} className="grid px-5 py-2.5 hover:bg-red-500/5 items-center"
+                    style={{ gridTemplateColumns: "1fr auto" }}>
+                    <div>
+                      <p className="text-white text-sm font-semibold">{c.name}</p>
+                      <p className="text-gray-600 text-xs">{c.orders} orders</p>
+                    </div>
+                    <span className="text-red-400 font-bold text-sm">Rs. {Math.round(c.balance).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        </div>
+
+        {/* ===== QUICK INSIGHTS ===== */}
+        <div className="rounded-xl p-5" style={cardStyle}>
+          <h3 className="text-white font-bold text-base mb-4">💡 Quick Insights</h3>
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-3">
+            {[
+              { label:"Highest Spending Customer", icon:"👑",
+                value: highestSpender?.name || "—",
+                sub: highestSpender ? `Rs. ${Math.round(highestSpender.revenue).toLocaleString()}` : "",
+                color:"#f59e0b" },
+              { label:"Most Active Customer", icon:"🔥",
+                value: mostActive?.name || "—",
+                sub: mostActive ? `${mostActive.orders} orders` : "",
+                color:"#10b981" },
+              { label:"Highest Outstanding", icon:"⚠️",
+                value: highestBalance?.balance > 0 ? highestBalance.name : "None",
+                sub: highestBalance?.balance > 0 ? `Rs. ${Math.round(highestBalance.balance).toLocaleString()}` : "All clear ✅",
+                color:"#ef4444" },
+              { label:"Inactive 90+ Days", icon:"😴",
+                value: `${inactive90List.length} customers`,
+                sub: inactive90List.length > 0 ? "Need re-engagement" : "All active ✅",
+                color:"#8b5cf6" },
+            ].map(ins => (
+              <div key={ins.label} className="rounded-lg p-4"
+                style={{ background:`rgba(255,255,255,0.03)`, border:`1px solid rgba(255,255,255,0.08)` }}>
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xl">{ins.icon}</span>
+                  <p className="text-gray-500 text-[10px] uppercase tracking-wide font-semibold">{ins.label}</p>
+                </div>
+                <p className="text-white font-bold text-sm truncate" style={{ color: ins.color }}>{ins.value}</p>
+                {ins.sub && <p className="text-gray-600 text-xs mt-0.5">{ins.sub}</p>}
+              </div>
+            ))}
+          </div>
+        </div>
+
+      </>
+    );
+  };
 
   const renderPayment = () => (
     <>
@@ -788,12 +2195,12 @@ export default function AnalyticsView({ uid }) {
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <DoughnutChart 
+        <CssDoughnutChart 
           data={paymentMethods} 
           title="💳 Payment Method Breakdown" 
           colors={["from-blue-500 to-cyan-600", "from-green-500 to-emerald-600", "from-purple-500 to-pink-600", "from-amber-500 to-orange-600"]} 
         />
-        <BarChart data={monthlyCollection} title="📊 Monthly Collection" color="from-green-500 to-emerald-600" />
+        <CssBarChart data={monthlyCollection} title="📊 Monthly Collection" color="from-green-500 to-emerald-600" />
       </div>
     </>
   );
@@ -871,58 +2278,210 @@ export default function AnalyticsView({ uid }) {
     </>
   );
 
-  const renderProfit = () => (
+  const renderProfit = () => {
+    const zeroCostProducts = Object.values(profitByProduct).filter(p => p.cost === 0 && p.revenue > 0);
+    const hasMissingCost = zeroCostProducts.length > 0;
+    const PROFIT_FILTERS = [
+      { id: "all", label: "All Time" },
+      { id: "month", label: "This Month" },
+      { id: "lastMonth", label: "Last Month" },
+      { id: "year", label: "This Year" },
+      { id: "week", label: "This Week" },
+    ];
+
+    return (
     <>
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Gross Profit" value={`Rs. ${grossProfit.toLocaleString()}`} icon="💰" color={grossProfit >= 0 ? "from-green-500 to-emerald-600" : "from-red-500 to-rose-600"} />
-        <StatCard label="Net Profit" value={`Rs. ${netProfit.toLocaleString()}`} icon="💵" color={netProfit >= 0 ? "from-green-500 to-emerald-600" : "from-red-500 to-rose-600"} />
-        <StatCard label="Profit Margin" value={`${profitMargin}%`} icon="📊" color={parseFloat(profitMargin) >= 0 ? "from-blue-500 to-cyan-600" : "from-red-500 to-rose-600"} />
-        <StatCard label="Total Revenue" value={`Rs. ${actualRevenue.toLocaleString()}`} icon="💸" color="from-amber-500 to-orange-600" />
+      {/* ── Profit Date Filter ── */}
+      <div className="flex flex-wrap gap-2 pb-1">
+        {PROFIT_FILTERS.map(f => (
+          <button key={f.id} onClick={() => setProfitDateFilter(f.id)}
+            className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-200"
+            style={{
+              background: profitDateFilter === f.id ? "linear-gradient(135deg,#10b981,#059669)" : "rgba(255,255,255,0.05)",
+              border: `1px solid ${profitDateFilter === f.id ? "#10b981" : "rgba(255,255,255,0.1)"}`,
+              color: profitDateFilter === f.id ? "#fff" : "#9ca3af",
+            }}>
+            {f.label}
+          </button>
+        ))}
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-        <div className="rounded-xl p-5" style={cardStyle}>
-          <h3 className="text-white font-bold text-base mb-4">📊 Profit vs Expense</h3>
-          <div className="space-y-4">
-            <div>
-              <div className="flex justify-between mb-2">
-                <span className="text-green-400 text-sm font-semibold">Revenue</span>
-                <span className="text-white font-bold">Rs. {actualRevenue.toLocaleString()}</span>
-              </div>
-              <div className="w-full h-3 rounded-full bg-white/10 overflow-hidden">
-                <div className="h-full rounded-full bg-gradient-to-r from-green-500 to-emerald-600" style={{ width: "100%" }} />
-              </div>
+      {/* ── Main Summary Card ── */}
+      <div className="rounded-xl p-6" style={{ ...cardStyle, border: `1px solid ${netProfit >= 0 ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}` }}>
+        <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
+          {/* Title */}
+          <div className="flex-shrink-0">
+            <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-1">💵 Profit Summary</p>
+            <p className="text-gray-500 text-xs">Inventory-linked invoice items only</p>
+          </div>
+          
+          {/* Numbers */}
+          <div className="flex-1 grid grid-cols-1 sm:grid-cols-3 gap-4">
+            {/* Total Sales */}
+            <div className="rounded-xl px-5 py-4" style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }}>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500 mb-1">Total Sales</p>
+              <p className="text-white font-black text-2xl">Rs. {totalInventoryRevenue.toLocaleString()}</p>
+              <p className="text-gray-500 text-[10px] mt-0.5">{inventoryItemCount} item{inventoryItemCount !== 1 ? "s" : ""} sold</p>
             </div>
-            <div>
-              <div className="flex justify-between mb-2">
-                <span className="text-red-400 text-sm font-semibold">Expenses</span>
-                <span className="text-white font-bold">Rs. {totalPurchases.toLocaleString()}</span>
-              </div>
-              <div className="w-full h-3 rounded-full bg-white/10 overflow-hidden">
-                <div className="h-full rounded-full bg-gradient-to-r from-red-500 to-rose-600" 
-                  style={{ width: actualRevenue > 0 ? `${(totalPurchases / actualRevenue) * 100}%` : "0%" }} />
-              </div>
+
+            {/* Total Cost */}
+            <div className="rounded-xl px-5 py-4" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-red-400 mb-1">Total Cost</p>
+              <p className="text-white font-black text-2xl">Rs. {totalInventoryCost.toLocaleString()}</p>
+              <p className="text-gray-500 text-[10px] mt-0.5">Sum of cost prices</p>
             </div>
-            <div className="pt-3 border-t border-white/10">
-              <div className={`flex justify-between items-center p-4 rounded-lg`} style={{ 
-                background: netProfit >= 0 ? "rgba(16,185,129,0.15)" : "rgba(239,68,68,0.15)", 
-                border: `1px solid ${netProfit >= 0 ? 'rgba(16,185,129,0.3)' : 'rgba(239,68,68,0.3)'}` 
-              }}>
-                <span className={`text-base font-black ${netProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
-                  {netProfit >= 0 ? "✅ Net Profit" : "❌ Net Loss"}
-                </span>
-                <span className={`font-black text-2xl ${netProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
-                  Rs. {Math.abs(netProfit).toLocaleString()}
-                </span>
-              </div>
+
+            {/* Profit */}
+            <div className="rounded-xl px-5 py-4" style={{
+              background: netProfit >= 0 ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
+              border: `1px solid ${netProfit >= 0 ? "rgba(16,185,129,0.3)" : "rgba(239,68,68,0.3)"}`
+            }}>
+              <p className={`text-[10px] font-bold uppercase tracking-widest mb-1 ${netProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {netProfit >= 0 ? "✅ Profit" : "❌ Loss"}
+              </p>
+              <p className={`font-black text-2xl ${netProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                Rs. {Math.abs(netProfit).toLocaleString()}
+              </p>
+              <p className="text-gray-500 text-[10px] mt-0.5">Margin: {profitMargin}%</p>
             </div>
           </div>
         </div>
 
-        <BarChart data={monthlyProfit} title="📈 Monthly Profit Trend (Area Chart Representation)" color={netProfit >= 0 ? "from-green-500 to-emerald-600" : "from-red-500 to-rose-600"} />
+        {/* Warning: missing cost prices */}
+        {hasMissingCost && (
+          <div className="mt-4 px-4 py-3 rounded-lg flex items-start gap-2"
+            style={{ background: "rgba(251,191,36,0.07)", border: "1px solid rgba(251,191,36,0.2)" }}>
+            <span className="text-amber-400 text-sm flex-shrink-0">⚠️</span>
+            <p className="text-amber-400 text-xs">
+              <strong>{zeroCostProducts.length}</strong> product{zeroCostProducts.length > 1 ? "s have" : " has"} cost price set to 0 —
+              profit may be overstated. Go to <strong>Inventory</strong> and set the correct cost prices.
+            </p>
+          </div>
+        )}
+
+        {skippedItemCount > 0 && (
+          <p className="mt-3 text-gray-600 text-[10px] text-center">
+            ℹ️ {skippedItemCount} invoice item{skippedItemCount > 1 ? "s" : ""} not counted — not linked to inventory
+          </p>
+        )}
+      </div>
+
+      {/* ── Trend + Per-product table ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
+        {/* Monthly trend */}
+        <CssBarChart
+          data={monthlyProfit}
+          title="📈 Monthly Profit Trend"
+          color={netProfit >= 0 ? "from-green-500 to-emerald-600" : "from-red-500 to-rose-600"}
+        />
+
+        {/* Revenue vs Cost bar */}
+        <div className="rounded-xl p-5" style={cardStyle}>
+          <h3 className="text-white font-bold text-base mb-5">📊 Sales vs Cost Breakdown</h3>
+          <div className="space-y-4">
+            <div>
+              <div className="flex justify-between mb-1.5">
+                <span className="text-amber-400 text-sm font-semibold">Total Sales</span>
+                <span className="text-white font-bold">Rs. {totalInventoryRevenue.toLocaleString()}</span>
+              </div>
+              <div className="w-full h-3 rounded-full bg-white/10 overflow-hidden">
+                <div className="h-full rounded-full bg-gradient-to-r from-amber-500 to-orange-500" style={{ width: "100%" }} />
+              </div>
+            </div>
+            <div>
+              <div className="flex justify-between mb-1.5">
+                <span className="text-red-400 text-sm font-semibold">Total Cost</span>
+                <span className="text-white font-bold">Rs. {totalInventoryCost.toLocaleString()}</span>
+              </div>
+              <div className="w-full h-3 rounded-full bg-white/10 overflow-hidden">
+                <div className="h-full rounded-full bg-gradient-to-r from-red-500 to-rose-600"
+                  style={{ width: totalInventoryRevenue > 0 ? `${Math.min((totalInventoryCost / totalInventoryRevenue) * 100, 100)}%` : "0%" }} />
+              </div>
+            </div>
+            <div className="pt-2 border-t border-white/10">
+              <div className="flex justify-between mb-1.5">
+                <span className={`text-sm font-semibold ${netProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                  {netProfit >= 0 ? "Profit" : "Loss"}
+                </span>
+                <span className={`font-bold ${netProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                  Rs. {Math.abs(netProfit).toLocaleString()}
+                </span>
+              </div>
+              <div className="w-full h-3 rounded-full bg-white/10 overflow-hidden">
+                <div className={`h-full rounded-full ${netProfit >= 0 ? "bg-gradient-to-r from-green-500 to-emerald-500" : "bg-gradient-to-r from-red-500 to-rose-600"}`}
+                  style={{ width: totalInventoryRevenue > 0 ? `${Math.min((Math.abs(netProfit) / totalInventoryRevenue) * 100, 100)}%` : "0%" }} />
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      {/* ── Per-product profit table ── */}
+      <div className="rounded-xl overflow-hidden" style={cardStyle}>
+        <div className="px-5 py-4 border-b border-white/[0.07]">
+          <h3 className="text-white font-bold text-base">📦 Product-wise Sales & Profit</h3>
+          <p className="text-gray-500 text-xs mt-0.5">Only inventory-linked products shown</p>
+        </div>
+
+        {Object.values(profitByProduct).length === 0 ? (
+          <div className="py-12 text-center">
+            <p className="text-gray-500 text-sm">No inventory-linked sales in this period</p>
+            <p className="text-gray-600 text-xs mt-1">Invoices need products from your inventory to calculate profit</p>
+          </div>
+        ) : (
+          <div>
+            {/* Table header */}
+            <div className="hidden md:grid px-5 py-2 text-[10px] font-bold uppercase tracking-widest"
+              style={{ color: "#4b5563", borderBottom: "1px solid rgba(255,255,255,0.05)", gridTemplateColumns: "3fr 1fr 1fr 1fr 1fr" }}>
+              <span>Product</span>
+              <span className="text-right">Qty Sold</span>
+              <span className="text-right">Total Sales</span>
+              <span className="text-right">Total Cost</span>
+              <span className="text-right">Profit / Loss</span>
+            </div>
+
+            {Object.values(profitByProduct)
+              .sort((a, b) => b.profit - a.profit)
+              .map((p, i) => (
+                <div key={i}
+                  className="grid px-5 py-3.5 hover:bg-white/[0.025] transition-colors items-center"
+                  style={{ gridTemplateColumns: "3fr 1fr 1fr 1fr 1fr", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black flex-shrink-0"
+                      style={{
+                        background: p.profit > 0 ? "rgba(16,185,129,0.15)" : p.profit < 0 ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.07)",
+                        color: p.profit > 0 ? "#34d399" : p.profit < 0 ? "#f87171" : "#9ca3af"
+                      }}>
+                      #{i + 1}
+                    </div>
+                    <p className="text-white text-sm font-semibold truncate">{p.name}</p>
+                  </div>
+                  <p className="text-gray-400 text-sm text-right">{p.qty.toFixed(p.qty % 1 !== 0 ? 2 : 0)}</p>
+                  <p className="text-amber-400 text-sm font-semibold text-right">Rs. {Math.round(p.revenue).toLocaleString()}</p>
+                  <p className="text-red-400 text-sm text-right">Rs. {Math.round(p.cost).toLocaleString()}</p>
+                  <p className={`text-sm font-black text-right ${p.profit > 0 ? "text-green-400" : p.profit < 0 ? "text-red-400" : "text-gray-500"}`}>
+                    {p.profit > 0 ? "+" : ""}Rs. {Math.round(p.profit).toLocaleString()}
+                  </p>
+                </div>
+              ))}
+
+            {/* Footer total row */}
+            <div className="grid px-5 py-3.5 items-center font-black"
+              style={{ gridTemplateColumns: "3fr 1fr 1fr 1fr 1fr", background: "rgba(255,255,255,0.02)", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+              <span className="text-gray-400 text-xs uppercase tracking-widest">Total</span>
+              <span />
+              <span className="text-amber-400 text-sm text-right">Rs. {Math.round(totalInventoryRevenue).toLocaleString()}</span>
+              <span className="text-red-400 text-sm text-right">Rs. {Math.round(totalInventoryCost).toLocaleString()}</span>
+              <span className={`text-sm text-right ${netProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                {netProfit >= 0 ? "+" : ""}Rs. {Math.round(netProfit).toLocaleString()}
+              </span>
+            </div>
+          </div>
+        )}
       </div>
     </>
   );
+};
 
   // Main render
   return (

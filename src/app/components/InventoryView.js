@@ -1,7 +1,8 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
-import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp, query, where } from "firebase/firestore";
+import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import SweetAlert from "./SweetAlert";
 
 const cardStyle = { 
   background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", 
@@ -10,11 +11,33 @@ const cardStyle = {
 };
 
 const VARIANT_TYPES = [
-  { id: "none", label: "No Variants", icon: "📦", gradient: "from-orange-500 to-amber-600" },
-  { id: "weight", label: "Weight-based", icon: "⚖️", unit: "kg", presets: ["0.25", "0.5", "0.75", "1", "2", "5"], gradient: "from-pink-500 to-rose-600" },
-  { id: "length", label: "Length-based", icon: "📏", unit: "m", presets: ["1", "2", "3", "5", "10"], gradient: "from-purple-500 to-pink-600" },
-  { id: "size", label: "Size", icon: "👕", presets: ["XS", "S", "M", "L", "XL", "XXL"], gradient: "from-orange-500 to-pink-600" },
-  { id: "custom", label: "Custom", icon: "⚙️", gradient: "from-amber-500 to-orange-600" },
+  { id: "none",   label: "No Variants",   icon: "📦", gradient: "from-orange-500 to-amber-600" },
+  { id: "weight", label: "Weight-based",  icon: "⚖️", unit: "kg", presets: ["0.25", "0.5", "0.75", "1", "2", "5"], gradient: "from-pink-500 to-rose-600" },
+  { id: "length", label: "Length-based",  icon: "📏", unit: "m",  presets: ["1", "2", "3", "5", "10"], gradient: "from-purple-500 to-pink-600" },
+  { id: "size",   label: "Size",          icon: "👕", presets: ["XS", "S", "M", "L", "XL", "XXL"], gradient: "from-orange-500 to-pink-600" },
+  { id: "custom", label: "Custom",        icon: "⚙️", gradient: "from-amber-500 to-orange-600" },
+];
+
+const VALID_VARIANT_IDS = new Set(VARIANT_TYPES.map(t => t.id));
+
+const PRODUCT_CATEGORIES = [
+  "Clothing & Apparel",
+  "Electronics",
+  "Food & Grocery",
+  "Vegetables & Fruits",
+  "Dairy Products",
+  "Beverages",
+  "Software",
+  "Books & Stationery",
+  "Furniture",
+  "Hardware & Tools",
+  "Health & Medicine",
+  "Cosmetics & Beauty",
+  "Shoes & Footwear",
+  "Sports & Fitness",
+  "Toys & Games",
+  "Automotive",
+  "Other",
 ];
 
 export default function InventoryView({ uid }) {
@@ -24,6 +47,8 @@ export default function InventoryView({ uid }) {
   const [editProduct, setEditProduct] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
+  const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, name }
+  const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
 
   useEffect(() => {
     if (uid) loadProducts();
@@ -46,30 +71,40 @@ export default function InventoryView({ uid }) {
           ...productData,
           updatedAt: serverTimestamp(),
         });
+        setAlert({ show: true, type: "success", title: "Product Updated! ✓", message: `"${productData.name}" has been updated successfully.` });
       } else {
         await addDoc(collection(db, `users/${uid}/products`), {
           ...productData,
           createdAt: serverTimestamp(),
         });
+        setAlert({ show: true, type: "success", title: "Product Added! 📦", message: `"${productData.name}" has been added to inventory.` });
       }
       await loadProducts();
       closeModal();
     } catch (err) {
-      alert("Error: " + err.message);
+      setAlert({ show: true, type: "error", title: "Save Failed", message: err.message });
     }
   }
 
   async function handleDelete(id) {
-    if (!confirm("Delete this product?")) return;
+    // Show SweetAlert confirm dialog
+    const prod = products.find(p => p.id === id);
+    setDeleteConfirm({ id, name: prod?.name || "this product" });
+  }
+
+  async function confirmDelete() {
+    if (!deleteConfirm) return;
     try {
-      await updateDoc(doc(db, `users/${uid}/products`, id), {
+      await updateDoc(doc(db, `users/${uid}/products`, deleteConfirm.id), {
         deleted: true,
         deletedAt: serverTimestamp(),
       });
+      setAlert({ show: true, type: "success", title: "Product Deleted 🗑️", message: `"${deleteConfirm.name}" has been moved to trash.` });
       loadProducts();
     } catch (err) {
-      alert("Delete error: " + err.message);
+      setAlert({ show: true, type: "error", title: "Delete Failed", message: err.message });
     }
+    setDeleteConfirm(null);
   }
 
   function openAddModal() {
@@ -121,6 +156,42 @@ export default function InventoryView({ uid }) {
   return (
     <div className="flex flex-col gap-5 w-full">
       
+      {/* SweetAlert */}
+      <SweetAlert
+        show={alert.show}
+        type={alert.type}
+        title={alert.title}
+        message={alert.message}
+        onClose={() => setAlert({ ...alert, show: false })}
+      />
+
+      {/* Delete Confirm Dialog */}
+      {deleteConfirm && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)" }}>
+          <div className="w-full max-w-sm rounded-2xl p-6 flex flex-col gap-4 text-center"
+            style={{ background: "#0d1117", border: "1px solid rgba(248,113,113,0.3)", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
+            <p className="text-4xl">🗑️</p>
+            <h3 className="text-white font-bold text-lg">Delete Product?</h3>
+            <p className="text-gray-400 text-sm">
+              <span className="text-white font-semibold">&quot;{deleteConfirm.name}&quot;</span> This invoice will be moved to Trash. You can restore it within 15 days from the Trash section. After 15 days, it will be permanently deleted.
+            </p>
+            <div className="flex gap-3 mt-1">
+              <button onClick={() => setDeleteConfirm(null)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/10"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+                Cancel
+              </button>
+              <button onClick={confirmDelete}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all hover:scale-[1.02]"
+                style={{ background: "rgba(248,113,113,0.15)", border: "1px solid rgba(248,113,113,0.4)", color: "#f87171" }}>
+                Delete
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Professional Header */}
       <div className="relative overflow-hidden rounded-xl p-6" style={cardStyle}>
         <div className="absolute inset-0 bg-gradient-to-r from-orange-500/5 via-pink-500/5 to-purple-500/5 animate-gradient-x" />
@@ -334,6 +405,12 @@ function ProductCard({ product, onEdit, onDelete, index }) {
           {product.description && (
             <p className="text-gray-500 text-[11px] line-clamp-2 mt-1">{product.description}</p>
           )}
+          {product.category && (
+            <span className="inline-block mt-1.5 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+              style={{ background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc" }}>
+              🗂️ {product.category}
+            </span>
+          )}
         </div>
 
         {/* Variants Preview */}
@@ -347,7 +424,7 @@ function ProductCard({ product, onEdit, onDelete, index }) {
             <div className="flex flex-wrap gap-1.5">
               {product.variants.slice(0, 3).map((v, i) => (
                 <div key={i} className="px-2 py-1 rounded text-[10px] font-medium bg-white/5 text-gray-400 border border-white/10">
-                  {v.label}: <span className="text-amber-400 font-semibold">Rs. {v.price}</span>
+                  {v.label}: <span className="text-amber-400 font-semibold">Rs. {v.sellingPrice || v.price}</span>
                 </div>
               ))}
               {product.variants.length > 3 && (
@@ -358,9 +435,9 @@ function ProductCard({ product, onEdit, onDelete, index }) {
             </div>
           </div>
         ) : (
-          product.price && (
+          product.sellingPrice && (
             <div className="text-xl font-bold bg-gradient-to-r from-amber-400 to-orange-500 bg-clip-text text-transparent">
-              Rs. {product.price}
+              Rs. {product.sellingPrice}
             </div>
           )
         )}
@@ -406,14 +483,30 @@ function AddProductModal({ product, onSave, onClose }) {
   const [formData, setFormData] = useState({
     name: product?.name || "",
     description: product?.description || "",
+    category: product?.category || "",
     imageUrl: product?.imageUrl || "",
-    variantType: product?.variantType || "none",
-    variants: product?.variants || [],
+    // normalize variantType — unknown types → "custom", undefined → "none"
+    variantType: (() => {
+      const vt = product?.variantType || "none";
+      if (VALID_VARIANT_IDS.has(vt)) return vt;
+      // If has variants but unknown type → custom
+      if (product?.variants?.length > 0) return "custom";
+      return "none";
+    })(),
+    // normalize existing variants — add sellingPrice/costPrice fallback
+    variants: (product?.variants || []).map(v => ({
+      ...v,
+      sellingPrice: v.sellingPrice || v.price || "",
+      costPrice: v.costPrice || "",
+    })),
     price: product?.price || "",
+    // fallback: sellingPrice → price (for products created before this field existed)
+    costPrice: product?.costPrice || "",
+    sellingPrice: product?.sellingPrice || product?.price || "",
     stock: product?.stock || "",
   });
 
-  const [newVariant, setNewVariant] = useState({ label: "", price: "", stock: "" });
+  const [newVariant, setNewVariant] = useState({ label: "", costPrice: "", sellingPrice: "", stock: "" });
   const selectedType = VARIANT_TYPES.find(t => t.id === formData.variantType);
   const hasVariants = formData.variantType !== "none";
 
@@ -430,15 +523,15 @@ function AddProductModal({ product, onSave, onClose }) {
   }
 
   function addVariant() {
-    if (!newVariant.label || !newVariant.price) {
-      alert("Please enter variant label and price");
+    if (!newVariant.label || !newVariant.sellingPrice) {
+      alert("Please enter variant label and selling price");
       return;
     }
     setFormData(f => ({
       ...f,
-      variants: [...f.variants, { ...newVariant }],
+      variants: [...f.variants, { ...newVariant, price: newVariant.sellingPrice }],
     }));
-    setNewVariant({ label: "", price: "", stock: "" });
+    setNewVariant({ label: "", costPrice: "", sellingPrice: "", stock: "" });
   }
 
   function removeVariant(index) {
@@ -458,11 +551,16 @@ function AddProductModal({ product, onSave, onClose }) {
       alert("Please add at least one variant");
       return;
     }
-    if (!hasVariants && !formData.price) {
-      alert("Please enter product price");
+    if (!hasVariants && !formData.sellingPrice) {
+      alert("Please enter selling price");
       return;
     }
-    onSave(formData);
+    if (!hasVariants && !formData.costPrice) {
+      alert("Please enter cost price");
+      return;
+    }
+    // keep price in sync with sellingPrice for backward compatibility
+    onSave({ ...formData, price: formData.sellingPrice });
   }
 
   return (
@@ -556,6 +654,36 @@ function AddProductModal({ product, onSave, onClose }) {
             />
           </div>
 
+          {/* Category */}
+          <div>
+            <label className="text-gray-400 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
+              🗂️ Category
+            </label>
+            <div className="flex gap-2">
+              <select
+                value={formData.category}
+                onChange={e => setFormData(f => ({ ...f, category: e.target.value }))}
+                className="flex-1 px-4 py-2.5 rounded-lg text-sm text-white outline-none transition-all duration-300 focus:scale-[1.01]"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                <option value="" style={{ background: "#0d1117", color: "#9ca3af" }}>— Select Category —</option>
+                {PRODUCT_CATEGORIES.map(cat => (
+                  <option key={cat} value={cat} style={{ background: "#0d1117", color: "#fff" }}>{cat}</option>
+                ))}
+              </select>
+              {/* Custom category input — shown when "Other" selected or when product has a non-list category */}
+              {(formData.category === "Other" || (formData.category && !PRODUCT_CATEGORIES.includes(formData.category))) && (
+                <input
+                  type="text"
+                  placeholder="Type category name"
+                  value={PRODUCT_CATEGORIES.includes(formData.category) ? "" : formData.category}
+                  onChange={e => setFormData(f => ({ ...f, category: e.target.value }))}
+                  className="flex-1 px-4 py-2.5 rounded-lg text-sm text-white outline-none transition-all duration-300"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
+                />
+              )}
+            </div>
+          </div>
+
           {/* Variant Type */}
           <div>
             <label className="text-gray-400 text-[10px] font-semibold uppercase tracking-wide mb-2 block">
@@ -593,13 +721,27 @@ function AddProductModal({ product, onSave, onClose }) {
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-gray-400 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
-                  ₨ Price (Rs.) *
+                  💰 Cost Price (Rs.) *
                 </label>
                 <input
                   type="number"
                   placeholder="0"
-                  value={formData.price}
-                  onChange={e => setFormData(f => ({ ...f, price: e.target.value }))}
+                  value={formData.costPrice}
+                  onChange={e => setFormData(f => ({ ...f, costPrice: e.target.value }))}
+                  className="w-full px-4 py-2.5 rounded-lg text-sm text-white outline-none"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
+                  required
+                />
+              </div>
+              <div>
+                <label className="text-gray-400 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
+                  ₨ Selling Price (Rs.) *
+                </label>
+                <input
+                  type="number"
+                  placeholder="0"
+                  value={formData.sellingPrice}
+                  onChange={e => setFormData(f => ({ ...f, sellingPrice: e.target.value }))}
                   className="w-full px-4 py-2.5 rounded-lg text-sm text-white outline-none"
                   style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
                   required
@@ -652,20 +794,28 @@ function AddProductModal({ product, onSave, onClose }) {
 
               {/* Add Variant Form */}
               <div className="p-3 rounded-lg" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-2 mb-2">
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
                   <input
                     type="text"
                     placeholder={selectedType?.unit ? `e.g. 1 ${selectedType.unit}` : "e.g. Medium"}
                     value={newVariant.label}
                     onChange={e => setNewVariant(v => ({ ...v, label: e.target.value }))}
+                    className="px-3 py-2 rounded-lg text-xs text-white outline-none md:col-span-2"
+                    style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
+                  />
+                  <input
+                    type="number"
+                    placeholder="💰 Cost Price (Rs.)"
+                    value={newVariant.costPrice}
+                    onChange={e => setNewVariant(v => ({ ...v, costPrice: e.target.value }))}
                     className="px-3 py-2 rounded-lg text-xs text-white outline-none"
                     style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
                   />
                   <input
                     type="number"
-                    placeholder="Price (Rs.)"
-                    value={newVariant.price}
-                    onChange={e => setNewVariant(v => ({ ...v, price: e.target.value }))}
+                    placeholder="₨ Selling Price (Rs.)"
+                    value={newVariant.sellingPrice}
+                    onChange={e => setNewVariant(v => ({ ...v, sellingPrice: e.target.value }))}
                     className="px-3 py-2 rounded-lg text-xs text-white outline-none"
                     style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
                   />
@@ -695,7 +845,7 @@ function AddProductModal({ product, onSave, onClose }) {
                       style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
                       <div className="flex-1">
                         <p className="text-white text-sm font-semibold">{variant.label}</p>
-                        <p className="text-gray-500 text-xs">Rs. {variant.price} • Stock: {variant.stock || 0}</p>
+                        <p className="text-gray-500 text-xs">Selling: Rs. {variant.sellingPrice || variant.price || "—"} • Cost: Rs. {variant.costPrice || "—"} • Stock: {variant.stock || 0}</p>
                       </div>
                       <button
                         type="button"

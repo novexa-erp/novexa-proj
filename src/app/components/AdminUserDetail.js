@@ -802,12 +802,8 @@ function ProductsTab({ products }) {
                   {/* price */}
                   <div className="text-right flex-shrink-0 min-w-[70px]">
                     <p className="text-[10px] text-gray-600 uppercase tracking-widest">Price</p>
-                    <p className="text-white text-xs font-semibold">
-                      {hasVariants
-                        ? variants.length > 0
-                          ? `${Rs(Math.min(...variants.map(v=>v.price||0)))} – ${Rs(Math.max(...variants.map(v=>v.price||0)))}`
-                          : "—"
-                        : Rs(p.price)}
+                    <p className="text-gray-500 text-xs font-semibold tracking-widest">
+                      ••••••
                     </p>
                   </div>
 
@@ -849,7 +845,7 @@ function ProductsTab({ products }) {
                             <div className="flex items-center gap-4">
                               <div className="text-right">
                                 <p className="text-[10px] text-gray-600 uppercase tracking-widest">Price</p>
-                                <p className="text-white text-xs font-semibold">{Rs(v.price)}</p>
+                                <p className="text-gray-500 text-xs font-semibold tracking-widest">••••••</p>
                               </div>
                               <div className="text-right">
                                 <p className="text-[10px] text-gray-600 uppercase tracking-widest">Stock</p>
@@ -1091,7 +1087,7 @@ function trashLabel(item) {
 function trashSub(item) {
   if (item._col==="invoices")  return `INV-${item.id.slice(-4).toUpperCase()} · ${Rs(item.amount)} · ${item.status||""}`;
   if (item._col==="customers") return `${item.phone||""} · ${item.email||""}`.replace(/^·\s|·\s$/,"").trim()||"—";
-  if (item._col==="products")  return `Stock: ${item.stock??0} · Price: ${Rs(item.price)}`;
+  if (item._col==="products")  return `Stock: ${item.stock??0} · Price: ••••••`;
   if (item._col==="payments")  return `${Rs(item.paid)} · ${item.method||"cash"}`;
   if (item._col==="suppliers") return `${item.phone||""} · ${item.city||""}`;
   if (item._col==="orders")    return `Total: ${Rs(item.totalAmount)} · Paid: ${Rs(item.paidAmount)} · Balance: ${Rs(item.balance)}`;

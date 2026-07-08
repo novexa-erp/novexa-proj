@@ -216,6 +216,9 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
   
   // ★ Sweet Alert State
   const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
+  
+  // ★ Add to Inventory Dialog State
+  const [nonInventoryDialog, setNonInventoryDialog] = useState({ show: false, items: [], costPrices: [], formData: null });
 
   useEffect(() => {
     if (!uid || !customer.id) return;
@@ -348,6 +351,25 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
   // ── save invoice to customer subcollection + global invoices ─────────────
   async function handleSaveInv(formData) {
     if (!uid || savingInv) return;
+    
+    // ★ Check for non-inventory items (items without productId, only on create)
+    if (!editInv) {
+      const nonInvItems = (formData.items || []).filter(it =>
+        it.description && it.description.trim() && !it.productId && it.qty && it.unitPrice
+      );
+      
+      if (nonInvItems.length > 0) {
+        setNonInventoryDialog({ show: true, items: nonInvItems, costPrices: nonInvItems.map(() => ""), formData });
+        return;
+      }
+    }
+    
+    await saveInvoiceToFirebase(formData);
+  }
+  
+  // ★ actual save logic (after optional inventory add)
+  async function saveInvoiceToFirebase(formData) {
+    if (!uid || savingInv) return;
     setSavingInv(true);
     try {
       const { subtotal, discount, afterDiscount, paid, balance } = calcTotals(formData);
@@ -373,7 +395,29 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         address:              formData.address,
         phone:                formData.phone,
         email:                formData.email,
-        items:                formData.items,
+        // snapshot costPriceAtTime on each item so future price changes don't affect old invoices
+        items: (formData.items || []).map(item => {
+          if (!item.productId) return item;
+          const prod = products.find(p => p.id === item.productId);
+          if (!prod) return item;
+          let cp = 0;
+          if (prod.variants?.length > 0) {
+            let v = null;
+            if (item.variantId) {
+              v = prod.variants.find(vr => vr.id === item.variantId);
+              if (!v) { const idx = Number(item.variantId); if (!isNaN(idx)) v = prod.variants[idx]; }
+            }
+            if (!v && item.variantLabel) {
+              v = prod.variants.find(vr => (vr.label || "").toLowerCase() === (item.variantLabel || "").toLowerCase());
+              if (!v) { const n = parseFloat(item.variantLabel); if (!isNaN(n)) v = prod.variants.find(vr => parseFloat(vr.label) === n); }
+            }
+            if (!v && prod.variants.length === 1) v = prod.variants[0];
+            cp = v ? (Number(v.costPrice) || 0) : (Number(prod.costPrice) || 0);
+          } else {
+            cp = Number(prod.costPrice) || 0;
+          }
+          return { ...item, costPriceAtTime: cp };
+        }),
         discountType:         formData.discountType,
         discountValue:        Number(formData.discountValue) || 0,
         subtotal,
@@ -849,6 +893,88 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
     }
     setSavingInv(false);
   }
+  
+  // ★ Handle adding non-inventory items to inventory
+  async function handleAddToInventory() {
+    // Validate — all cost prices must be filled
+    const missing = nonInventoryDialog.costPrices.some(cp => !cp || isNaN(Number(cp)) || Number(cp) < 0);
+    if (missing) {
+      setAlert({ show: true, type: "error", title: "Cost Price Required", message: "Please enter cost price for all items before saving." });
+      return;
+    }
+    
+    try {
+      const { items, costPrices, formData } = nonInventoryDialog;
+      const updatedItems = [...(formData.items || [])];
+      let nonInvIdx = 0;
+      
+      for (let i = 0; i < updatedItems.length; i++) {
+        const item = updatedItems[i];
+        if (item.productId) continue;
+        
+        const shouldAdd = items.some(ni => ni.description === item.description);
+        if (!shouldAdd) continue;
+        
+        const cp = Number(costPrices[nonInvIdx]) || 0;
+        const sp = Number(item.unitPrice) || 0;
+        nonInvIdx++;
+        
+        // Map variantUnit to proper variantType
+        let variantType = "none";
+        if (item.variantLabel) {
+          const unit = (item.variantUnit || "").toLowerCase();
+          if (unit === "kg") variantType = "weight";
+          else if (unit === "l" || unit === "ltr" || unit === "liter") variantType = "volume";
+          else if (unit === "m" || unit === "mtr" || unit === "meter") variantType = "length";
+          else variantType = "custom";
+        }
+        
+        const productData = {
+          name: item.description,
+          description: `Added from invoice on ${new Date().toLocaleDateString()}`,
+          variantType,
+          costPrice: cp,
+          sellingPrice: sp,
+          price: sp,
+          stock: 0,
+          createdAt: serverTimestamp(),
+        };
+        
+        if (item.variantLabel) {
+          productData.variantType = variantType;
+          productData.variants = [{
+            label: item.variantLabel,
+            costPrice: cp,
+            sellingPrice: sp,
+            price: sp,
+            stock: 0,
+          }];
+          delete productData.stock;
+        }
+        
+        const newProductRef = await addDoc(collection(db, `users/${uid}/products`), productData);
+        updatedItems[i] = { ...item, productId: newProductRef.id };
+      }
+      
+      setNonInventoryDialog({ show: false, items: [], costPrices: [], formData: null });
+      await saveInvoiceToFirebase({ ...formData, items: updatedItems });
+    } catch (err) {
+      setAlert({
+        show: true,
+        type: "error",
+        title: "Failed to Add Products",
+        message: err.message || "Could not add products to inventory.",
+      });
+      setNonInventoryDialog({ show: false, items: [], costPrices: [], formData: null });
+    }
+  }
+  
+  // ★ Skip inventory — save invoice as-is
+  function handleSkipInventory() {
+    const { formData } = nonInventoryDialog;
+    setNonInventoryDialog({ show: false, items: [], costPrices: [], formData: null });
+    saveInvoiceToFirebase(formData);
+  }
 
   async function handleDeleteInv(id) {
     try {
@@ -1222,6 +1348,132 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         userDoc={userDoc}
         singleInvoiceId={showHistoryModal !== "all" ? showHistoryModal : null}
       />
+    )}
+    
+    {/* ★ Add to Inventory Dialog */}
+    {nonInventoryDialog.show && (
+      <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+        style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)" }}>
+        <div className="w-full max-w-md rounded-2xl overflow-hidden"
+          style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
+          
+          {/* Header */}
+          <div className="px-6 py-5 flex items-start gap-4"
+            style={{ borderBottom: "1px solid rgba(255,255,255,0.08)", background: "linear-gradient(135deg, rgba(245,158,11,0.08), rgba(251,191,36,0.04))" }}>
+            <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
+              style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)" }}>
+              📦
+            </div>
+            <div className="flex-1">
+              <h3 className="text-white font-black text-lg leading-tight">Add to Inventory?</h3>
+              <p className="text-gray-500 text-xs mt-1">
+                {nonInventoryDialog.items.length} item{nonInventoryDialog.items.length !== 1 ? "s are" : " is"} not in your inventory. Enter cost price for each.
+              </p>
+            </div>
+          </div>
+          
+          {/* Items with cost price inputs */}
+          <div className="p-5 max-h-[60vh] overflow-y-auto flex flex-col gap-3">
+            {nonInventoryDialog.items.map((item, idx) => (
+              <div key={idx} className="rounded-xl overflow-hidden"
+                style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                {/* Item name row */}
+                <div className="flex items-center gap-2.5 px-4 py-3"
+                  style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                  <span className="text-base">📌</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-white text-sm font-semibold truncate">{item.description}</p>
+                    {item.variantLabel && (
+                      <p className="text-gray-500 text-[10px]">{item.variantLabel}</p>
+                    )}
+                  </div>
+                  <div className="text-right flex-shrink-0">
+                    <p className="text-[9px] text-gray-600 uppercase tracking-widest">Selling</p>
+                    <p className="text-amber-400 text-xs font-bold">Rs. {item.unitPrice}</p>
+                  </div>
+                </div>
+                {/* Cost price input */}
+                <div className="px-4 py-3 flex items-center gap-3">
+                  <div className="flex-1">
+                    <label className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1.5 block">
+                      💰 Cost Price (Aapko kitna parta hai?)
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      step="0.01"
+                      placeholder="e.g. 120"
+                      autoFocus={idx === 0}
+                      value={nonInventoryDialog.costPrices[idx] || ""}
+                      onChange={e => {
+                        const updated = [...nonInventoryDialog.costPrices];
+                        updated[idx] = e.target.value;
+                        setNonInventoryDialog(prev => ({ ...prev, costPrices: updated }));
+                      }}
+                      className="w-full rounded-lg text-white text-sm outline-none"
+                      style={{
+                        background: "rgba(255,255,255,0.05)",
+                        border: `1.5px solid ${nonInventoryDialog.costPrices[idx] ? "rgba(52,211,153,0.4)" : "rgba(255,255,255,0.12)"}`,
+                        padding: "8px 12px",
+                        transition: "border-color 0.2s",
+                      }}
+                      onKeyDown={e => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          const inputs = document.querySelectorAll("[data-inv-cost-input]");
+                          if (inputs[idx + 1]) inputs[idx + 1].focus();
+                        }
+                      }}
+                      data-inv-cost-input
+                    />
+                  </div>
+                  {/* Margin preview */}
+                  {nonInventoryDialog.costPrices[idx] && Number(nonInventoryDialog.costPrices[idx]) > 0 && (
+                    <div className="text-right flex-shrink-0 pt-5">
+                      <p className="text-[9px] text-gray-600 uppercase tracking-widest">Margin</p>
+                      <p className="text-xs font-bold"
+                        style={{ color: Number(item.unitPrice) > Number(nonInventoryDialog.costPrices[idx]) ? "#34d399" : "#f87171" }}>
+                        Rs. {(Number(item.unitPrice) - Number(nonInventoryDialog.costPrices[idx])).toFixed(0)}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              </div>
+            ))}
+            
+            {/* Info note */}
+            <div className="px-4 py-3 rounded-xl"
+              style={{ background: "rgba(96,165,250,0.06)", border: "1px solid rgba(96,165,250,0.12)" }}>
+              <p className="text-blue-400 text-xs leading-relaxed">
+                ℹ️ Stock <strong>zero</strong> se start hoga. Inventory section se baad mein update kar sakte hain.
+              </p>
+            </div>
+          </div>
+          
+          {/* Actions */}
+          <div className="px-5 pb-5 flex gap-3 pt-2"
+            style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
+            <button onClick={handleSkipInventory}
+              className="flex-1 py-3 rounded-xl text-sm font-semibold transition-all hover:bg-white/10"
+              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+              No, Skip
+            </button>
+            <button
+              onClick={handleAddToInventory}
+              disabled={nonInventoryDialog.costPrices.some(cp => !cp || Number(cp) < 0)}
+              className="flex-1 py-3 rounded-xl text-sm font-black transition-all"
+              style={{
+                background: nonInventoryDialog.costPrices.every(cp => cp && Number(cp) >= 0)
+                  ? "linear-gradient(135deg, #F59E0B, #D97706)"
+                  : "rgba(245,158,11,0.3)",
+                color: nonInventoryDialog.costPrices.every(cp => cp && Number(cp) >= 0) ? "#000" : "#9ca3af",
+                cursor: nonInventoryDialog.costPrices.some(cp => !cp || Number(cp) < 0) ? "not-allowed" : "pointer",
+              }}>
+              ✓ Add to Inventory
+            </button>
+          </div>
+        </div>
+      </div>
     )}
     </>
   );
