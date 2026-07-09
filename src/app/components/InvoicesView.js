@@ -40,7 +40,7 @@ function docToForm(inv) {
   };
 }
 
-export default function InvoicesView({ uid, invoices, loading, products = [], userDoc }) {  const [activeTab,   setActiveTab]   = useState("All");
+export default function InvoicesView({ uid, invoices, loading, products = [], userDoc, payments = [] }) {  const [activeTab,   setActiveTab]   = useState("All");
   const [showModal,   setShowModal]   = useState(false);
   const [editTarget,  setEditTarget]  = useState(null); // {id, form}
   const [saving,      setSaving]      = useState(false);
@@ -247,6 +247,28 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
           originalStatus:     payload.status,
           createdAt: serverTimestamp(),
         });
+
+        // ── Create initial payment record if amountPaid > 0 at invoice creation ──
+        if (Number(payload.amountPaid) > 0) {
+          await addDoc(collection(db, "users", uid, "payments"), {
+            type:            "received",
+            amount:          Number(payload.amount) || 0,      // total invoice amount
+            paid:            Number(payload.amountPaid),        // amount paid at creation
+            balance:         Number(payload.balance) || 0,      // remaining balance
+            historyBalance:  Number(payload.balance) || 0,
+            invoiceId:       newDocRef.id,
+            invoiceNumber:   `INV-${newDocRef.id.slice(-4).toUpperCase()}`,
+            customer:        payload.customerName,
+            payerName:       formData.payerName || payload.customerName,
+            payerContact:    formData.payerContact || payload.phone,
+            receiverName:    formData.receiverName || "",
+            receiverContact: formData.receiverContact || "",
+            description:     `Initial payment for invoice ${newDocRef.id.slice(-4).toUpperCase()}`,
+            method:          formData.paymentMethod || "cash",
+            status:          payload.status,
+            createdAt:       serverTimestamp(),
+          });
+        }
         
         // Update stock for each item in the invoice
         for (const item of formData.items) {
@@ -730,6 +752,7 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
           inv={pdfInvoice}
           userDoc={userDoc}
           onClose={() => setPdfInvoice(null)}
+          payments={payments.filter(p => p.invoiceId === pdfInvoice.id)}
         />
       )}
 

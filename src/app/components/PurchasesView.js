@@ -278,15 +278,15 @@ export default function PurchasesView({ uid, userDoc }) {
 
             const totalReceipts = receipts.reduce((s, r) => s + (Number(r.receiptTotal) || 0), 0);
             const totalReturns  = returns.reduce((s, r)  => s + (Number(r.returnTotal)  || 0), 0);
-
-            console.log(`  TOTALS → origTotal=${origTotal}, totalReceipts=${totalReceipts}, totalReturns=${totalReturns}, totalBusiness=${origTotal+totalReceipts}`);
+            const totalPaidOut  = orders.reduce((s, o) => s + (Number(o.paidAmount) || 0), 0);
+            const totalBalance  = orders.reduce((s, o) => s + (Number(o.balance)    || 0), 0);
 
             return {
               ...sup,
-              totalBusiness: origTotal + totalReceipts,   // gross purchasing (before returns)
+              totalBusiness: totalPaidOut + totalBalance,  // net = paid + remaining balance (returns already deducted from balance)
               totalReturns,
-              totalPaid:     orders.reduce((s, o) => s + (Number(o.paidAmount) || 0), 0),
-              totalBalance:  orders.reduce((s, o) => s + (Number(o.balance)    || 0), 0),
+              totalPaid:     totalPaidOut,
+              totalBalance,
             };
           } catch { return sup; }
         }));

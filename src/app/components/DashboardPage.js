@@ -732,7 +732,7 @@ function DashboardContent() {
 
           {/* ── Invoices full page ── */}
           {activeNav === "invoices" ? (
-            <InvoicesView uid={user?.uid} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} />
+            <InvoicesView uid={user?.uid} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} payments={payments} />
           ) : activeNav === "customers" ? (
             <CustomersView uid={user?.uid} customers={customers} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} />
           ) : activeNav === "inventory" ? (

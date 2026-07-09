@@ -2529,15 +2529,11 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
     return Math.max(sub - disc, 0);
   }
 
-  // stats — totalOrdered = original amounts (from items) + all receipts
-  // Returns are NOT subtracted from totalOrdered — they reduce balance, not purchasing total
-  const totalOrdered  = orders.reduce((s, o) => {
-    const orig     = orderOriginalAmt(o);
-    const receipts = supplierReceipts.filter(r => r.orderId === o.id).reduce((a, r) => a + (Number(r.receiptTotal) || 0), 0);
-    return s + orig + receipts;
-  }, 0);
+  // stats — net purchased = paid + balance (returns already deducted from balance field)
   const totalPaid     = orders.reduce((s, o) => s + (Number(o.paidAmount) || 0), 0);
   const totalBalance  = orders.reduce((s, o) => s + (Number(o.balance) || 0), 0);
+  const totalOrdered  = totalPaid + totalBalance; // net after returns
+  const totalReturns  = supplierReturns.reduce((s, r) => s + (Number(r.returnTotal) || 0), 0);
   const paidCount     = orders.filter(o => Number(o.balance) <= 0).length;
 
   // ── Save Purchase Order ────────────────────────────────────────────────────
@@ -2938,6 +2934,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
           {[
             { label: "Total Ordered",  val: formatRs(totalOrdered), icon: "🛒", color: "#fff"     },
+            { label: "Goods Return",   val: totalReturns > 0 ? `- ${formatRs(totalReturns)}` : "Rs. 0", icon: "↩️", color: totalReturns > 0 ? "#f87171" : "#9ca3af" },
             { label: "Total Paid Out", val: formatRs(totalPaid),    icon: "💸", color: "#34d399"  },
             { label: "Balance Payable",val: formatRs(totalBalance), icon: "⏳", color: totalBalance > 0 ? "#f87171" : "#34d399" },
             { label: "Orders",         val: `${orders.length} · ${paidCount} cleared`, icon: "📦", color: "#60A5FA" },

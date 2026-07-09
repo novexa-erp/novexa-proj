@@ -625,7 +625,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
           await updateDoc(
             doc(db, "users", uid, "invoices", editInv.id),
             returnPayload
-          ).catch(() => {});
+          ).catch((err) => console.error("Failed to update global invoice on return:", err));
 
           // Add stock back for returned item
           const returnedProduct = products.find(p =>
@@ -859,6 +859,30 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             }
           );
         });
+
+        // ── Create initial payment record if amountPaid > 0 at invoice creation ──
+        if (Number(payload.amountPaid) > 0) {
+          await addDoc(collection(db, "users", uid, "payments"), {
+            type:            "received",
+            amount:          Number(payload.actualAmount || payload.amount) || 0,
+            paid:            Number(payload.amountPaid),
+            balance:         Number(payload.balance) || 0,
+            historyBalance:  Number(payload.balance) || 0,
+            invoiceActualAmount: Number(payload.actualAmount || payload.amount) || 0,
+            invoiceId:       ref.id,
+            invoiceNumber:   `INV-${ref.id.slice(-4).toUpperCase()}`,
+            customerId:      customer.id,
+            customer:        payload.customerName || customer.name,
+            payerName:       formData.payerName || payload.customerName || customer.name,
+            payerContact:    formData.payerContact || payload.phone || customer.phone,
+            receiverName:    formData.receiverName || "",
+            receiverContact: formData.receiverContact || "",
+            description:     `Initial payment for invoice ${ref.id.slice(-4).toUpperCase()} from ${customer.name}`,
+            method:          formData.paymentMethod || "cash",
+            status:          payload.status,
+            createdAt:       serverTimestamp(),
+          });
+        }
 
         // Only show alert if no email will be sent
         const createEmailAddr = formData.email || customer.email;

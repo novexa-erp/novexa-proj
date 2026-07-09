@@ -1522,6 +1522,38 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                         }} />
                     </FInput>
                   </div>
+
+                  {/* Payment Method selector */}
+                  <div className="col-span-2 mt-2">
+                    <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: "#a78bfa" }}>💳 Payment Method</p>
+                    <div className="flex gap-2 flex-wrap">
+                      {[
+                        { id: "cash",   label: "💵 Cash",           color: "from-green-500 to-emerald-600" },
+                        { id: "online", label: "📱 Online Transfer", color: "from-blue-500 to-cyan-600" },
+                        { id: "cheque", label: "🏦 Cheque",          color: "from-purple-500 to-violet-600" },
+                      ].map(m => {
+                        const selected = (form.paymentMethod || "cash") === m.id;
+                        return (
+                          <button
+                            key={m.id}
+                            type="button"
+                            onClick={() => setForm(p => ({ ...p, paymentMethod: m.id }))}
+                            className={`px-3 py-2 rounded-lg text-xs font-bold transition-all duration-200 ${
+                              selected
+                                ? `bg-gradient-to-r ${m.color} text-white shadow-lg scale-105`
+                                : "text-gray-400 hover:text-white"
+                            }`}
+                            style={selected
+                              ? {}
+                              : { background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }
+                            }
+                          >
+                            {m.label}
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
                 </div>
                 
                 {form.newPaymentAmount && Number(form.newPaymentAmount) > 0 && (
@@ -1531,7 +1563,8 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                       {form.payerName || "Payer"} will pay <span className="text-white font-bold">{formatRs(form.newPaymentAmount)}</span> to {form.receiverName || "Receiver"}
                     </p>
                     <p className="text-xs text-gray-400 mt-1">
-                      New Balance: <span className="text-amber-400 font-bold">{formatRs(Math.max(0, displayActualBalance - Number(form.newPaymentAmount)))}</span>
+                      Method: <span className="text-purple-400 font-bold capitalize">{form.paymentMethod || "cash"}</span>
+                      &nbsp;·&nbsp; New Balance: <span className="text-amber-400 font-bold">{formatRs(Math.max(0, displayActualBalance - Number(form.newPaymentAmount)))}</span>
                     </p>
                   </div>
                 )}
