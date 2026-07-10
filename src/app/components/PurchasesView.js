@@ -1,5 +1,6 @@
 "use client";
 import { useState, useEffect, useRef } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   collection, getDocs, addDoc, updateDoc, deleteDoc,
   doc, serverTimestamp, onSnapshot, query, orderBy, writeBatch, where,
@@ -159,8 +160,8 @@ function SupplierCard({ supplier, onClick, onEdit, onDelete, index }) {
   return (
     <div className="group relative rounded-xl overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:-translate-y-1 cursor-pointer"
       style={{ ...cardStyle, animation: `fadeInUp 0.4s ease-out ${index * 0.05}s both` }}
-      onClick={onClick}>
-      <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-purple-600 opacity-0 group-hover:opacity-5 transition-opacity duration-300" />
+      onClick={e => { if (e.defaultPrevented) return; onClick(); }}>
+      <div className="absolute inset-0 bg-gradient-to-br from-blue-500 to-purple-600 opacity-0 group-hover:opacity-5 transition-opacity duration-300 pointer-events-none" />
       <div className="absolute top-3 right-3 z-20">
         <span className={`px-2 py-1 rounded-md text-[10px] font-semibold ${
           balance === 0 ? "bg-green-500/20 text-green-300 border border-green-400/40"
@@ -207,9 +208,9 @@ function SupplierCard({ supplier, onClick, onEdit, onDelete, index }) {
           </div>
         </div>
         <div className="flex gap-2 pt-2 border-t border-white/5" onClick={e => e.stopPropagation()}>
-          <button onClick={onEdit} className="flex-1 px-3 py-2 rounded-lg text-xs font-semibold hover:scale-105 transition-all"
+          <button onClick={e => { e.stopPropagation(); e.preventDefault(); onEdit(e); }} className="flex-1 px-3 py-2 rounded-lg text-xs font-semibold hover:scale-105 transition-all"
             style={{ background: "linear-gradient(135deg,rgba(37,99,235,0.15),rgba(59,130,246,0.25))", border: "1px solid rgba(59,130,246,0.4)", color: "#60A5FA" }}>✎ Edit</button>
-          <button onClick={onDelete} className="flex-1 px-3 py-2 rounded-lg text-xs font-semibold hover:scale-105 transition-all"
+          <button onClick={e => { e.stopPropagation(); e.preventDefault(); onDelete(e); }} className="flex-1 px-3 py-2 rounded-lg text-xs font-semibold hover:scale-105 transition-all"
             style={{ background: "linear-gradient(135deg,rgba(248,113,113,0.1),rgba(239,68,68,0.2))", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171" }}>🗑️ Delete</button>
         </div>
       </div>
@@ -220,6 +221,8 @@ function SupplierCard({ supplier, onClick, onEdit, onDelete, index }) {
 
 // ── Main PurchasesView ────────────────────────────────────────────────────────
 export default function PurchasesView({ uid, userDoc }) {
+  const router       = useRouter();
+  const searchParams = useSearchParams();
   const [suppliers, setSuppliers]         = useState([]);
   const [suppLoading, setSuppLoading]     = useState(true);
   const [showSupplierModal, setShowSupplierModal] = useState(false);
@@ -230,6 +233,36 @@ export default function PurchasesView({ uid, userDoc }) {
   const [searchQuery, setSearchQuery]     = useState("");
   const [showOrderForm, setShowOrderForm]   = useState(false);
   const [alert, setAlert]                 = useState({ show: false, type: "", title: "", message: "" });
+
+  // URL helpers — same pattern as CustomersView
+  function openSupplier(sup) {
+    setSelectedSupplier(sup);
+    const params = new URLSearchParams(window.location.search);
+    params.set("supplierId", sup.id);
+    router.push(`${window.location.pathname}?${params.toString()}`, { scroll: false });
+  }
+  function closeSupplier() {
+    setSelectedSupplier(null);
+    const params = new URLSearchParams(window.location.search);
+    params.delete("supplierId");
+    router.push(`${window.location.pathname}?${params.toString()}`, { scroll: false });
+  }
+
+  // Restore selectedSupplier from URL on load / refresh
+  useEffect(() => {
+    const sid = searchParams.get("supplierId");
+    if (!sid) {
+      // No supplierId in URL → clear selection (handles sidebar navigation)
+      setSelectedSupplier(null);
+      return;
+    }
+    if (sid && suppliers.length > 0) {
+      const found = suppliers.find(s => s.id === sid);
+      if (found && found.id !== selectedSupplier?.id) {
+        setSelectedSupplier(found);
+      }
+    }
+  }, [searchParams, suppliers]);
 
   // real-time suppliers listener + aggregate stats from orders subcollection
   useEffect(() => {
@@ -339,19 +372,7 @@ export default function PurchasesView({ uid, userDoc }) {
   }
 
   // ── if supplier selected → show detail view ───────────────────────────────
-  if (selectedSupplier) {
-    return (
-      <SupplierDetailComponent
-        supplier={suppliers.find(s => s.id === selectedSupplier.id) || selectedSupplier}
-        uid={uid}
-        userDoc={userDoc}
-        onBack={() => setSelectedSupplier(null)}
-        onEdit={() => { setEditSupplier(selectedSupplier); setShowSupplierModal(true); }}
-        onDelete={() => { setDeleteSupId(selectedSupplier.id); setSelectedSupplier(null); }}
-      />
-    );
-  }
-
+  // (no early return — modals need to be accessible from detail page too)
   const filtered = suppliers.filter(s =>
     s.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     s.shopName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
@@ -367,6 +388,20 @@ export default function PurchasesView({ uid, userDoc }) {
       <SweetAlert show={alert.show} type={alert.type} title={alert.title} message={alert.message}
         onClose={() => setAlert(a => ({ ...a, show: false }))} />
 
+      {/* ── Supplier Detail View ── */}
+      {selectedSupplier && (
+        <SupplierDetailComponent
+          supplier={suppliers.find(s => s.id === selectedSupplier.id) || selectedSupplier}
+          uid={uid}
+          userDoc={userDoc}
+          onBack={() => closeSupplier()}
+          onEdit={() => { setEditSupplier(suppliers.find(s=>s.id===selectedSupplier.id)||selectedSupplier); setShowSupplierModal(true); }}
+          onDelete={() => { setDeleteSupId(selectedSupplier.id); }}
+        />
+      )}
+
+      {/* ── Supplier List View ── */}
+      {!selectedSupplier && (
       <div className="flex flex-col gap-5 w-full">
 
         {/* Header */}
@@ -501,7 +536,7 @@ export default function PurchasesView({ uid, userDoc }) {
                 key={sup.id}
                 supplier={sup}
                 index={idx}
-                onClick={() => setSelectedSupplier(sup)}
+                onClick={() => openSupplier(sup)}
                 onEdit={e => { e.stopPropagation(); setEditSupplier(sup); setShowSupplierModal(true); }}
                 onDelete={e => { e.stopPropagation(); setDeleteSupId(sup.id); }}
               />
@@ -509,8 +544,9 @@ export default function PurchasesView({ uid, userDoc }) {
           </div>
         )}
       </div>
+      )} {/* end !selectedSupplier */}
 
-      {/* Supplier Modal */}
+      {/* Supplier Modal — always mounted so works from both list & detail */}
       {showSupplierModal && (
         <SupplierModal
           initial={editSupplier ? {
@@ -530,7 +566,7 @@ export default function PurchasesView({ uid, userDoc }) {
         <DeleteConfirm
           name={suppliers.find(s => s.id === deleteSupId)?.name || "this supplier"}
           label="Supplier"
-          onConfirm={() => handleDeleteSupplier(deleteSupId)}
+          onConfirm={() => { handleDeleteSupplier(deleteSupId); closeSupplier(); }}
           onCancel={() => setDeleteSupId(null)}
         />
       )}

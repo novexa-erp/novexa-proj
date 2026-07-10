@@ -697,10 +697,10 @@ export default function PaymentsView({ uid, onNavigate }) {
                 {overdue.map((inv, i) => {
                   const name = inv.customerName || inv.customer || inv.description || "Invoice";
                   const invRef = inv.invoiceNumber || `INV-${(inv.id || "").slice(-4).toUpperCase()}`;
-                  const nav = inv.customerId ? "customers" : "invoices";
+                  // Always go to invoices tab when highlighting — invoice exists in global collection
                   return (
                     <div key={`ov-${inv.id || i}`}
-                      onClick={() => onNavigate?.(nav)}
+                      onClick={() => onNavigate?.("invoices", inv.id)}
                       className="flex items-center justify-between p-3 rounded-lg cursor-pointer hover:scale-[1.01] transition-all"
                       style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)" }}>
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">
@@ -732,10 +732,9 @@ export default function PaymentsView({ uid, onNavigate }) {
                   const daysLabel = inv.daysLeft === 0 ? "Today!" : inv.daysLeft === 1 ? "Tomorrow" : `${inv.daysLeft} days`;
                   const name = inv.customerName || inv.customer || inv.description || "Invoice";
                   const invRef = inv.invoiceNumber || `INV-${(inv.id || "").slice(-4).toUpperCase()}`;
-                  const nav = inv.customerId ? "customers" : "invoices";
                   return (
                     <div key={`ds-${inv.id || i}`}
-                      onClick={() => onNavigate?.(nav)}
+                      onClick={() => onNavigate?.("invoices", inv.id)}
                       className="flex items-center justify-between p-3 rounded-lg cursor-pointer hover:scale-[1.01] transition-all"
                       style={{ background: urgColor + "12", border: `1px solid ${urgColor}35` }}>
                       <div className="flex items-center gap-2.5 min-w-0 flex-1">

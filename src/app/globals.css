@@ -206,3 +206,32 @@ h6 {
 }
 
 /* ══════════════════════════════════════════ */
+
+/* ── Recharts: remove focus outline on click ── */
+.recharts-wrapper,
+.recharts-wrapper *,
+.recharts-surface,
+.recharts-wrapper svg,
+.recharts-wrapper svg *,
+.recharts-layer,
+.recharts-sector,
+.recharts-rectangle,
+.recharts-dot,
+.recharts-responsive-container {
+  outline: none !important;
+  -webkit-tap-highlight-color: transparent;
+}
+
+/* ── Invoice row highlight flash animation ── */
+@keyframes rowFlash {
+  0%   { box-shadow: 0 0 0 2px rgba(251,191,36,0); background: rgba(251,191,36,0); }
+  20%  { box-shadow: 0 0 0 2px rgba(251,191,36,0.8); background: rgba(251,191,36,0.12); }
+  50%  { box-shadow: 0 0 0 2px rgba(251,191,36,0); background: rgba(251,191,36,0); }
+  70%  { box-shadow: 0 0 0 2px rgba(251,191,36,0.8); background: rgba(251,191,36,0.12); }
+  85%  { box-shadow: 0 0 0 2px rgba(251,191,36,0); background: rgba(251,191,36,0); }
+  100% { box-shadow: 0 0 0 2px rgba(251,191,36,0.6); background: rgba(251,191,36,0.08); }
+}
+.row-flash {
+  animation: rowFlash 2.4s ease-in-out forwards;
+  border-radius: 12px;
+}

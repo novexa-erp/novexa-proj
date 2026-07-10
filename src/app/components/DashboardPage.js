@@ -6,7 +6,7 @@ import Link from "next/link";
 import Image from "next/image";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
-  collection, onSnapshot, query, orderBy, limit,
+  collection, onSnapshot, query, orderBy,
   doc, addDoc, serverTimestamp, getDoc, getDocs,
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
@@ -102,15 +102,16 @@ function DashboardContent() {
   // Initialize from URL query param or default to "overview"
   const [activeNav, setActiveNav]   = useState(searchParams.get("view") || "overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [viewLoading, setViewLoading] = useState(false); // Loading state for tab switching
+  const [viewLoading, setViewLoading] = useState(false);
+  const [refreshKey, setRefreshKey]   = useState(0); // increment to remount current view
 
   // ── Firestore data ──────────────────────────────────────────────────────────
-  const [invoices,  setInvoices]  = useState([]);
-  const [customers, setCustomers] = useState([]);
-  const [inventory, setInventory] = useState([]);
-  const [payments,  setPayments]  = useState([]);
-  const [totalPurchasing, setTotalPurchasing] = useState(0);
-  const [dataLoading, setDataLoading] = useState(true);
+  const [invoices,         setInvoices]         = useState([]);
+  const [customers,        setCustomers]        = useState([]);
+  const [inventory,        setInventory]        = useState([]);
+  const [payments,         setPayments]         = useState([]);
+  const [totalPurchasing,  setTotalPurchasing]  = useState(0);
+  const [dataLoading,      setDataLoading]      = useState(true);
 
   // ── Modals (customer + product only — invoices handled by InvoicesView) ─────
   const [showCustomerModal, setShowCustomerModal] = useState(false);
@@ -248,13 +249,40 @@ function DashboardContent() {
   }, [searchParams]);
 
   // ── Update URL when navigation changes ──────────────────────────────────────
-  function handleNavChange(navId) {
-    setViewLoading(true); // Show loader when switching tabs
+  function handleNavChange(navId, highlightId = null) {
+    setViewLoading(true);
     setActiveNav(navId);
+    // When navigating away from analytics, clear the saved tab
+    if (navId !== "analytics" && typeof window !== "undefined") {
+      sessionStorage.removeItem("analyticsTab");
+    }
+    // When navigating away from customers, clear customerId URL param
+    if (navId !== "customers" && typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has("customerId")) {
+        params.delete("customerId");
+        const newUrl = params.toString() ? `${window.location.pathname}?${params.toString()}` : window.location.pathname;
+        window.history.replaceState(null, "", newUrl);
+      }
+    }
+    // When navigating away from purchases, clear supplierId URL param
+    if (navId !== "purchases" && typeof window !== "undefined") {
+      const params = new URLSearchParams(window.location.search);
+      if (params.has("supplierId")) {
+        params.delete("supplierId");
+        const newUrl = params.toString() ? `${window.location.pathname}?${params.toString()}` : window.location.pathname;
+        window.history.replaceState(null, "", newUrl);
+      }
+    }
     setSidebarOpen(false);
     // Update URL without page reload
     const params = new URLSearchParams(window.location.search);
     params.set("view", navId);
+    if (highlightId) {
+      params.set("highlightId", highlightId);
+    } else {
+      params.delete("highlightId");
+    }
     router.push(`${window.location.pathname}?${params.toString()}`, { scroll: false });
     // Hide loader after a brief moment to show transition
     setTimeout(() => setViewLoading(false), 300);
@@ -269,8 +297,8 @@ function DashboardContent() {
     const check = () => { loaded++; if (loaded === 4) setDataLoading(false); };
 
     const unsubInv = onSnapshot(
-      query(collection(db, "users", uid, "invoices"), orderBy("createdAt", "desc"), limit(50)),
-      (snap) => { setInvoices(snap.docs.map(d => ({ id: d.id, ...d.data() }))); check(); },
+      query(collection(db, "users", uid, "invoices"), orderBy("createdAt", "desc")),
+      (snap) => { setInvoices(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(i => !i.deleted)); check(); },
       () => check()
     );
     const unsubCust = onSnapshot(
@@ -280,7 +308,7 @@ function DashboardContent() {
     );
     const unsubProd = onSnapshot(
       query(collection(db, "users", uid, "products"), orderBy("createdAt", "desc")),
-      (snap) => { setInventory(snap.docs.map(d => ({ id: d.id, ...d.data() }))); check(); },
+      (snap) => { setInventory(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => !p.deleted)); check(); },
       () => check()
     );
     const unsubPay = onSnapshot(
@@ -293,6 +321,8 @@ function DashboardContent() {
   }, [user]);
 
   // ── Fetch total purchasing from supplier orders ────────────────────────────
+  // Same formula as PurchasesView: totalBusiness = paidAmount + balance per order
+  // (returns are already deducted from balance — no double-counting)
   useEffect(() => {
     if (!user) return;
     const uid = user.uid;
@@ -302,19 +332,17 @@ function DashboardContent() {
       async (snap) => {
         if (cancelled) return;
         try {
-          const suppliers = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          const suppliers = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(s => !s.deleted);
           let grandTotal = 0;
           await Promise.all(suppliers.map(async (sup) => {
             const oSnap = await getDocs(collection(db, "users", uid, "suppliers", sup.id, "orders"));
             oSnap.docs.forEach(d => {
               const o = d.data();
-              if (o.items?.length) {
-                const sub = o.items.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
-                const disc = o.discountType === "percent"
-                  ? sub * (Number(o.discountValue) || 0) / 100
-                  : (Number(o.discountValue) || 0);
-                grandTotal += Math.max(sub - disc, 0);
-              }
+              if (o.deleted) return; // skip soft-deleted orders
+              // paidAmount + balance = net order value after returns
+              const paid    = Number(o.paidAmount) || 0;
+              const balance = Number(o.balance)    || 0;
+              grandTotal += paid + balance;
             });
           }));
           if (!cancelled) setTotalPurchasing(grandTotal);
@@ -326,33 +354,94 @@ function DashboardContent() {
   }, [user]);
 
   // ── Computed stats ───────────────────────────────────────────────────────────
-  // Split: customer-linked invoices vs other (direct from Invoices tab)
-  const customerInvoices = invoices.filter(i => i.customerId);
-  const otherInvoices    = invoices.filter(i => !i.customerId);
+  // Same logic as AnalyticsView — single source of truth
 
-  // Total Revenue = all amounts collected (Paid invoices full amount + Partial paid amounts)
-  const totalRevenue    = invoices.filter(i => i.status === "Paid").reduce((s, i) => s + (Number(i.amount) || 0), 0)
-    + invoices.filter(i => i.status === "Partial").reduce((s, i) => s + ((Number(i.amount) || 0) - (Number(i.balance) || 0)), 0);
+  // Active invoices: not deleted, and customer still exists if customer-linked
+  const activeCustomerIds = new Set(customers.map(c => c.id));
+  const activeInvoices = invoices.filter(i => {
+    if (i.deleted) return false;
+    if (i.customerId && !activeCustomerIds.has(i.customerId)) return false;
+    return true;
+  });
 
-  // Pending = sum of all balances (unpaid full amount + partial remaining balance)
-  const customerPending = customerInvoices.reduce((s, i) => s + (Number(i.balance) || 0), 0);
-  const otherPending    = otherInvoices.reduce((s, i) => s + (Number(i.balance) || 0), 0);
-  const pendingAmount   = customerPending + otherPending;
+  const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
 
-  const collectedPct    = totalRevenue + pendingAmount > 0 ? Math.round((totalRevenue / (totalRevenue + pendingAmount)) * 100) : 0;
+  // Build returns lookup from payments collection
+  const returnsByInvoiceId = {};
+  payments.forEach(p => {
+    if (p.type === "return" && p.invoiceId && Number(p.returnAmount) > 0) {
+      returnsByInvoiceId[p.invoiceId] = (returnsByInvoiceId[p.invoiceId] || 0) + Number(p.returnAmount);
+    }
+  });
+
+  // Get actual sold amount for an invoice (no prev-balance carry-forwards, deduct returns)
+  function getInvActualAmount(inv) {
+    if (!inv.customerId) {
+      const returned = returnsByInvoiceId[inv.id] || 0;
+      return Math.max(0, (Number(inv.amount) || 0) - returned);
+    }
+    const returned = returnsByInvoiceId[inv.id] || 0;
+    const realItems = (inv.items || []).filter(it => !isPrevBalItem(it));
+    if (realItems.length > 0) {
+      const realSubtotal = realItems.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+      const fullSubtotal = (inv.items || []).reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+      let realAfterDiscount = realSubtotal;
+      if (fullSubtotal > 0 && Number(inv.discount) > 0) {
+        const ratio = realSubtotal / fullSubtotal;
+        realAfterDiscount = Math.max(realSubtotal - (Number(inv.discount) || 0) * ratio, 0);
+      }
+      const base = inv.actualAmount != null
+        ? Math.min(realAfterDiscount, Number(inv.actualAmount))
+        : Math.min(realAfterDiscount, Number(inv.amount) || realAfterDiscount);
+      return Math.max(0, base - returned);
+    }
+    const base = inv.actualAmount != null ? Number(inv.actualAmount) : (Number(inv.amount) || 0);
+    return Math.max(0, base - returned);
+  }
+
+  // Total Revenue = sum of actual amounts across ALL active invoices
+  const totalRevenue = activeInvoices.reduce((s, i) => s + getInvActualAmount(i), 0);
+
+  // Split invoices
+  const customerInvoices = activeInvoices.filter(i => i.customerId);
+  const otherInvoices    = activeInvoices.filter(i => !i.customerId);
+
+  // Customer Balance = sum of outstanding balance on customer invoices
+  const customerBalance = customerInvoices.reduce((s, i) => {
+    const actualAmt = getInvActualAmount(i);
+    const paid = Number(i.amountPaid) || 0;
+    return s + Math.max(0, actualAmt - paid);
+  }, 0);
+
+  // Other Invoice Balance = sum of balance field on direct invoices
+  const otherBalance = otherInvoices.reduce((s, i) => s + (Number(i.balance) || 0), 0);
+
+  // Pending = total outstanding
+  const pendingAmount = customerBalance + otherBalance;
+
+  const collectedPct    = totalRevenue > 0 ? Math.round(((totalRevenue - pendingAmount) / totalRevenue) * 100) : 0;
   const pendingPct      = 100 - collectedPct;
   const activeCustomers = customers.filter(c => c.status !== "inactive").length;
-  const lowStockItems   = inventory.filter(i => (Number(i.stock) || 0) <= (Number(i.lowStockThreshold) || 10));
+  // Stock helper — variant-aware (same as InventoryView)
+  const getProductStock = p => {
+    if (p.variantType !== "none" && p.variants?.length > 0)
+      return p.variants.reduce((s, v) => s + (parseInt(v.stock) || 0), 0);
+    return parseInt(p.stock) || 0;
+  };
+  const lowStockItems = inventory.filter(p => {
+    const stock = getProductStock(p);
+    const threshold = parseInt(p.lowStockThreshold) || 10;
+    return stock <= threshold;
+  });
 
-  // balance breakdowns
-  const customerBalance = customerInvoices.reduce((s, i) => s + (Number(i.balance) || 0), 0);
-  const otherBalance    = otherInvoices.reduce((s, i) => s + (Number(i.balance) || 0), 0);
+  // allInvoices for recent list
+  const allInvoices = activeInvoices;
 
   const stats = [
-    { label: "Total Revenue",        value: formatRs(totalRevenue),    change: `${invoices.filter(i=>i.status==="Paid").length} paid`,          icon: "💰", color: "from-amber-500 to-orange-600" },
-    { label: "Total Purchasing",      value: formatRs(totalPurchasing), change: "All orders",                                                    icon: "🛒", color: "from-green-500 to-emerald-600", onClick: () => handleNavChange("purchases") },
-    { label: "Customer Balance",      value: formatRs(customerBalance), change: `${customerInvoices.length} invoices`,                          icon: "👥", color: "from-orange-500 to-amber-600",  onClick: () => handleNavChange("customers") },
-    { label: "Other Invoice Balance", value: formatRs(otherBalance),    change: `${otherInvoices.length} invoices`,                             icon: "🧾", color: "from-blue-500 to-cyan-600",    onClick: () => handleNavChange("invoices") },
+    { label: "Total Revenue",        value: formatRs(totalRevenue),    change: `${allInvoices.filter(i => (Number(i.amountPaid)||0) >= getInvActualAmount(i) && getInvActualAmount(i) > 0).length} paid`, icon: "💰", color: "from-amber-500 to-orange-600" },
+    { label: "Total Purchasing",      value: formatRs(totalPurchasing), change: "All orders",                                                                                                               icon: "🛒", color: "from-green-500 to-emerald-600", onClick: () => handleNavChange("purchases") },
+    { label: "Customer Balance",      value: formatRs(customerBalance), change: `${customerInvoices.length} invoices`,                                                                                      icon: "👥", color: "from-orange-500 to-amber-600",  onClick: () => handleNavChange("customers") },
+    { label: "Other Invoice Balance", value: formatRs(otherBalance),    change: `${otherInvoices.length} invoices`,                                                                                         icon: "🧾", color: "from-blue-500 to-cyan-600",    onClick: () => handleNavChange("invoices") },
   ];
 
   // ── Sign out ─────────────────────────────────────────────────────────────────
@@ -679,6 +768,20 @@ function DashboardContent() {
               style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.15)" }}>
               <DigitalClock />
             </div>
+
+            {/* Refresh current view button */}
+            <button
+              onClick={() => setRefreshKey(k => k + 1)}
+              title="Refresh current view"
+              className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:bg-white/8 hover:scale-105 active:scale-95"
+              style={{ border: "1px solid rgba(255,255,255,0.07)" }}>
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+                <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
+                <path d="M21 3v5h-5"/>
+                <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>
+                <path d="M8 16H3v5"/>
+              </svg>
+            </button>
             <button className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-colors hover:bg-white/8"
               style={{ border: "1px solid rgba(255,255,255,0.07)" }}>
               <span className="text-base">🔔</span>
@@ -732,26 +835,26 @@ function DashboardContent() {
 
           {/* ── Invoices full page ── */}
           {activeNav === "invoices" ? (
-            <InvoicesView uid={user?.uid} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} payments={payments} />
+            <InvoicesView key={`invoices-${refreshKey}`} uid={user?.uid} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} payments={payments} highlightId={searchParams.get("highlightId")} />
           ) : activeNav === "customers" ? (
-            <CustomersView uid={user?.uid} customers={customers} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} />
+            <CustomersView key={`customers-${refreshKey}`} uid={user?.uid} customers={customers} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} />
           ) : activeNav === "inventory" ? (
-            <InventoryView uid={user?.uid} />
+            <InventoryView key={`inventory-${refreshKey}`} uid={user?.uid} />
           ) : activeNav === "payments" ? (
-            <PaymentsView uid={user?.uid} onNavigate={handleNavChange} />
+            <PaymentsView key={`payments-${refreshKey}`} uid={user?.uid} onNavigate={handleNavChange} />
           ) : activeNav === "purchases" ? (
-            <PurchasesView uid={user?.uid} userDoc={userDoc} />
+            <PurchasesView key={`purchases-${refreshKey}`} uid={user?.uid} userDoc={userDoc} />
           ) : activeNav === "order-form" ? (
-            <OrderFormView userDoc={userDoc} />
+            <OrderFormView key={`orderform-${refreshKey}`} userDoc={userDoc} />
           ) : activeNav === "analytics" ? (
-            <AnalyticsView uid={user?.uid} />
+            <AnalyticsView key={`analytics-${refreshKey}`} uid={user?.uid} />
           ) : activeNav === "settings" ? (
-            <SettingsView uid={user?.uid} user={user} userDoc={userDoc} loading={viewLoading}
+            <SettingsView key={`settings-${refreshKey}`} uid={user?.uid} user={user} userDoc={userDoc} loading={viewLoading}
               onSettingsSaved={(updated) => setUserDoc(prev => ({ ...prev, ...updated }))} />
           ) : activeNav === "contact" ? (
-            <ContactView userDoc={userDoc} user={user} />
+            <ContactView key={`contact-${refreshKey}`} userDoc={userDoc} user={user} />
           ) : activeNav === "trash" ? (
-            <TrashView uid={user?.uid} />
+            <TrashView key={`trash-${refreshKey}`} uid={user?.uid} />
           ) : (
           <>
           {/* Overview Section with Professional Loader */}
@@ -829,16 +932,28 @@ function DashboardContent() {
                 </div>
               </div>
               <div className="p-3 flex flex-col gap-1.5">
-                {otherInvoices.length === 0 ? (
+                {allInvoices.length === 0 ? (
                   <div className="px-5 py-10 text-center">
                     <p className="text-gray-500 text-sm">No invoices yet.</p>
                     <button onClick={() => handleNavChange("invoices")} className="text-blue-400 text-xs mt-2 hover:text-blue-300">Create your first invoice →</button>
                   </div>
                 ) : (
-                  otherInvoices.slice(0, 6).map((inv) => {
-                    const st = statusStyle[inv.status] || statusStyle["Unpaid"];
+                  [...allInvoices]
+                    .sort((a, b) => {
+                      const aT = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
+                      const bT = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+                      return bT - aT;
+                    })
+                    .slice(0, 6)
+                    .map((inv) => {
+                    const effAmt = getInvActualAmount(inv);
+                    const paid = Number(inv.amountPaid) || 0;
+                    const effBalance = Math.max(0, effAmt - paid);
+                    const effStatus = effBalance === 0 && effAmt > 0 ? "Paid" : paid > 0 ? "Partial" : "Unpaid";
+                    const st = statusStyle[effStatus] || statusStyle["Unpaid"];
                     const dateStr = inv.createdAt?.toDate ? inv.createdAt.toDate().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
                     const num = inv.id.slice(-4).toUpperCase();
+                    const displayName = inv.customerName || inv.customer || "Unknown";
                     return (
                       <div key={inv.id}
                         className="flex items-center justify-between px-4 py-3 rounded-xl transition-all hover:bg-white/[0.04]"
@@ -849,15 +964,15 @@ function DashboardContent() {
                             {num}
                           </div>
                           <div className="min-w-0">
-                            <p className="text-white text-sm font-semibold truncate">{inv.customer || "Unknown"}</p>
+                            <p className="text-white text-sm font-semibold truncate">{displayName}</p>
                             <p className="text-gray-500 text-[11px]">INV-{num} · {dateStr}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2.5 flex-shrink-0">
-                          <span className="text-white text-sm font-bold">{formatRs(inv.amount)}</span>
+                          <span className="text-white text-sm font-bold">{formatRs(effAmt)}</span>
                           <span className="text-[10px] font-bold px-2.5 py-1 rounded-lg"
                             style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
-                            {inv.status}
+                            {effStatus}
                           </span>
                         </div>
                       </div>
@@ -869,29 +984,48 @@ function DashboardContent() {
 
             {/* right sidebar */}
             <div className="flex flex-col gap-4">
-              {/* stock alerts */}
+              {/* stock overview — all products, color by stock level */}
               <div className="rounded-xl p-5" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
                 <div className="flex items-center gap-2 mb-4">
-                  <span className="text-base">⚠️</span>
-                  <h3 className="text-white font-bold text-sm">Stock Alerts</h3>
+                  <span className="text-base">📦</span>
+                  <h3 className="text-white font-bold text-sm">Stock Overview</h3>
                 </div>
-                {lowStockItems.length === 0 ? (
-                  <p className="text-gray-500 text-xs">All stock levels are healthy ✓</p>
+                {inventory.length === 0 ? (
+                  <p className="text-gray-500 text-xs">No products in inventory yet.</p>
                 ) : (
                   <div className="flex flex-col gap-2.5">
-                    {lowStockItems.slice(0, 5).map((item) => {
-                      const c = (Number(item.stock) || 0) <= 5 ? "#f87171" : "#fbbf24";
+                    {inventory.slice(0, 5).map((item) => {
+                      const stock     = getProductStock(item);
+                      const threshold = parseInt(item.lowStockThreshold) || 10;
+                      // Color: green = healthy, orange = average/low, red = critical/zero
+                      const color = stock === 0
+                        ? "#f87171"                          // red — out of stock
+                        : stock <= threshold
+                          ? "#fbbf24"                        // orange — low stock
+                          : "#34d399";                       // green — healthy
+                      const label = stock === 0 ? "Out of stock" : stock <= threshold ? "Low stock" : "In stock";
                       return (
                         <div key={item.id} className="flex items-center justify-between gap-2">
-                          <span className="text-gray-300 text-xs font-medium truncate flex-1">{item.name}</span>
-                          <span className="text-xs font-bold px-2.5 py-0.5 rounded-lg flex-shrink-0 whitespace-nowrap"
-                            style={{ background: `${c}18`, color: c, border: `1px solid ${c}40` }}>
-                            {item.stock} left
+                          <div className="min-w-0 flex-1">
+                            <p className="text-gray-300 text-xs font-medium truncate">{item.name}</p>
+                            <p className="text-gray-600 text-[10px]">{stock} units</p>
+                          </div>
+                          <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-lg flex-shrink-0 whitespace-nowrap"
+                            style={{ background: `${color}18`, color, border: `1px solid ${color}40` }}>
+                            {label}
                           </span>
                         </div>
                       );
                     })}
                   </div>
+                )}
+                {inventory.length > 0 && (
+                  <button
+                    onClick={() => handleNavChange("inventory")}
+                    className="mt-4 w-full py-2 rounded-lg text-xs font-semibold transition-all hover:bg-white/[0.08]"
+                    style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
+                    See More →
+                  </button>
                 )}
               </div>
 
@@ -930,11 +1064,11 @@ function DashboardContent() {
                       style={{ background: "rgba(251,191,36,0.05)", border: "1px solid rgba(251,191,36,0.1)" }}>
                       <div className="flex justify-between">
                         <span className="text-gray-500 text-[11px]">↳ Customer pending</span>
-                        <span className="text-amber-400 text-[11px] font-semibold">{formatRs(customerPending)}</span>
+                        <span className="text-amber-400 text-[11px] font-semibold">{formatRs(customerBalance)}</span>
                       </div>
                       <div className="flex justify-between">
                         <span className="text-gray-500 text-[11px]">↳ Other invoice pending</span>
-                        <span className="text-amber-400 text-[11px] font-semibold">{formatRs(otherPending)}</span>
+                        <span className="text-amber-400 text-[11px] font-semibold">{formatRs(otherBalance)}</span>
                       </div>
                     </div>
                   )}

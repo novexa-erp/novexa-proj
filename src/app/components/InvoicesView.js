@@ -1,5 +1,5 @@
 "use client";
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   collection, addDoc, doc, updateDoc, serverTimestamp,
 } from "firebase/firestore";
@@ -40,25 +40,58 @@ function docToForm(inv) {
   };
 }
 
-export default function InvoicesView({ uid, invoices, loading, products = [], userDoc, payments = [] }) {  const [activeTab,   setActiveTab]   = useState("All");
+export default function InvoicesView({ uid, invoices, loading, products = [], userDoc, payments = [], highlightId = null }) {
+  const [activeTab,   setActiveTab]   = useState("All");
   const [showModal,   setShowModal]   = useState(false);
   const [editTarget,  setEditTarget]  = useState(null); // {id, form}
   const [saving,      setSaving]      = useState(false);
   const [deleteConf,  setDeleteConf]  = useState(null); // invoice id
   const [search,      setSearch]      = useState("");
   const [pdfInvoice,  setPdfInvoice]  = useState(null); // invoice to preview PDF
-  
+  const [flashId,     setFlashId]     = useState(null); // currently flashing row id
+  const rowRefs = useRef({});          // map: invoiceId → DOM element
+
   // Sweet Alert State
   const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
   
   // Email Confirmation Dialog State
   const [emailConfirm, setEmailConfirm] = useState({ show: false, invoice: null, isUpdate: false });
+
+  // ── Scroll to & flash highlighted invoice ──────────────────────────────────
+  useEffect(() => {
+    if (!highlightId) return;
+    // Switch to "All" tab and clear search so the row is definitely visible
+    setActiveTab("All");
+    setSearch("");
+
+    // Try multiple times — rows may not be in DOM immediately after tab switch
+    let attempts = 0;
+    const tryScroll = () => {
+      attempts++;
+      const el = rowRefs.current[highlightId];
+      if (el) {
+        el.scrollIntoView({ behavior: "smooth", block: "center" });
+        setFlashId(null); // reset first so animation re-triggers
+        setTimeout(() => setFlashId(highlightId), 50);
+        setTimeout(() => setFlashId(null), 2500);
+      } else if (attempts < 10) {
+        setTimeout(tryScroll, 200); // retry every 200ms up to 10 times
+      }
+    };
+    const timer = setTimeout(tryScroll, 100);
+    return () => clearTimeout(timer);
+  }, [highlightId, invoices]); // re-run when invoices data arrives
   
   // ★ Add to Inventory Dialog State
   const [nonInventoryDialog, setNonInventoryDialog] = useState({ show: false, items: [], costPrices: [], formData: null });
 
   // only show invoices NOT linked to a customer AND not soft-deleted
-  const directInvoices = invoices.filter(i => !i.customerId && !i.deleted);
+  // Exception: if highlightId is set and it belongs to a customer invoice, show it too
+  const directInvoices = invoices.filter(i => {
+    if (i.deleted) return false;
+    if (i.customerId && i.id !== highlightId) return false; // hide customer invoices unless it's the highlighted one
+    return true;
+  });
 
   // filter — use effectiveStatus (recalculated from actualAmount) not stored status
   const filtered = directInvoices.filter(inv => {
@@ -635,7 +668,11 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
             const isOverdue = inv.dueDate && new Date(inv.dueDate) < new Date() && effectiveStatus !== "Paid";
 
             return (
-              <div key={inv.id} className="border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] transition-colors">
+              <div
+                key={inv.id}
+                ref={el => { rowRefs.current[inv.id] = el; }}
+                className={`border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] transition-colors${flashId === inv.id ? " row-flash" : ""}`}
+              >
 
                 {/* ── Mobile ── */}
                 <div className="flex items-center justify-between px-5 py-3.5 md:hidden">

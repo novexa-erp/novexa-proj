@@ -38,7 +38,13 @@ const ANALYTICS_SECTIONS = [
 export default function AnalyticsView({ uid }) {
   const [loading, setLoading] = useState(true);
   const [dateFilter, setDateFilter] = useState("month");
-  const [activeSection, setActiveSection] = useState("overview");
+  const [activeSection, setActiveSection] = useState(() => {
+    // Restore last tab from sessionStorage (not localStorage — resets when user navigates away)
+    if (typeof window !== "undefined") {
+      return sessionStorage.getItem("analyticsTab") || "overview";
+    }
+    return "overview";
+  });
   const [invMoveDays, setInvMoveDays] = useState(30);
   const [invReportTab, setInvReportTab] = useState("valuation");
   const [profitDateFilter, setProfitDateFilter] = useState("all");
@@ -1282,6 +1288,7 @@ export default function AnalyticsView({ uid }) {
 
     const CHART_COLORS_R = ["#f59e0b", "#6366f1", "#10b981", "#ef4444", "#8b5cf6", "#06b6d4", "#f97316", "#84cc16"];
     const ttStyle_r = { background: "rgba(15,15,25,0.97)", border: "1px solid rgba(255,255,255,0.1)", borderRadius: "10px", color: "#fff", fontSize: "12px" };
+    const ttCursor  = { fill: "rgba(255,255,255,0.04)" }; // shared cursor for all bar/area charts
 
     const GrowthBadge = ({ curr, prev }) => {
       const pct = Number(growthPct(curr, prev));
@@ -1356,7 +1363,7 @@ export default function AnalyticsView({ uid }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                 <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 11 }} />
                 <YAxis tick={{ fill: "#9ca3af", fontSize: 10 }} tickFormatter={v => v >= 1000 ? `${(v / 1000).toFixed(0)}k` : v} />
-                <Tooltip contentStyle={ttStyle_r} itemStyle={{ color: "#e5e7eb" }} labelStyle={{ color: "#fff", fontWeight: "600" }}
+                <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle_r} itemStyle={{ color: "#e5e7eb" }} labelStyle={{ color: "#fff", fontWeight: "600" }}
                   formatter={v => [`Rs. ${Number(v).toLocaleString()}`, "Revenue"]} />
                 <Legend wrapperStyle={{ color: "#9ca3af", fontSize: "12px" }} />
                 <Line type="monotone" dataKey="Revenue" stroke="#f59e0b" strokeWidth={2.5} dot={{ fill: "#f59e0b", r: 4 }} activeDot={{ r: 7 }} />
@@ -1379,7 +1386,7 @@ export default function AnalyticsView({ uid }) {
                     <Pie data={revByCatData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" label={false}>
                       {revByCatData.map((_, i) => <Cell key={i} fill={CHART_COLORS_R[i % CHART_COLORS_R.length]} strokeWidth={0} />)}
                     </Pie>
-                    <Tooltip contentStyle={ttStyle_r} itemStyle={{ color: "#e5e7eb" }} labelStyle={{ color: "#fff", fontWeight: "600" }}
+                    <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle_r} itemStyle={{ color: "#e5e7eb" }} labelStyle={{ color: "#fff", fontWeight: "600" }}
                       formatter={v => [`Rs. ${Number(v).toLocaleString()}`, ""]} />
                   </PieChart>
                 </ResponsiveContainer>
@@ -1620,7 +1627,7 @@ export default function AnalyticsView({ uid }) {
                         <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} strokeWidth={0} />
                       ))}
                     </Pie>
-                    <Tooltip
+                    <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }}
                       contentStyle={tooltipStyle}
                       itemStyle={{ color: "#e5e7eb" }}
                       labelStyle={{ color: "#fff", fontWeight: "600" }}
@@ -1671,12 +1678,11 @@ export default function AnalyticsView({ uid }) {
                     tickLine={false}
                     axisLine={false}
                   />
-                  <Tooltip
+                  <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }}
                     contentStyle={tooltipStyle}
                     itemStyle={{ color: "#e5e7eb" }}
                     labelStyle={{ color: "#fff", fontWeight: "600" }}
                     formatter={(v) => [`Rs. ${Number(v).toLocaleString()}`, "Value"]}
-                    cursor={{ fill: "rgba(255,255,255,0.04)" }}
                   />
                   <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={20}>
                     {invValueByCategoryData.map((_, i) => (
@@ -1718,7 +1724,7 @@ export default function AnalyticsView({ uid }) {
               <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
               <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 10 }} interval={invMoveDays <= 7 ? 0 : Math.floor(movementData.length / 6)} />
               <YAxis tick={{ fill: "#9ca3af", fontSize: 10 }} allowDecimals={false} />
-              <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: "#e5e7eb" }} labelStyle={{ color: "#fff", fontWeight: "600" }} />
+              <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={tooltipStyle} itemStyle={{ color: "#e5e7eb" }} labelStyle={{ color: "#fff", fontWeight: "600" }} />
               <Legend wrapperStyle={{ color: "#9ca3af", fontSize: "12px" }} />
               <Line type="monotone" dataKey="added" stroke="#10b981" strokeWidth={2} dot={false} name="Stock Added" />
               <Line type="monotone" dataKey="sold" stroke="#f59e0b" strokeWidth={2} dot={false} name="Stock Sold" />
@@ -1930,7 +1936,7 @@ export default function AnalyticsView({ uid }) {
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                   <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 11 }} />
                   <YAxis tick={{ fill: "#9ca3af", fontSize: 10 }} allowDecimals={false} />
-                  <Tooltip contentStyle={tooltipStyle} itemStyle={{ color: "#e5e7eb" }} labelStyle={{ color: "#fff", fontWeight: "600" }} formatter={(v) => [`${v} units`, "Stock"]} />
+                  <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={tooltipStyle} itemStyle={{ color: "#e5e7eb" }} labelStyle={{ color: "#fff", fontWeight: "600" }} formatter={(v) => [`${v} units`, "Stock"]} />
                   <Bar dataKey="value" radius={[4, 4, 0, 0]}>
                     <Cell fill="#10b981" />
                     <Cell fill="#f59e0b" />
@@ -2507,7 +2513,7 @@ export default function AnalyticsView({ uid }) {
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                   <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 10 }} />
                   <YAxis tick={{ fill: "#9ca3af", fontSize: 10 }} allowDecimals={false} />
-                  <Tooltip contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v) => [v, "New Customers"]} />
+                  <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v) => [v, "New Customers"]} />
                   <Line type="monotone" dataKey="value" stroke="#06b6d4" strokeWidth={2.5} dot={{ fill: "#06b6d4", r: 4 }} activeDot={{ r: 6 }} name="New Customers" />
                 </LineChart>
               </ResponsiveContainer>
@@ -2525,7 +2531,7 @@ export default function AnalyticsView({ uid }) {
                 <BarChart data={revByCust} layout="vertical" margin={{ top: 0, right: 70, left: 0, bottom: 0 }} barCategoryGap="30%">
                   <XAxis type="number" hide />
                   <YAxis type="category" dataKey="name" width={80} tick={{ fill: "#9ca3af", fontSize: 11 }} tickLine={false} axisLine={false} />
-                  <Tooltip contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel}
+                  <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel}
                     formatter={(v, _, props) => [`Rs. ${Number(v).toLocaleString()}`, props.payload.fullName]} />
                   <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={18}>
                     {revByCust.map((_, i) => <Cell key={i} fill={CHART_COLORS_C[i % CHART_COLORS_C.length]} />)}
@@ -2554,7 +2560,7 @@ export default function AnalyticsView({ uid }) {
                     <Pie data={segData} cx="50%" cy="50%" innerRadius={50} outerRadius={78} paddingAngle={3} dataKey="value" label={false}>
                       {segData.map((s, i) => <Cell key={i} fill={s.color} strokeWidth={0} />)}
                     </Pie>
-                    <Tooltip contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v, name) => [v, name]} />
+                    <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v, name) => [v, name]} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="space-y-2">
@@ -2586,7 +2592,7 @@ export default function AnalyticsView({ uid }) {
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
                   <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 10 }} />
                   <YAxis tick={{ fill: "#9ca3af", fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
-                  <Tooltip contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v) => [`Rs. ${Number(v).toLocaleString()}`, "Revenue"]} />
+                  <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v) => [`Rs. ${Number(v).toLocaleString()}`, "Revenue"]} />
                   <Line type="monotone" dataKey="value" stroke="#f59e0b" strokeWidth={2.5} dot={{ fill: "#f59e0b", r: 3 }} activeDot={{ r: 6 }} />
                 </LineChart>
               </ResponsiveContainer>
@@ -2609,7 +2615,7 @@ export default function AnalyticsView({ uid }) {
                     <Pie data={payStatusData} cx="50%" cy="50%" innerRadius={50} outerRadius={78} paddingAngle={3} dataKey="value" label={false}>
                       {payStatusData.map((s, i) => <Cell key={i} fill={s.color} strokeWidth={0} />)}
                     </Pie>
-                    <Tooltip contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v, name) => [v, name]} />
+                    <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v, name) => [v, name]} />
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="space-y-2">
@@ -2713,7 +2719,7 @@ export default function AnalyticsView({ uid }) {
               <BarChart data={topProducts} layout="vertical" margin={{ top: 0, right: 60, left: 0, bottom: 0 }} barCategoryGap="30%">
                 <XAxis type="number" hide />
                 <YAxis type="category" dataKey="name" width={140} tick={{ fill: "#9ca3af", fontSize: 11 }} tickLine={false} axisLine={false} />
-                <Tooltip contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v) => [`${v} units`, "Sold"]} />
+                <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v) => [`${v} units`, "Sold"]} />
                 <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={16}>
                   {topProducts.map((_, i) => <Cell key={i} fill={CHART_COLORS_C[i % CHART_COLORS_C.length]} />)}
                   <LabelList dataKey="value" position="right" style={{ fill: "#9ca3af", fontSize: 11 }} />
@@ -3035,7 +3041,7 @@ export default function AnalyticsView({ uid }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
                 <XAxis dataKey="name" tick={{fill:"#6b7280",fontSize:11}} axisLine={false} tickLine={false}/>
                 <YAxis tick={{fill:"#6b7280",fontSize:10}} axisLine={false} tickLine={false} tickFormatter={v=>`${(v/1000).toFixed(0)}k`}/>
-                <Tooltip contentStyle={ttStyle_p} formatter={v=>[`Rs. ${Number(v).toLocaleString()}`,"Received"]}/>
+                <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle_p} formatter={v=>[`Rs. ${Number(v).toLocaleString()}`,"Received"]}/>
                 <Line type="monotone" dataKey="received" stroke="#10b981" strokeWidth={2.5} dot={{fill:"#10b981",r:4}} activeDot={{r:6}}/>
               </LineChart>
             </ResponsiveContainer>
@@ -3055,7 +3061,7 @@ export default function AnalyticsView({ uid }) {
                       cx="50%" cy="50%" innerRadius={45} outerRadius={72} paddingAngle={3} dataKey="value" label={false}>
                       {Object.keys(methodMap).map((_,i)=><Cell key={i} fill={COLORS_P[i%COLORS_P.length]} strokeWidth={0}/>)}
                     </Pie>
-                    <Tooltip contentStyle={ttStyle_p} formatter={v=>[`Rs. ${Number(v).toLocaleString()}`]}/>
+                    <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle_p} formatter={v=>[`Rs. ${Number(v).toLocaleString()}`]}/>
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="space-y-1.5">
@@ -3161,7 +3167,7 @@ export default function AnalyticsView({ uid }) {
                     <Pie data={statusData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value" label={false}>
                       {statusData.map((d,i)=><Cell key={i} fill={d.color} strokeWidth={0}/>)}
                     </Pie>
-                    <Tooltip contentStyle={ttStyle_p} formatter={(v,n)=>[`${v} invoices`,n]}/>
+                    <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle_p} formatter={(v,n)=>[`${v} invoices`,n]}/>
                   </PieChart>
                 </ResponsiveContainer>
                 <div className="flex-1 space-y-2">
@@ -3402,7 +3408,9 @@ export default function AnalyticsView({ uid }) {
     const deletedCount  = invoices.filter(i => i.deleted).length;
     const totalCreated  = activeInvoices.length + deletedCount;
     const successRate   = totalCreated > 0 ? ((activeInvoices.length / totalCreated)*100).toFixed(1) : 100;
-    const ttStyle_i={background:"rgba(15,15,25,0.97)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"10px",color:"#fff",fontSize:"12px"};
+    const ttStyle_i={background:"rgba(15,15,25,0.97)",border:"1px solid rgba(255,255,255,0.1)",borderRadius:"10px",color:"#fff",fontSize:"12px",padding:"8px 12px"};
+    const ttItem_i={color:"#e5e7eb"};
+    const ttLabel_i={color:"#fff",fontWeight:"600"};
     const COLORS_I=["#10b981","#ef4444","#f59e0b","#7c3aed","#3b82f6","#06b6d4","#f97316","#84cc16"];
     const SC={Paid:"text-green-400",Unpaid:"text-red-400",Partial:"text-yellow-400"};
     return (
@@ -3428,7 +3436,7 @@ export default function AnalyticsView({ uid }) {
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
                 <XAxis dataKey="name" tick={{fill:"#6b7280",fontSize:11}} axisLine={false} tickLine={false}/>
                 <YAxis tick={{fill:"#6b7280",fontSize:10}} axisLine={false} tickLine={false} allowDecimals={false}/>
-                <Tooltip contentStyle={ttStyle_i} formatter={v=>[`${v} invoices`,"Count"]}/>
+                <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle_i} itemStyle={ttItem_i} labelStyle={ttLabel_i} formatter={v=>[`${v} invoices`,"Count"]}/>
                 <Line type="monotone" dataKey="invoices" stroke="#3b82f6" strokeWidth={2.5} dot={{fill:"#3b82f6",r:4}} activeDot={{r:6}}/>
               </LineChart>
             </ResponsiveContainer>
@@ -3441,7 +3449,7 @@ export default function AnalyticsView({ uid }) {
                 <ResponsiveContainer width={170} height={170}>
                   <PieChart><Pie data={statusData_i} cx="50%" cy="50%" innerRadius={48} outerRadius={78} paddingAngle={3} dataKey="value" label={false}>
                     {statusData_i.map((d,i)=><Cell key={i} fill={d.color} strokeWidth={0}/>)}
-                  </Pie><Tooltip contentStyle={ttStyle_i} formatter={(v,n)=>[`${v} invoices`,n]}/></PieChart>
+                  </Pie><Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle_i} itemStyle={ttItem_i} labelStyle={ttLabel_i} formatter={(v,n)=>[`${v} invoices`,n]}/></PieChart>
                 </ResponsiveContainer>
                 <div className="flex-1 space-y-2">{statusData_i.map(d=>(
                   <div key={d.name} className="flex items-center gap-2">
@@ -3504,7 +3512,7 @@ export default function AnalyticsView({ uid }) {
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false}/>
                   <XAxis dataKey="name" tick={{fill:"#6b7280",fontSize:10}} axisLine={false} tickLine={false}/>
                   <YAxis tick={{fill:"#6b7280",fontSize:10}} axisLine={false} tickLine={false} allowDecimals={false}/>
-                  <Tooltip contentStyle={ttStyle_i} formatter={v=>[`${v} invoices`,"Count"]}/>
+                  <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle_i} itemStyle={ttItem_i} labelStyle={ttLabel_i} formatter={v=>[`${v} invoices`,"Count"]}/>
                   <Bar dataKey="value" radius={[6,6,0,0]}>{agingData.map((_,i)=><Cell key={i} fill={["#10b981","#f59e0b","#ef4444","#7c3aed"][i]}/>)}</Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -3776,10 +3784,16 @@ export default function AnalyticsView({ uid }) {
         <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-pink-500/5 animate-gradient-x" />
         <div className="relative z-10 flex flex-col gap-4">
           <div>
-            <h2 className="text-2xl font-bold mb-1 bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 bg-clip-text text-transparent">
-              📊 Business Analytics Dashboard
-            </h2>
-            <p className="text-gray-400 text-xs">Comprehensive insights and performance metrics for your business</p>
+            <div className="flex items-center gap-3 mb-1">
+              <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                style={{background:"linear-gradient(135deg,#3b82f6,#8b5cf6)"}}>
+                📊
+              </div>
+              <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 bg-clip-text text-transparent">
+                Business Analytics Dashboard
+              </h2>
+            </div>
+            <p className="text-gray-400 text-xs ml-13">Comprehensive insights and performance metrics for your business</p>
           </div>
 
           {/* Date Filters */}
@@ -3807,7 +3821,7 @@ export default function AnalyticsView({ uid }) {
             {ANALYTICS_SECTIONS.map(section => (
               <button
                 key={section.id}
-                onClick={() => setActiveSection(section.id)}
+                onClick={() => { setActiveSection(section.id); sessionStorage.setItem("analyticsTab", section.id); }}
                 className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 flex items-center gap-2 ${activeSection === section.id ? "scale-105" : "hover:scale-105"
                   }`}
                 style={{
