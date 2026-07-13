@@ -1251,65 +1251,68 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
               // Only show real product items (no prev balance entries)
               const realItems = (inv.items || []).filter(it => it.description && !isPrevBalItem(it));
               return (
-                <div key={inv.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.02] transition-colors">
+                <div key={inv.id} className="flex flex-col px-4 py-3 gap-2 hover:bg-white/[0.02] transition-colors border-b border-white/[0.04] last:border-0">
+                  {/* Row 1: avatar + invoice ID + date + status */}
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-xl flex items-center justify-center text-[10px] font-black flex-shrink-0"
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black flex-shrink-0"
                       style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>
                       {num}
                     </div>
-                    <div>
-                      <div className="flex items-center gap-2">
-                        <p className="text-white text-sm font-medium">INV-{num}</p>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-white text-sm font-medium whitespace-nowrap">INV-{num}</p>
                         {isOverdue && (
                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
                             style={{ background: "rgba(248,113,113,0.12)", color: "#f87171" }}>OVERDUE</span>
                         )}
                       </div>
-                      <p className="text-gray-500 text-xs">{dateStr}{inv.dueDate ? ` · Due ${inv.dueDate}` : ""}</p>
-                      {/* Product names — only real items, no prev balance entries */}
+                      <p className="text-gray-500 text-xs whitespace-nowrap">{dateStr}{inv.dueDate ? ` · Due ${inv.dueDate}` : ""}</p>
                       {realItems.length > 0 && (
-                        <p className="text-gray-600 text-[10px] mt-0.5 truncate max-w-[220px]">
+                        <p className="text-gray-600 text-[10px] mt-0.5 truncate">
                           📦 {realItems.map(it => it.description).join(", ")}
                         </p>
                       )}
                     </div>
-                  </div>
-                  <div className="flex items-center gap-3 flex-shrink-0">
-                    <div className="text-right hidden sm:block">
-                      <p className="text-white text-sm font-bold">{formatRs(displayAmount)}</p>
-                      {amtPaid > 0 && (
-                        <p className="text-[10px]" style={{ color: "#34d399" }}>Paid: {formatRs(amtPaid)}</p>
-                      )}
-                      {invReturnsTotal > 0 && (
-                        <p className="text-[10px]" style={{ color: "#f87171" }}>Return: -{formatRs(invReturnsTotal)}</p>
-                      )}
-                      {displayBalance > 0 && (
-                        <p className="text-xs font-semibold" style={{ color: "#f87171" }}>Bal: {formatRs(displayBalance)}</p>
-                      )}
-                    </div>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                    <span className="text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0"
                       style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
                       {effectiveStatus}
                     </span>
-                    {/* action btns */}
-                    <div className="flex gap-1">
+                  </div>
+
+                  {/* Row 2: amounts + action buttons */}
+                  <div className="flex items-center justify-between gap-2 pl-12">
+                    <div>
+                      <p className="text-white text-sm font-bold">{formatRs(displayAmount)}</p>
+                      <div className="flex flex-wrap gap-x-3">
+                        {amtPaid > 0 && (
+                          <p className="text-[10px]" style={{ color: "#34d399" }}>Paid: {formatRs(amtPaid)}</p>
+                        )}
+                        {invReturnsTotal > 0 && (
+                          <p className="text-[10px]" style={{ color: "#f87171" }}>Return: -{formatRs(invReturnsTotal)}</p>
+                        )}
+                        {displayBalance > 0 && (
+                          <p className="text-[10px] font-semibold" style={{ color: "#f87171" }}>Bal: {formatRs(displayBalance)}</p>
+                        )}
+                      </div>
+                    </div>
+                    <div className="flex gap-1.5">
                       <button onClick={() => setPdfInv(inv)}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
-                        style={{ background: "rgba(52,211,153,0.08)", color: "#34d399" }}>👁</button>
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
+                        style={{ background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.2)", color: "#34d399" }}>👁</button>
                       <button onClick={() => setShowHistoryModal(inv.id)}
                         title="Invoice Payment History"
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
-                        style={{ background: "rgba(139,92,246,0.1)", color: "#a78bfa" }}>📊</button>
-                      <button onClick={() => { 
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
+                        style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.2)", color: "#a78bfa" }}>📊</button>
+                      <button onClick={() => {
                           const invReturns = customerPayments.filter(p => p.type === "return" && p.invoiceId === inv.id);
-                          setEditInv({ id: inv.id, form: docToForm(inv, invReturns) }); 
-                          setShowInvModal(true); 
+                          setEditInv({ id: inv.id, form: docToForm(inv, invReturns) });
+                          setShowInvModal(true);
                         }}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
-                        style={{ background: "rgba(37,99,235,0.1)", color: "#60A5FA" }}>✏️</button>
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
+                        style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>✏️</button>
                       <button onClick={() => setDeleteInvId(inv.id)}
-                        className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
-                        style={{ background: "rgba(248,113,113,0.1)", color: "#f87171" }}>🗑</button>
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
+                        style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>🗑</button>
                     </div>
                   </div>
                 </div>
@@ -1590,39 +1593,39 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose, userDoc, 
   }
   
   return (
-    <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 animate-fadeIn"
+    <div className="fixed inset-0 z-[60] flex items-start justify-center p-2 sm:p-4 overflow-y-auto animate-fadeIn"
       style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)" }}>
-      <div className="w-full max-w-4xl max-h-[90vh] flex flex-col rounded-2xl overflow-hidden animate-scaleIn"
+      <div className="w-full max-w-4xl my-2 sm:my-4 flex flex-col rounded-2xl overflow-hidden animate-scaleIn"
         style={{ background: "#0d1117", border: "1px solid rgba(139,92,246,0.3)", boxShadow: "0 20px 60px rgba(139,92,246,0.3)" }}>
         
         {/* Header */}
-        <div className="relative overflow-hidden px-6 py-5 border-b border-white/10">
+        <div className="relative overflow-hidden px-4 sm:px-6 py-4 sm:py-5 border-b border-white/10">
           <div className="absolute inset-0 bg-gradient-to-r from-purple-500/10 via-pink-500/10 to-blue-500/10" />
-          <div className="relative z-10 flex items-center justify-between">
-            <div>
-              <h2 className="text-white font-black text-xl mb-1">
+          <div className="relative z-10 flex items-start justify-between gap-3">
+            <div className="min-w-0 flex-1">
+              <h2 className="text-white font-black text-base sm:text-xl mb-1 leading-tight">
                 📊 {singleInvoiceId
-                  ? `INV-${singleInvoiceId.slice(-4).toUpperCase()} · Payment History`
-                  : "Activity History & Report"
+                  ? `INV-${singleInvoiceId.slice(-4).toUpperCase()} · History`
+                  : "Activity History"
                 }
               </h2>
-              <p className="text-gray-400 text-xs">
-                Complete transaction history for <span className="text-purple-400 font-semibold">{customer.name}</span>
+              <p className="text-gray-400 text-xs truncate">
+                <span className="text-purple-400 font-semibold">{customer.name}</span>
               </p>
             </div>
-            <div className="flex gap-2">
+            <div className="flex items-center gap-1.5 flex-shrink-0">
               <button onClick={() => setShowPDF(true)}
-                className="px-4 py-2 rounded-lg text-xs font-semibold transition-all hover:scale-105"
-                style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", color: "#000", fontWeight: 700 }}>
-                📄 Export PDF
+                className="px-3 py-2 rounded-lg text-xs font-bold transition-all hover:scale-105"
+                style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", color: "#000" }}>
+                📄 PDF
               </button>
               <button onClick={handlePrint}
-                className="px-4 py-2 rounded-lg text-xs font-semibold transition-all hover:scale-105"
+                className="px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:scale-105"
                 style={{ background: "rgba(139,92,246,0.15)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }}>
-                🖨️ Print
+                🖨️
               </button>
               <button onClick={onClose}
-                className="w-10 h-10 rounded-lg flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/5 transition-all text-2xl font-bold">
+                className="w-9 h-9 rounded-lg flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/5 transition-all text-xl font-bold flex-shrink-0">
                 ×
               </button>
             </div>
@@ -1630,27 +1633,28 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose, userDoc, 
         </div>
         
         {/* Summary Stats */}
-        <div className="grid grid-cols-2 lg:grid-cols-6 gap-3 p-4 border-b border-white/10">
+        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 p-3 sm:p-4 border-b border-white/10">
           {[
-            { label: "Total Invoices",  value: totalInvoices,           icon: "🧾", color: "#60A5FA" },
-            { label: "Total Invoiced",  value: formatRs(totalInvoiced), icon: "💼", color: "#F59E0B" },
-            { label: "Total Purchases", value: totalPurchases,          icon: "🛍️", color: "#f59e0b" },
-            { label: "Goods Return",    value: totalReturns,            icon: "↩️", color: "#f87171" },
-            { label: "Total Paid",      value: formatRs(totalPaid),     icon: "✅", color: "#10b981" },
-            { label: "Balance Due",     value: formatRs(totalBalance),  icon: "⏳", color: totalBalance > 0 ? "#f87171" : "#34d399" },
+            { label: "Invoices",   value: totalInvoices,           icon: "🧾", color: "#60A5FA" },
+            { label: "Invoiced",   value: formatRs(totalInvoiced), icon: "💼", color: "#F59E0B" },
+            { label: "Purchases",  value: totalPurchases,          icon: "🛍️", color: "#f59e0b" },
+            { label: "Returns",    value: totalReturns,            icon: "↩️", color: "#f87171" },
+            { label: "Total Paid", value: formatRs(totalPaid),     icon: "✅", color: "#10b981" },
+            { label: "Balance",    value: formatRs(totalBalance),  icon: "⏳", color: totalBalance > 0 ? "#f87171" : "#34d399" },
           ].map((stat, i) => (
-            <div key={i} className="rounded-lg p-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
-              <div className="flex items-center gap-1.5 mb-1">
-                <span className="text-sm">{stat.icon}</span>
-                <p className="text-[9px] font-bold uppercase tracking-wide text-gray-500">{stat.label}</p>
+            <div key={i} className="rounded-lg p-2.5 sm:p-3" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div className="flex items-center gap-1 mb-1">
+                <span className="text-xs">{stat.icon}</span>
+                <p className="text-[9px] font-bold uppercase tracking-wide text-gray-500 truncate">{stat.label}</p>
               </div>
               <p className="text-sm font-bold" style={{ color: stat.color }}>{stat.value}</p>
             </div>
           ))}
         </div>
         
-        {/* Filter Tabs */}
-        <div className="flex gap-2 px-4 py-3 border-b border-white/10">
+        {/* Filter Tabs — scrollable on mobile */}
+        <div className="flex gap-2 px-3 sm:px-4 py-3 border-b border-white/10 overflow-x-auto"
+          style={{ scrollbarWidth: "none", msOverflowStyle: "none" }}>
           {[
             { id: "all",       label: "All",      icon: "📋", count: timeline.length },
             { id: "invoices",  label: "Invoices", icon: "🧾", count: totalInvoices },
@@ -1661,9 +1665,7 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose, userDoc, 
             <button
               key={tab.id}
               onClick={() => setFilter(tab.id)}
-              className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-300 ${
-                filter === tab.id ? "scale-105 shadow-lg" : "hover:scale-105"
-              }`}
+              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition-all duration-300 flex-shrink-0"
               style={{
                 background: filter === tab.id 
                   ? "linear-gradient(135deg, #8B5CF6, #7C3AED)"
@@ -1682,7 +1684,7 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose, userDoc, 
         </div>
         
         {/* Timeline */}
-        <div className="flex-1 overflow-y-auto p-4">
+        <div className="overflow-y-auto p-3 sm:p-4" style={{ maxHeight: "50vh" }}>
           {filtered.length === 0 ? (
             <div className="text-center py-16">
               <div className="text-5xl mb-3">

@@ -1,5 +1,5 @@
 "use client";
-import { useRef, useState } from "react";
+import { useRef, useState, useEffect } from "react";
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 function formatRs(n) {
@@ -377,9 +377,22 @@ function HistoryTemplate({ customer, invoices, payments, userDoc }) {
 
 // ── Modal: Preview + Download + Print + WhatsApp ──────────────────────────────
 export default function CustomerHistoryPDFModal({ customer, invoices, payments, userDoc, onClose }) {
-  const printRef  = useRef(null);
+  const printRef     = useRef(null);
+  const containerRef = useRef(null);
   const [loading, setLoading] = useState(false);
   const [copied,  setCopied]  = useState(false);
+  const [scale,   setScale]   = useState(1);
+
+  useEffect(() => {
+    function updateScale() {
+      if (!containerRef.current) return;
+      setScale(Math.min(1, containerRef.current.clientWidth / 794));
+    }
+    updateScale();
+    const ro = new ResizeObserver(updateScale);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
 
   async function downloadPDF() {
     if (!printRef.current || loading) return;
@@ -457,59 +470,68 @@ export default function CustomerHistoryPDFModal({ customer, invoices, payments, 
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto"
+    <div className="fixed inset-0 z-[70] flex items-start justify-center p-2 sm:p-4 overflow-y-auto"
       style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)" }}>
-      <div className="w-full max-w-[860px] my-4">
+      <div className="w-full max-w-[860px] my-2 sm:my-4">
 
         {/* Action bar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4 px-1">
-          <h3 className="text-white font-bold text-base">
-            📊 History Report — {customer.name}
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-1">
+          <h3 className="text-white font-bold text-sm sm:text-base truncate max-w-[60%]">
+            📊 {customer.name} — History
           </h3>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             {copied && (
-              <span className="text-xs font-medium px-3 py-1.5 rounded-full"
+              <span className="text-xs font-medium px-2 py-1 rounded-full"
                 style={{ background: "rgba(52,211,153,0.15)", color: "#34d399", border: "1px solid rgba(52,211,153,0.3)" }}>
                 ✓ Copied!
               </span>
             )}
             <button onClick={copyText}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-105"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all hover:scale-105"
               style={{ background: "rgba(255,255,255,0.07)", border: "1px solid rgba(255,255,255,0.12)", color: "#d1d5db" }}>
-              📋 Copy Summary
+              📋 Copy
             </button>
             <button onClick={shareWhatsApp}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-105"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all hover:scale-105"
               style={{ background: "rgba(37,211,102,0.1)", border: "1px solid rgba(37,211,102,0.3)", color: "#25D366" }}>
-              💬 WhatsApp
+              💬 WA
             </button>
             <button onClick={printReport}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-105"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all hover:scale-105"
               style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }}>
-              🖨️ Print
+              🖨️
             </button>
             <button onClick={downloadPDF} disabled={loading}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold transition-all hover:scale-105"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all hover:scale-105"
               style={{ background: "linear-gradient(135deg,#8b5cf6,#7c3aed)", color: "#fff",
                 opacity: loading ? 0.7 : 1, cursor: loading ? "wait" : "pointer" }}>
-              {loading ? "⏳ Generating..." : "⬇️ Download PDF"}
+              {loading ? "⏳..." : "⬇️ PDF"}
             </button>
             <button onClick={onClose}
-              className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 transition-colors text-lg">
+              className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 transition-colors text-lg flex-shrink-0">
               ✕
             </button>
           </div>
         </div>
 
-        {/* Preview */}
-        <div className="overflow-hidden rounded-xl shadow-2xl" style={{ border: "1px solid rgba(139,92,246,0.3)" }}>
-          <div ref={printRef}>
-            <HistoryTemplate
-              customer={customer}
-              invoices={invoices}
-              payments={payments}
-              userDoc={userDoc}
-            />
+        {/* Preview — scales down on mobile */}
+        <div ref={containerRef} style={{ width: "100%", overflow: "hidden", borderRadius: 12, border: "1px solid rgba(139,92,246,0.3)", boxShadow: "0 20px 40px rgba(0,0,0,0.4)" }}>
+          <div style={{
+            width: 794,
+            transformOrigin: "top left",
+            transform: `scale(${scale})`,
+            // scale < 1 means rendered height is still 794-wide natural height,
+            // but visually it's scale*that — compensate so container shrinks too
+            marginBottom: scale < 1 ? `${(scale - 1) * 100}%` : 0,
+          }}>
+            <div ref={printRef}>
+              <HistoryTemplate
+                customer={customer}
+                invoices={invoices}
+                payments={payments}
+                userDoc={userDoc}
+              />
+            </div>
           </div>
         </div>
 

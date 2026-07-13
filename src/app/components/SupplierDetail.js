@@ -1282,8 +1282,21 @@ export function PurchaseOrderPDFTemplate({ order, supplier, userDoc = {}, receip
 
 // ── Purchase Order View Modal ─────────────────────────────────────────────────
 function PurchaseOrderViewModal({ order, supplier, userDoc = {}, receipts, returns, payments, onClose }) {
-  const printRef = useRef(null);
+  const printRef     = useRef(null);
+  const containerRef = useRef(null);
   const [loading, setLoading] = useState(false);
+  const [scale,   setScale]   = useState(1);
+
+  useEffect(() => {
+    function updateScale() {
+      if (!containerRef.current) return;
+      setScale(Math.min(1, containerRef.current.clientWidth / 794));
+    }
+    updateScale();
+    const ro = new ResizeObserver(updateScale);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
 
   async function downloadPDF() {
     if (!printRef.current || loading) return;
@@ -1352,46 +1365,53 @@ function PurchaseOrderViewModal({ order, supplier, userDoc = {}, receipts, retur
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto"
+    <div className="fixed inset-0 z-[70] flex items-start justify-center p-2 sm:p-4 overflow-y-auto"
       style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)" }}>
-      <div className="w-full max-w-[820px] mx-auto my-4">
+      <div className="w-full max-w-[820px] mx-auto my-2 sm:my-4">
         {/* Toolbar */}
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4 px-1">
-          <h3 className="text-white font-bold text-base">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-1">
+          <h3 className="text-white font-bold text-sm sm:text-base truncate max-w-[60%]">
             📄 PO-{(order.id || "").slice(-4).toUpperCase()} · {supplier.name}
           </h3>
-          <div className="flex flex-wrap items-center gap-2">
+          <div className="flex flex-wrap items-center gap-1.5">
             <button onClick={shareWhatsApp}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold hover:scale-105 transition-all"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold hover:scale-105 transition-all"
               style={{ background: "rgba(37,211,102,0.1)", border: "1px solid rgba(37,211,102,0.3)", color: "#25D366" }}>
-              💬 WhatsApp
+              💬 WA
             </button>
             <button onClick={printOrder}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold hover:scale-105 transition-all"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold hover:scale-105 transition-all"
               style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }}>
-              🖨️ Print
+              🖨️
             </button>
             <button onClick={downloadPDF} disabled={loading}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold hover:scale-105 transition-all"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold hover:scale-105 transition-all"
               style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#000", opacity: loading ? 0.7 : 1 }}>
-              {loading ? "⏳ Generating..." : "⬇️ Download PDF"}
+              {loading ? "⏳..." : "⬇️ PDF"}
             </button>
             <button onClick={onClose}
-              className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 text-lg">✕</button>
+              className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 text-lg flex-shrink-0">✕</button>
           </div>
         </div>
 
-        {/* PDF Preview */}
-        <div className="overflow-hidden rounded-xl shadow-2xl" style={{ border: "1px solid rgba(245,158,11,0.3)" }}>
-          <div ref={printRef}>
-            <PurchaseOrderPDFTemplate
-              order={order}
-              supplier={supplier}
-              userDoc={userDoc}
-              receipts={receipts}
-              returns={returns}
-              payments={payments}
-            />
+        {/* PDF Preview — scales on mobile */}
+        <div ref={containerRef} style={{ width: "100%", overflow: "hidden", borderRadius: 12, border: "1px solid rgba(245,158,11,0.3)", boxShadow: "0 20px 40px rgba(0,0,0,0.4)" }}>
+          <div style={{
+            width: 794,
+            transformOrigin: "top left",
+            transform: `scale(${scale})`,
+            marginBottom: scale < 1 ? `${(scale - 1) * 100}%` : 0,
+          }}>
+            <div ref={printRef}>
+              <PurchaseOrderPDFTemplate
+                order={order}
+                supplier={supplier}
+                userDoc={userDoc}
+                receipts={receipts}
+                returns={returns}
+                payments={payments}
+              />
+            </div>
           </div>
         </div>
         <p className="text-center text-gray-600 text-xs mt-3">Scroll to preview · Download PDF or share via WhatsApp</p>
@@ -2061,9 +2081,9 @@ export function OrderFormModal({ order, userDoc = {}, onClose }) {
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto"
+    <div className="fixed inset-0 z-[70] flex items-start justify-center p-2 sm:p-4 overflow-y-auto"
       style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)" }}>
-      <div className="w-full my-4" style={{ maxWidth: 820 }}>
+      <div className="w-full my-2 sm:my-4" style={{ maxWidth: 820 }}>
         {/* Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-3 mb-4 px-1">
           <div className="flex flex-wrap items-center gap-3">
@@ -2117,17 +2137,15 @@ export function OrderFormModal({ order, userDoc = {}, onClose }) {
         {/* Form Preview */}
         <div style={{
           background: "linear-gradient(135deg,#f59e0b,#6366f1,#8b5cf6)",
-          padding: "2px", borderRadius: 14, overflow: "hidden", width: "95%"
+          padding: "2px", borderRadius: 14, overflow: "hidden"
         }}>
           <div style={{ background: "#111", borderRadius: 12, overflow: "hidden" }}>
-            {/* Measure available width, then scale 794px pages to fit */}
             <div ref={containerRef} style={{ width: "100%", overflow: "hidden" }}>
               <div style={{
                 width: 794,
                 transformOrigin: "top left",
-                // transform: `scale(${scale})`,
-                // Collapse the extra whitespace caused by scaling
-                // marginBottom: scale < 1 ? `${(1123 * (scale - 1))}px` : 0,
+                transform: `scale(${scale})`,
+                marginBottom: scale < 1 ? `${1123 * pages * (scale - 1)}px` : 0,
               }}>
                 <div ref={printRef}>
                   <BlankOrderFormTemplate userDoc={userDoc} formType={formType} totalPages={pages} />
@@ -2410,8 +2428,21 @@ function SupplierHistoryTemplate({ supplier, orders, payments, receipts, returns
 
 // ── Supplier History Modal ────────────────────────────────────────────────────
 function SupplierHistoryModal({ supplier, orders, payments, receipts, returns, userDoc = {}, onClose }) {
-  const printRef = useRef(null);
+  const printRef     = useRef(null);
+  const containerRef = useRef(null);
   const [loading, setLoading] = useState(false);
+  const [scale,   setScale]   = useState(1);
+
+  useEffect(() => {
+    function updateScale() {
+      if (!containerRef.current) return;
+      setScale(Math.min(1, containerRef.current.clientWidth / 794));
+    }
+    updateScale();
+    const ro = new ResizeObserver(updateScale);
+    if (containerRef.current) ro.observe(containerRef.current);
+    return () => ro.disconnect();
+  }, []);
 
   async function downloadPDF() {
     if (!printRef.current || loading) return;
@@ -2469,34 +2500,44 @@ function SupplierHistoryModal({ supplier, orders, payments, receipts, returns, u
   }
 
   return (
-    <div className="fixed inset-0 z-[70] flex items-start justify-center p-4 overflow-y-auto"
+    <div className="fixed inset-0 z-[70] flex items-start justify-center p-2 sm:p-4 overflow-y-auto"
       style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)" }}>
-      <div className="w-full max-w-[820px] mx-auto my-4">
-        <div className="flex flex-wrap items-center justify-between gap-3 mb-4 px-1">
-          <h3 className="text-white font-bold text-base">📊 Supplier Report — {supplier.name}</h3>
-          <div className="flex flex-wrap items-center gap-2">
+      <div className="w-full max-w-[820px] mx-auto my-2 sm:my-4">
+        <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-1">
+          <h3 className="text-white font-bold text-sm sm:text-base truncate max-w-[60%]">
+            📊 {supplier.name} — Report
+          </h3>
+          <div className="flex flex-wrap items-center gap-1.5">
             <button onClick={shareWhatsApp}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold hover:scale-105 transition-all"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold hover:scale-105 transition-all"
               style={{ background: "rgba(37,211,102,0.1)", border: "1px solid rgba(37,211,102,0.3)", color: "#25D366" }}>
-              💬 WhatsApp
+              💬 WA
             </button>
             <button onClick={printReport}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold hover:scale-105 transition-all"
+              className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold hover:scale-105 transition-all"
               style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }}>
-              🖨️ Print
+              🖨️
             </button>
             <button onClick={downloadPDF} disabled={loading}
-              className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold hover:scale-105 transition-all"
+              className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold hover:scale-105 transition-all"
               style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#000", opacity: loading ? 0.7 : 1 }}>
-              {loading ? "⏳ Generating..." : "⬇️ Download PDF"}
+              {loading ? "⏳..." : "⬇️ PDF"}
             </button>
             <button onClick={onClose}
-              className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 text-lg">✕</button>
+              className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 text-lg flex-shrink-0">✕</button>
           </div>
         </div>
-        <div className="overflow-hidden rounded-xl shadow-2xl" style={{ border: "1px solid rgba(245,158,11,0.3)" }}>
-          <div ref={printRef}>
-            <SupplierHistoryTemplate supplier={supplier} orders={orders} payments={payments} receipts={receipts || []} returns={returns || []} userDoc={userDoc} />
+        {/* Preview — scales on mobile */}
+        <div ref={containerRef} style={{ width: "100%", overflow: "hidden", borderRadius: 12, border: "1px solid rgba(245,158,11,0.3)", boxShadow: "0 20px 40px rgba(0,0,0,0.4)" }}>
+          <div style={{
+            width: 794,
+            transformOrigin: "top left",
+            transform: `scale(${scale})`,
+            marginBottom: scale < 1 ? `${(scale - 1) * 100}%` : 0,
+          }}>
+            <div ref={printRef}>
+              <SupplierHistoryTemplate supplier={supplier} orders={orders} payments={payments} receipts={receipts || []} returns={returns || []} userDoc={userDoc} />
+            </div>
           </div>
         </div>
         <p className="text-center text-gray-600 text-xs mt-3">Scroll to see full report · Click &quot;Download PDF&quot; to save</p>
@@ -2520,7 +2561,6 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
   const [showHistory, setShowHistory] = useState(false);   // true = full supplier history
   const [historyOrder, setHistoryOrder] = useState(null);  // specific order history
   const [viewOrder, setViewOrder]       = useState(null);  // order to view as PDF
-  const [orderFormOrder, setOrderFormOrder] = useState(null); // order to show blank form
   const [supplierPayments, setSupplierPayments] = useState([]);
   const [supplierReceipts, setSupplierReceipts] = useState([]);
   const [supplierReturns, setSupplierReturns]   = useState([]);
@@ -3069,75 +3109,71 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
                 const num = (o.id || "").slice(-4).toUpperCase();
                 const isOverdue = o.dueDate && new Date(o.dueDate) < new Date() && statusKey !== "Paid";
                 return (
-                  <div key={o.id} className="flex items-center justify-between px-5 py-3.5 hover:bg-white/[0.02] transition-colors">
+                  <div key={o.id} className="flex flex-col px-4 py-3 gap-2 hover:bg-white/[0.02] transition-colors border-b border-white/[0.04] last:border-0">
+                    {/* Row 1: avatar + PO number + date + status */}
                     <div className="flex items-center gap-3 min-w-0">
-                      <div className="w-8 h-8 rounded-xl flex items-center justify-center text-[10px] font-black flex-shrink-0"
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black flex-shrink-0"
                         style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", color: "#F59E0B" }}>
                         {num}
                       </div>
-                      <div>
-                        <div className="flex items-center gap-2">
-                          <p className="text-white text-sm font-medium">PO-{num}</p>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-white text-sm font-medium whitespace-nowrap">PO-{num}</p>
                           {isOverdue && (
                             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
                               style={{ background: "rgba(248,113,113,0.12)", color: "#f87171" }}>OVERDUE</span>
                           )}
                         </div>
-                        <p className="text-gray-500 text-xs">{fmtDate(o.createdAt)}{o.dueDate ? ` · Due ${o.dueDate}` : ""}</p>
+                        <p className="text-gray-500 text-xs whitespace-nowrap">{fmtDate(o.createdAt)}{o.dueDate ? ` · Due ${o.dueDate}` : ""}</p>
                         {o.items?.length > 0 && (
-                          <p className="text-gray-600 text-[10px] mt-0.5 truncate max-w-[220px]">
+                          <p className="text-gray-600 text-[10px] mt-0.5 truncate">
                             📦 {o.items.map(it => it.description).join(", ")}
                           </p>
                         )}
                       </div>
-                    </div>
-                    <div className="flex items-center gap-3 flex-shrink-0">
-                      <div className="text-right hidden sm:block">
-                        <p className="text-white text-sm font-bold">{formatRs(total)}</p>
-                        {paid > 0 && (
-                          <p className="text-[11px] font-semibold" style={{ color: "#34d399" }}>
-                            Paid: {formatRs(paid)}
-                          </p>
-                        )}
-                        {returnsTotal > 0 && (
-                          <p className="text-[11px] font-semibold" style={{ color: "#f87171" }}>
-                            Goods Return: - {formatRs(returnsTotal)}
-                          </p>
-                        )}
-                        {bal > 0 && (
-                          <p className="text-xs font-bold" style={{ color: "#f87171" }}>
-                            Bal: {formatRs(bal)}
-                          </p>
-                        )}
-                      </div>
-                      <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0"
                         style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
                         {statusKey}
                       </span>
-                      <div className="flex gap-1">
+                    </div>
+
+                    {/* Row 2: amounts + action buttons */}
+                    <div className="flex items-center justify-between gap-2 pl-12">
+                      <div>
+                        <p className="text-white text-sm font-bold">{formatRs(total)}</p>
+                        <div className="flex flex-wrap gap-x-3">
+                          {paid > 0 && (
+                            <p className="text-[10px] font-semibold" style={{ color: "#34d399" }}>Paid: {formatRs(paid)}</p>
+                          )}
+                          {returnsTotal > 0 && (
+                            <p className="text-[10px] font-semibold" style={{ color: "#f87171" }}>Return: -{formatRs(returnsTotal)}</p>
+                          )}
+                          {bal > 0 && (
+                            <p className="text-[10px] font-bold" style={{ color: "#f87171" }}>Bal: {formatRs(bal)}</p>
+                          )}
+                        </div>
+                      </div>
+                      <div className="flex gap-1.5 flex-wrap justify-end">
                         <button onClick={() => setViewOrder(o)} title="View Order"
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
-                          style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b" }}>👁</button>
-                        <button onClick={() => setOrderFormOrder(o)} title="Order Form"
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
-                          style={{ background: "rgba(99,102,241,0.1)", color: "#818cf8" }}>📋</button>
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
+                          style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", color: "#f59e0b" }}>👁</button>
                         {bal > 0 && (
                           <button onClick={() => setPayOrder(o)} title="Pay Supplier"
-                            className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
-                            style={{ background: "rgba(16,185,129,0.1)", color: "#34d399" }}>💸</button>
+                            className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
+                            style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", color: "#34d399" }}>💸</button>
                         )}
                         <button onClick={() => setReturnOrder(o)} title="Return Goods"
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
-                          style={{ background: "rgba(239,68,68,0.1)", color: "#f87171" }}>↩</button>
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
+                          style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171" }}>↩</button>
                         <button onClick={() => setHistoryOrder(o)} title="View History"
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
-                          style={{ background: "rgba(139,92,246,0.1)", color: "#a78bfa" }}>📊</button>
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
+                          style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.2)", color: "#a78bfa" }}>📊</button>
                         <button onClick={() => { setEditOrder({ id: o.id, form: orderToForm(o) }); setShowOrderModal(true); }}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
-                          style={{ background: "rgba(37,99,235,0.1)", color: "#60A5FA" }}>✏️</button>
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
+                          style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>✏️</button>
                         <button onClick={() => setDeleteOrderId(o.id)}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-xs transition-colors"
-                          style={{ background: "rgba(248,113,113,0.1)", color: "#f87171" }}>🗑</button>
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
+                          style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>🗑</button>
                       </div>
                     </div>
                   </div>
@@ -3182,15 +3218,6 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
           returns={supplierReturns.filter(r => r.orderId === viewOrder.id)}
           payments={supplierPayments.filter(p => p.orderId === viewOrder.id)}
           onClose={() => setViewOrder(null)}
-        />
-      )}
-
-      {/* Blank Order Form Modal — 📋 button */}
-      {orderFormOrder && (
-        <OrderFormModal
-          order={orderFormOrder}
-          userDoc={userDoc}
-          onClose={() => setOrderFormOrder(null)}
         />
       )}
 

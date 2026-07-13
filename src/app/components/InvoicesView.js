@@ -718,30 +718,41 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
               >
 
                 {/* ── Mobile ── */}
-                <div className="flex items-center justify-between px-5 py-3.5 md:hidden">
+                <div className="flex flex-col px-4 py-3 gap-2 md:hidden">
+                  {/* Row 1: avatar + name + date */}
                   <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-8 h-8 rounded-xl flex items-center justify-center text-[10px] font-black flex-shrink-0"
+                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black flex-shrink-0"
                       style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>
                       {num}
                     </div>
-                    <div className="min-w-0">
+                    <div className="min-w-0 flex-1">
                       <p className="text-white text-sm font-semibold truncate">{inv.customerName || inv.customer || "Unknown"}</p>
-                      <p className="text-gray-500 text-[10px]">INV-{num} · {dateStr}</p>
+                      <p className="text-gray-500 text-[10px] whitespace-nowrap">INV-{num} · {dateStr}</p>
                     </div>
-                  </div>
-                  <div className="flex items-center gap-2 flex-shrink-0">
-                    <div className="text-right">
-                      <p className="text-white text-sm font-bold">{formatRs(inv.amount)}</p>
-                      {Number(inv.balance) > 0 && <p className="text-[10px]" style={{ color: "#f87171" }}>Bal: {formatRs(inv.balance)}</p>}
-                    </div>
-                    <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                    <span className="text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0"
                       style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
                       {effectiveStatus}
                     </span>
-                    <div className="flex gap-1">
-                      <button onClick={() => setPdfInvoice(inv)} className="w-7 h-7 rounded-lg flex items-center justify-center text-xs" style={{ background: "rgba(52,211,153,0.08)", color: "#34d399" }}>👁</button>
-                      <button onClick={() => { setEditTarget({ id: inv.id, form: docToForm(inv) }); setShowModal(true); }} className="w-7 h-7 rounded-lg flex items-center justify-center text-xs" style={{ background: "rgba(37,99,235,0.1)", color: "#60A5FA" }}>✏️</button>
-                      <button onClick={() => setDeleteConf(inv.id)} className="w-7 h-7 rounded-lg flex items-center justify-center text-xs" style={{ background: "rgba(248,113,113,0.1)", color: "#f87171" }}>🗑</button>
+                  </div>
+
+                  {/* Row 2: amount + balance + action buttons */}
+                  <div className="flex items-center justify-between gap-2 pl-12">
+                    <div>
+                      <p className="text-white text-sm font-bold">{formatRs(inv.amount)}</p>
+                      {Number(inv.balance) > 0 && (
+                        <p className="text-[10px]" style={{ color: "#f87171" }}>Bal: {formatRs(inv.balance)}</p>
+                      )}
+                    </div>
+                    <div className="flex gap-1.5">
+                      <button onClick={() => setPdfInvoice(inv)}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm"
+                        style={{ background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.2)", color: "#34d399" }}>👁</button>
+                      <button onClick={() => { setEditTarget({ id: inv.id, form: docToForm(inv) }); setShowModal(true); }}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm"
+                        style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>✏️</button>
+                      <button onClick={() => setDeleteConf(inv.id)}
+                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm"
+                        style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>🗑</button>
                     </div>
                   </div>
                 </div>
