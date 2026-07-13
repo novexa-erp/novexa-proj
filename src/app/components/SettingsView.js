@@ -236,17 +236,17 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
   }
 
   return (
-    <div className="flex flex-col lg:flex-row gap-6 w-full max-w-7xl">
+    <div className="flex flex-col lg:flex-row gap-4 sm:gap-6 w-full max-w-7xl px-2 sm:px-0">
       
       {/* ────────────── LEFT COLUMN: Forms ────────────── */}
-      <div className="flex-1 flex flex-col gap-6">
+      <div className="flex-1 flex flex-col gap-4 sm:gap-6">
 
       {/* ── Profile & Business form ── */}
-      <form onSubmit={handleSaveProfile} className="rounded-2xl p-6 flex flex-col gap-6" style={cardS}>
+      <form onSubmit={handleSaveProfile} className="rounded-2xl p-4 sm:p-6 flex flex-col gap-5 sm:gap-6" style={cardS}>
 
         {/* Logo section */}
         <SECT title="Business Logo" color="#9ca3af">
-          <div className="flex items-center gap-5">
+          <div className="flex flex-col sm:flex-row items-start sm:items-center gap-4 sm:gap-5">
             <div className="w-20 h-20 rounded-2xl flex items-center justify-center flex-shrink-0 overflow-hidden"
               style={{ background: "rgba(255,255,255,0.04)", border: "2px dashed rgba(255,255,255,0.12)" }}>
               {profile.logoDataUrl ? (
@@ -255,12 +255,12 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
                 <span className="text-3xl">🏢</span>
               )}
             </div>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2 w-full">
               <p className="text-white text-sm font-semibold">Business Logo</p>
               <p className="text-gray-500 text-xs leading-relaxed">
                 This logo will be used automatically on all invoices. PNG or JPG, max 1 MB.
               </p>
-              <div className="flex gap-2 mt-1">
+              <div className="flex flex-wrap gap-2 mt-1">
                 <button type="button" onClick={() => logoInputRef.current?.click()}
                   className="px-4 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-105"
                   style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.25)", color: "#60A5FA" }}>
@@ -281,7 +281,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
 
         {/* Business info */}
         <SECT title="Business Information" color="#F59E0B">
-          <div className="grid grid-cols-2 gap-3">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
             <div>
               <label style={lbl}>Your Name</label>
               <SInput placeholder="e.g. Ahmed Raza" value={profile.name} onChange={set("name")} />
@@ -301,11 +301,11 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
                 <span>🔒</span> Email cannot be changed for security reasons
               </p>
             </div>
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <label style={lbl}>Address</label>
               <SInput placeholder="Street, City, Country" value={profile.address} onChange={set("address")} />
             </div>
-            <div className="col-span-2">
+            <div className="sm:col-span-2">
               <label style={lbl}>Website (optional)</label>
               <SInput type="url" inputMode="url" placeholder="https://yourbusiness.com" value={profile.website} onChange={set("website")} />
             </div>
@@ -349,7 +349,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
       </form>
 
       {/* ── Change Password ── */}
-      <form onSubmit={handleChangePassword} className="rounded-2xl p-6 flex flex-col gap-5" style={cardS}>
+      <form onSubmit={handleChangePassword} className="rounded-2xl p-4 sm:p-6 flex flex-col gap-5" style={cardS}>
         <SECT title="Change Password" color="#f87171">
           <div className="flex flex-col gap-3">
             {[
@@ -399,7 +399,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
       </form>
 
       {/* ── Gmail Email Sender Setup ── */}
-      <div className="rounded-2xl p-6 flex flex-col gap-5" style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}>
+      <div className="rounded-2xl p-4 sm:p-6 flex flex-col gap-5" style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}>
         <SECT title="📧 Email Sender Setup" color="#34d399">
 
           {/* ── DISABLED BY ADMIN ── */}
@@ -551,7 +551,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
       <div className="lg:w-96 flex flex-col gap-4">
         
         {/* Quick Tips Card */}
-        <div className="rounded-2xl p-5 flex flex-col gap-4" style={cardS}>
+        <div className="rounded-2xl p-4 sm:p-5 flex flex-col gap-4" style={cardS}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
               style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)" }}>
@@ -575,7 +575,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
         </div>
 
         {/* Account Stats Card */}
-        <div className="rounded-2xl p-5 flex flex-col gap-4" style={cardS}>
+        <div className="rounded-2xl p-4 sm:p-5 flex flex-col gap-4" style={cardS}>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
               style={{ background: "rgba(37,99,235,0.12)" }}>

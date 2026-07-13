@@ -1377,16 +1377,16 @@ export default function AnalyticsView({ uid }) {
 
         {/* ══════════════════ 📊 REVENUE BY CATEGORY ══════════════════ */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
-          <div className="rounded-xl p-5" style={cardStyle}>
-            <h3 className="text-white font-bold text-base mb-1">📊 Revenue by Category</h3>
+          <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-sm sm:text-base mb-1">📊 Revenue by Category</h3>
             <p className="text-gray-500 text-xs mb-4">Total sales value per product category</p>
             {revByCatData.length === 0 ? (
               <p className="text-gray-500 text-sm text-center py-10">No category data. Add categories to products.</p>
             ) : (
               <div className="flex flex-col gap-4">
-                <ResponsiveContainer width="100%" height={200}>
+                <ResponsiveContainer width="100%" height={180}>
                   <PieChart>
-                    <Pie data={revByCatData} cx="50%" cy="50%" innerRadius={55} outerRadius={85} paddingAngle={3} dataKey="value" label={false}>
+                    <Pie data={revByCatData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3} dataKey="value" label={false}>
                       {revByCatData.map((_, i) => <Cell key={i} fill={CHART_COLORS_R[i % CHART_COLORS_R.length]} strokeWidth={0} />)}
                     </Pie>
                     <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle_r} itemStyle={{ color: "#e5e7eb" }} labelStyle={{ color: "#fff", fontWeight: "600" }}
@@ -1606,20 +1606,20 @@ export default function AnalyticsView({ uid }) {
         {/* ===== CHARTS ROW 1: Pie + Bar ===== */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Stock by Category — Donut with clean legend */}
-          <div className="rounded-xl p-5" style={cardStyle}>
-            <h3 className="text-white font-bold text-base mb-1">🥧 Stock by Category</h3>
-            <p className="text-white-500 text-xs mb-3">Units in stock per category</p>
+          <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-sm sm:text-base mb-1">🥧 Stock by Category</h3>
+            <p className="text-gray-500 text-xs mb-3">Units in stock per category</p>
             {stockByCategoryData.length === 0 ? (
               <p className="text-gray-500 text-sm text-center py-10">No category data</p>
             ) : (
               <div className="flex flex-col gap-4">
-                <ResponsiveContainer width="100%" height={200}>
+                <ResponsiveContainer width="100%" height={180}>
                   <PieChart>
                     <Pie
                       data={stockByCategoryData}
                       cx="50%" cy="50%"
-                      innerRadius={55}
-                      outerRadius={85}
+                      innerRadius={45}
+                      outerRadius={70}
                       paddingAngle={3}
                       color="white !important"
                       dataKey="value"
@@ -1659,8 +1659,8 @@ export default function AnalyticsView({ uid }) {
           </div>
 
           {/* Inventory Value by Category — Horizontal bar chart */}
-          <div className="rounded-xl p-5" style={cardStyle}>
-            <h3 className="text-white font-bold text-base mb-1">💰 Inventory Value by Category</h3>
+          <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-sm sm:text-base mb-1">💰 Inventory Value by Category</h3>
             <p className="text-gray-500 text-xs mb-3">Capital invested per category (cost price)</p>
             {invValueByCategoryData.length === 0 ? (
               <p className="text-gray-500 text-sm text-center py-10">No data — set cost prices on products</p>
@@ -1669,15 +1669,15 @@ export default function AnalyticsView({ uid }) {
                 <BarChart
                   data={invValueByCategoryData}
                   layout="vertical"
-                  margin={{ top: 0, right: 60, left: 0, bottom: 0 }}
-                  barCategoryGap="30%"
+                  margin={{ top: 0, right: 45, left: 0, bottom: 0 }}
+                  barCategoryGap="20%"
                 >
                   <XAxis type="number" hide />
                   <YAxis
                     type="category"
                     dataKey="name"
-                    width={130}
-                    tick={{ fill: "#9ca3af", fontSize: 11 }}
+                    width={90}
+                    tick={{ fill: "#9ca3af", fontSize: 9 }}
                     tickLine={false}
                     axisLine={false}
                   />
@@ -1687,7 +1687,7 @@ export default function AnalyticsView({ uid }) {
                     labelStyle={{ color: "#fff", fontWeight: "600" }}
                     formatter={(v) => [`Rs. ${Number(v).toLocaleString()}`, "Value"]}
                   />
-                  <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={20}>
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={18}>
                     {invValueByCategoryData.map((_, i) => (
                       <Cell key={i} fill={CHART_COLORS[i % CHART_COLORS.length]} />
                     ))}
@@ -1695,7 +1695,7 @@ export default function AnalyticsView({ uid }) {
                       dataKey="value"
                       position="right"
                       formatter={(v) => `Rs. ${v >= 1000 ? (v / 1000).toFixed(0) + "k" : v}`}
-                      style={{ fill: "#9ca3af", fontSize: 11 }}
+                      style={{ fill: "#9ca3af", fontSize: 9 }}
                     />
                   </Bar>
                 </BarChart>
@@ -2524,23 +2524,38 @@ export default function AnalyticsView({ uid }) {
           </div>
 
           {/* Revenue by Customer Horizontal Bar */}
-          <div className="rounded-xl p-5" style={cardStyle}>
-            <h3 className="text-white font-bold text-base mb-1">💰 Revenue by Customer</h3>
+          <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-sm sm:text-base mb-1">💰 Revenue by Customer</h3>
             <p className="text-gray-500 text-xs mb-4">Top 10 customers by total purchases</p>
             {revByCust.length === 0 ? (
               <p className="text-gray-500 text-sm text-center py-10">No customer invoices yet</p>
             ) : (
               <ResponsiveContainer width="100%" height={revByCust.length * 36 + 20}>
-                <BarChart data={revByCust} layout="vertical" margin={{ top: 0, right: 70, left: 0, bottom: 0 }} barCategoryGap="30%">
+                <BarChart data={revByCust} layout="vertical" margin={{ top: 0, right: 45, left: 0, bottom: 0 }} barCategoryGap="15%">
                   <XAxis type="number" hide />
-                  <YAxis type="category" dataKey="name" width={80} tick={{ fill: "#9ca3af", fontSize: 11 }} tickLine={false} axisLine={false} />
-                  <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel}
-                    formatter={(v, _, props) => [`Rs. ${Number(v).toLocaleString()}`, props.payload.fullName]} />
-                  <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={18}>
+                  <YAxis 
+                    type="category" 
+                    dataKey="name" 
+                    width={60}
+                    tick={{ fill: "#9ca3af", fontSize: 9 }} 
+                    tickLine={false} 
+                    axisLine={false} 
+                  />
+                  <Tooltip 
+                    cursor={{ fill: "rgba(255,255,255,0.04)" }} 
+                    contentStyle={ttStyle} 
+                    itemStyle={ttItem} 
+                    labelStyle={ttLabel}
+                    formatter={(v, _, props) => [`Rs. ${Number(v).toLocaleString()}`, props.payload.fullName]} 
+                  />
+                  <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={16}>
                     {revByCust.map((_, i) => <Cell key={i} fill={CHART_COLORS_C[i % CHART_COLORS_C.length]} />)}
-                    <LabelList dataKey="value" position="right"
-                      formatter={(v) => `Rs. ${v >= 1000 ? (v / 1000).toFixed(0) + "k" : v}`}
-                      style={{ fill: "#9ca3af", fontSize: 10 }} />
+                    <LabelList 
+                      dataKey="value" 
+                      position="right"
+                      formatter={(v) => `${v >= 1000 ? (v / 1000).toFixed(0) + "k" : v}`}
+                      style={{ fill: "#9ca3af", fontSize: 9 }} 
+                    />
                   </Bar>
                 </BarChart>
               </ResponsiveContainer>
@@ -2551,8 +2566,8 @@ export default function AnalyticsView({ uid }) {
         {/* ===== CHART ROW 2: Segmentation Pie + Monthly Revenue Trend ===== */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Customer Segmentation Donut */}
-          <div className="rounded-xl p-5" style={cardStyle}>
-            <h3 className="text-white font-bold text-base mb-1">🎯 Customer Segmentation</h3>
+          <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-sm sm:text-base mb-1">🎯 Customer Segmentation</h3>
             <p className="text-gray-500 text-xs mb-3">Based on activity and spending</p>
             {segData.length === 0 ? (
               <p className="text-gray-500 text-sm text-center py-10">No customers yet</p>
@@ -2560,7 +2575,7 @@ export default function AnalyticsView({ uid }) {
               <div className="flex flex-col gap-4">
                 <ResponsiveContainer width="100%" height={180}>
                   <PieChart>
-                    <Pie data={segData} cx="50%" cy="50%" innerRadius={50} outerRadius={78} paddingAngle={3} dataKey="value" label={false}>
+                    <Pie data={segData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3} dataKey="value" label={false}>
                       {segData.map((s, i) => <Cell key={i} fill={s.color} strokeWidth={0} />)}
                     </Pie>
                     <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v, name) => [v, name]} />
@@ -2584,19 +2599,19 @@ export default function AnalyticsView({ uid }) {
           </div>
 
           {/* Monthly Revenue Trend Line */}
-          <div className="rounded-xl p-5" style={cardStyle}>
-            <h3 className="text-white font-bold text-base mb-1">📅 Monthly Revenue Trend</h3>
+          <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-sm sm:text-base mb-1">📅 Monthly Revenue Trend</h3>
             <p className="text-gray-500 text-xs mb-4">Revenue from customers month by month</p>
             {monthRevChart.length === 0 ? (
               <p className="text-gray-500 text-sm text-center py-10">No revenue data</p>
             ) : (
-              <ResponsiveContainer width="100%" height={220}>
-                <LineChart data={monthRevChart} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
+              <ResponsiveContainer width="100%" height={200}>
+                <LineChart data={monthRevChart} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.06)" />
-                  <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 10 }} />
-                  <YAxis tick={{ fill: "#9ca3af", fontSize: 10 }} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
+                  <XAxis dataKey="name" tick={{ fill: "#9ca3af", fontSize: 8 }} angle={-45} textAnchor="end" height={50} />
+                  <YAxis tick={{ fill: "#9ca3af", fontSize: 8 }} tickFormatter={v => `${(v / 1000).toFixed(0)}k`} />
                   <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v) => [`Rs. ${Number(v).toLocaleString()}`, "Revenue"]} />
-                  <Line type="monotone" dataKey="value" stroke="#f59e0b" strokeWidth={2.5} dot={{ fill: "#f59e0b", r: 3 }} activeDot={{ r: 6 }} />
+                  <Line type="monotone" dataKey="value" stroke="#f59e0b" strokeWidth={2} dot={{ fill: "#f59e0b", r: 2 }} activeDot={{ r: 5 }} />
                 </LineChart>
               </ResponsiveContainer>
             )}
@@ -2606,8 +2621,8 @@ export default function AnalyticsView({ uid }) {
         {/* ===== CHART ROW 3: Payment Status + City Distribution ===== */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Payment Status Pie */}
-          <div className="rounded-xl p-5" style={cardStyle}>
-            <h3 className="text-white font-bold text-base mb-1">💳 Payment Status</h3>
+          <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-sm sm:text-base mb-1">💳 Payment Status</h3>
             <p className="text-gray-500 text-xs mb-3">Invoice payment breakdown for customers</p>
             {payStatusData.length === 0 ? (
               <p className="text-gray-500 text-sm text-center py-10">No customer invoices</p>
@@ -2615,7 +2630,7 @@ export default function AnalyticsView({ uid }) {
               <div className="flex flex-col gap-4">
                 <ResponsiveContainer width="100%" height={180}>
                   <PieChart>
-                    <Pie data={payStatusData} cx="50%" cy="50%" innerRadius={50} outerRadius={78} paddingAngle={3} dataKey="value" label={false}>
+                    <Pie data={payStatusData} cx="50%" cy="50%" innerRadius={45} outerRadius={70} paddingAngle={3} dataKey="value" label={false}>
                       {payStatusData.map((s, i) => <Cell key={i} fill={s.color} strokeWidth={0} />)}
                     </Pie>
                     <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v, name) => [v, name]} />
@@ -2712,20 +2727,33 @@ export default function AnalyticsView({ uid }) {
         </div>
 
         {/* ===== MOST PURCHASED PRODUCTS ===== */}
-        <div className="rounded-xl p-5" style={cardStyle}>
-          <h3 className="text-white font-bold text-base mb-1">🛍️ Most Purchased Products</h3>
+        <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
+          <h3 className="text-white font-bold text-sm sm:text-base mb-1">🛍️ Most Purchased Products</h3>
           <p className="text-gray-500 text-xs mb-4">Products most frequently bought by customers</p>
           {topProducts.length === 0 ? (
             <p className="text-gray-500 text-sm text-center py-8">No product data</p>
           ) : (
             <ResponsiveContainer width="100%" height={topProducts.length * 38 + 20}>
-              <BarChart data={topProducts} layout="vertical" margin={{ top: 0, right: 60, left: 0, bottom: 0 }} barCategoryGap="30%">
+              <BarChart data={topProducts} layout="vertical" margin={{ top: 0, right: 40, left: 0, bottom: 0 }} barCategoryGap="15%">
                 <XAxis type="number" hide />
-                <YAxis type="category" dataKey="name" width={140} tick={{ fill: "#9ca3af", fontSize: 11 }} tickLine={false} axisLine={false} />
-                <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle} itemStyle={ttItem} labelStyle={ttLabel} formatter={(v) => [`${v} units`, "Sold"]} />
-                <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={16}>
+                <YAxis 
+                  type="category" 
+                  dataKey="name" 
+                  width={80}
+                  tick={{ fill: "#9ca3af", fontSize: 9 }} 
+                  tickLine={false} 
+                  axisLine={false}
+                />
+                <Tooltip 
+                  cursor={{ fill: "rgba(255,255,255,0.04)" }} 
+                  contentStyle={ttStyle} 
+                  itemStyle={ttItem} 
+                  labelStyle={ttLabel} 
+                  formatter={(v) => [`${v} units`, "Sold"]} 
+                />
+                <Bar dataKey="value" radius={[0, 4, 4, 0]} maxBarSize={14}>
                   {topProducts.map((_, i) => <Cell key={i} fill={CHART_COLORS_C[i % CHART_COLORS_C.length]} />)}
-                  <LabelList dataKey="value" position="right" style={{ fill: "#9ca3af", fontSize: 11 }} />
+                  <LabelList dataKey="value" position="right" style={{ fill: "#9ca3af", fontSize: 9 }} />
                 </Bar>
               </BarChart>
             </ResponsiveContainer>
@@ -3052,7 +3080,7 @@ export default function AnalyticsView({ uid }) {
 
           {/* Payment Methods Pie */}
           <div className="rounded-xl p-5" style={cardStyle}>
-            <h3 className="text-white font-bold text-base mb-1">💰 Payment Methods</h3>
+            <h3 className="text-white font-bold text-sm sm:text-base mb-1">💰 Payment Methods</h3>
             <p className="text-gray-500 text-xs mb-4">Which method brings most payments</p>
             {Object.keys(methodMap).length === 0 ? (
               <p className="text-gray-500 text-sm text-center py-10">No payment method data yet</p>
@@ -3061,7 +3089,7 @@ export default function AnalyticsView({ uid }) {
                 <ResponsiveContainer width="100%" height={160}>
                   <PieChart>
                     <Pie data={Object.entries(methodMap).map(([name,value])=>({name,value}))}
-                      cx="50%" cy="50%" innerRadius={45} outerRadius={72} paddingAngle={3} dataKey="value" label={false}>
+                      cx="50%" cy="50%" innerRadius={40} outerRadius={65} paddingAngle={3} dataKey="value" label={false}>
                       {Object.keys(methodMap).map((_,i)=><Cell key={i} fill={COLORS_P[i%COLORS_P.length]} strokeWidth={0}/>)}
                     </Pie>
                     <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle_p} formatter={v=>[`Rs. ${Number(v).toLocaleString()}`]}/>
@@ -3158,22 +3186,22 @@ export default function AnalyticsView({ uid }) {
         {/* ══ ROW 4: Status Donut + Collection Comparison ══ */}
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           {/* Payment Status Donut */}
-          <div className="rounded-xl p-5" style={cardStyle}>
-            <h3 className="text-white font-bold text-base mb-1">📊 Payment Status</h3>
+          <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-sm sm:text-base mb-1">📊 Payment Status</h3>
             <p className="text-gray-500 text-xs mb-4">Invoice status at a glance</p>
             {statusData.length === 0 ? (
               <p className="text-gray-500 text-sm text-center py-10">No invoice data</p>
             ) : (
-              <div className="flex gap-6 items-center">
-                <ResponsiveContainer width={180} height={180}>
+              <div className="flex flex-col sm:flex-row gap-4 items-center">
+                <ResponsiveContainer width="100%" height={160} className="sm:w-40">
                   <PieChart>
-                    <Pie data={statusData} cx="50%" cy="50%" innerRadius={50} outerRadius={80} paddingAngle={3} dataKey="value" label={false}>
+                    <Pie data={statusData} cx="50%" cy="50%" innerRadius={40} outerRadius={65} paddingAngle={3} dataKey="value" label={false}>
                       {statusData.map((d,i)=><Cell key={i} fill={d.color} strokeWidth={0}/>)}
                     </Pie>
                     <Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle_p} formatter={(v,n)=>[`${v} invoices`,n]}/>
                   </PieChart>
                 </ResponsiveContainer>
-                <div className="flex-1 space-y-2">
+                <div className="flex-1 w-full space-y-2">
                   {statusData.map(d=>(
                     <div key={d.name} className="flex items-center gap-2">
                       <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background:d.color}}/>
@@ -3444,17 +3472,17 @@ export default function AnalyticsView({ uid }) {
               </LineChart>
             </ResponsiveContainer>
           </div>
-          <div className="rounded-xl p-5" style={cardStyle}>
-            <h3 className="text-white font-bold text-base mb-1">📊 Invoice Status</h3>
+          <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
+            <h3 className="text-white font-bold text-sm sm:text-base mb-1">📊 Invoice Status</h3>
             <p className="text-gray-500 text-xs mb-4">Distribution at a glance</p>
             {statusData_i.length===0?<p className="text-gray-500 text-sm text-center py-10">No data</p>:(
-              <div className="flex gap-4 items-center">
-                <ResponsiveContainer width={170} height={170}>
-                  <PieChart><Pie data={statusData_i} cx="50%" cy="50%" innerRadius={48} outerRadius={78} paddingAngle={3} dataKey="value" label={false}>
+              <div className="flex flex-col sm:flex-row gap-4 items-center">
+                <ResponsiveContainer width="100%" height={160} className="sm:w-40">
+                  <PieChart><Pie data={statusData_i} cx="50%" cy="50%" innerRadius={40} outerRadius={65} paddingAngle={3} dataKey="value" label={false}>
                     {statusData_i.map((d,i)=><Cell key={i} fill={d.color} strokeWidth={0}/>)}
                   </Pie><Tooltip cursor={{ fill: "rgba(255,255,255,0.04)" }} contentStyle={ttStyle_i} itemStyle={ttItem_i} labelStyle={ttLabel_i} formatter={(v,n)=>[`${v} invoices`,n]}/></PieChart>
                 </ResponsiveContainer>
-                <div className="flex-1 space-y-2">{statusData_i.map(d=>(
+                <div className="flex-1 w-full space-y-2">{statusData_i.map(d=>(
                   <div key={d.name} className="flex items-center gap-2">
                     <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background:d.color}}/>
                     <span className="text-gray-300 text-xs flex-1">{d.name}</span>
@@ -3724,50 +3752,50 @@ export default function AnalyticsView({ uid }) {
               <p className="text-gray-600 text-xs mt-1">Invoices need products from your inventory to calculate profit</p>
             </div>
           ) : (
-            <div>
+            <div className="overflow-x-auto">
               {/* Table header */}
-              <div className="hidden md:grid px-5 py-2 text-[10px] font-bold uppercase tracking-widest"
-                style={{ color: "#4b5563", borderBottom: "1px solid rgba(255,255,255,0.05)", gridTemplateColumns: "3fr 1fr 1fr 1fr 1fr" }}>
+              <div className="grid px-3 sm:px-5 py-2 text-[9px] sm:text-[10px] font-bold uppercase tracking-wide sm:tracking-widest min-w-[600px]"
+                style={{ color: "#4b5563", borderBottom: "1px solid rgba(255,255,255,0.05)", gridTemplateColumns: "2fr 1fr 1.2fr 1.2fr 1.2fr" }}>
                 <span>Product</span>
-                <span className="text-right">Qty Sold</span>
-                <span className="text-right">Total Sales</span>
-                <span className="text-right">Total Cost</span>
-                <span className="text-right">Profit / Loss</span>
+                <span className="text-right">Qty</span>
+                <span className="text-right">Sales</span>
+                <span className="text-right">Cost</span>
+                <span className="text-right">Profit</span>
               </div>
 
               {Object.values(profitByProduct)
                 .sort((a, b) => b.profit - a.profit)
                 .map((p, i) => (
                   <div key={i}
-                    className="grid px-5 py-3.5 hover:bg-white/[0.025] transition-colors items-center"
-                    style={{ gridTemplateColumns: "3fr 1fr 1fr 1fr 1fr", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
-                    <div className="flex items-center gap-2.5 min-w-0">
-                      <div className="w-7 h-7 rounded-lg flex items-center justify-center text-[10px] font-black flex-shrink-0"
+                    className="grid px-3 sm:px-5 py-3 sm:py-3.5 hover:bg-white/[0.025] transition-colors items-center min-w-[600px]"
+                    style={{ gridTemplateColumns: "2fr 1fr 1.2fr 1.2fr 1.2fr", borderBottom: "1px solid rgba(255,255,255,0.04)" }}>
+                    <div className="flex items-center gap-1.5 sm:gap-2.5 min-w-0">
+                      <div className="w-6 h-6 sm:w-7 sm:h-7 rounded-lg flex items-center justify-center text-[9px] sm:text-[10px] font-black flex-shrink-0"
                         style={{
                           background: p.profit > 0 ? "rgba(16,185,129,0.15)" : p.profit < 0 ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.07)",
                           color: p.profit > 0 ? "#34d399" : p.profit < 0 ? "#f87171" : "#9ca3af"
                         }}>
-                        #{i + 1}
+                        {i + 1}
                       </div>
-                      <p className="text-white text-sm font-semibold truncate">{p.name}</p>
+                      <p className="text-white text-xs sm:text-sm font-semibold truncate">{p.name}</p>
                     </div>
-                    <p className="text-gray-400 text-sm text-right">{p.qty.toFixed(p.qty % 1 !== 0 ? 2 : 0)}</p>
-                    <p className="text-amber-400 text-sm font-semibold text-right">Rs. {Math.round(p.revenue).toLocaleString()}</p>
-                    <p className="text-red-400 text-sm text-right">Rs. {Math.round(p.cost).toLocaleString()}</p>
-                    <p className={`text-sm font-black text-right ${p.profit > 0 ? "text-green-400" : p.profit < 0 ? "text-red-400" : "text-gray-500"}`}>
+                    <p className="text-gray-400 text-xs sm:text-sm text-right tabular-nums">{p.qty.toFixed(p.qty % 1 !== 0 ? 2 : 0)}</p>
+                    <p className="text-amber-400 text-xs sm:text-sm font-semibold text-right tabular-nums whitespace-nowrap">Rs. {Math.round(p.revenue).toLocaleString()}</p>
+                    <p className="text-red-400 text-xs sm:text-sm text-right tabular-nums whitespace-nowrap">Rs. {Math.round(p.cost).toLocaleString()}</p>
+                    <p className={`text-xs sm:text-sm font-black text-right tabular-nums whitespace-nowrap ${p.profit > 0 ? "text-green-400" : p.profit < 0 ? "text-red-400" : "text-gray-500"}`}>
                       {p.profit > 0 ? "+" : ""}Rs. {Math.round(p.profit).toLocaleString()}
                     </p>
                   </div>
                 ))}
 
               {/* Footer total row */}
-              <div className="grid px-5 py-3.5 items-center font-black"
-                style={{ gridTemplateColumns: "3fr 1fr 1fr 1fr 1fr", background: "rgba(255,255,255,0.02)", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                <span className="text-gray-400 text-xs uppercase tracking-widest">Total</span>
+              <div className="grid px-3 sm:px-5 py-3 sm:py-3.5 items-center font-black min-w-[600px]"
+                style={{ gridTemplateColumns: "2fr 1fr 1.2fr 1.2fr 1.2fr", background: "rgba(255,255,255,0.02)", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
+                <span className="text-gray-400 text-[10px] sm:text-xs uppercase tracking-wide sm:tracking-widest">Total</span>
                 <span />
-                <span className="text-amber-400 text-sm text-right">Rs. {Math.round(totalInventoryRevenue).toLocaleString()}</span>
-                <span className="text-red-400 text-sm text-right">Rs. {Math.round(totalInventoryCost).toLocaleString()}</span>
-                <span className={`text-sm text-right ${netProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
+                <span className="text-amber-400 text-xs sm:text-sm text-right tabular-nums whitespace-nowrap">Rs. {Math.round(totalInventoryRevenue).toLocaleString()}</span>
+                <span className="text-red-400 text-xs sm:text-sm text-right tabular-nums whitespace-nowrap">Rs. {Math.round(totalInventoryCost).toLocaleString()}</span>
+                <span className={`text-xs sm:text-sm text-right tabular-nums whitespace-nowrap ${netProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
                   {netProfit >= 0 ? "+" : ""}Rs. {Math.round(netProfit).toLocaleString()}
                 </span>
               </div>
@@ -3787,16 +3815,16 @@ export default function AnalyticsView({ uid }) {
         <div className="absolute inset-0 bg-gradient-to-r from-blue-500/5 via-purple-500/5 to-pink-500/5 animate-gradient-x" />
         <div className="relative z-10 flex flex-col gap-4">
           <div>
-            <div className="flex items-center gap-3 mb-1">
-              <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+            <div className="flex items-center gap-2 sm:gap-3 mb-1">
+              <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl flex items-center justify-center text-lg sm:text-xl flex-shrink-0"
                 style={{background:"linear-gradient(135deg,#3b82f6,#8b5cf6)"}}>
                 📊
               </div>
-              <h2 className="text-2xl font-bold bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 bg-clip-text text-transparent">
-                Business Analytics Dashboard
+              <h2 className="text-base sm:text-xl md:text-2xl font-bold bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 bg-clip-text text-transparent">
+                Business Analytics
               </h2>
             </div>
-            <p className="text-gray-400 text-xs ml-13">Comprehensive insights and performance metrics for your business</p>
+            <p className="text-gray-400 text-xs ml-10 sm:ml-13 hidden sm:block">Comprehensive insights and performance metrics for your business</p>
           </div>
 
           {/* Date Filters */}
@@ -3825,7 +3853,7 @@ export default function AnalyticsView({ uid }) {
               <button
                 key={section.id}
                 onClick={() => { setActiveSection(section.id); sessionStorage.setItem("analyticsTab", section.id); }}
-                className={`px-4 py-2 rounded-lg text-sm font-semibold transition-all duration-300 flex items-center gap-2 ${activeSection === section.id ? "scale-105" : "hover:scale-105"
+                className={`px-2 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs sm:text-sm font-semibold transition-all duration-300 flex items-center gap-1 sm:gap-2 ${activeSection === section.id ? "scale-105" : "hover:scale-105"
                   }`}
                 style={{
                   background: activeSection === section.id
@@ -3835,8 +3863,8 @@ export default function AnalyticsView({ uid }) {
                   color: activeSection === section.id ? "#000" : "#9ca3af",
                   fontWeight: activeSection === section.id ? "bold" : "semibold",
                 }}>
-                <span>{section.icon}</span>
-                <span className="hidden sm:inline">{section.label.split(' ').slice(1).join(' ')}</span>
+                <span className="text-sm sm:text-base">{section.icon}</span>
+                <span className="text-[10px] sm:text-xs md:text-sm">{section.label.split(' ').slice(1).join(' ')}</span>
               </button>
             ))}
           </div>
