@@ -58,13 +58,17 @@ export function calcTotals(form) {
 const base = {
   width: "100%", outline: "none",
   background: "rgba(255,255,255,0.04)",
-  border: "1.5px solid rgba(255,255,255,0.09)",
+  borderWidth: "1.5px",
+  borderStyle: "solid",
+  borderColor: "rgba(255,255,255,0.09)",
   borderRadius: 10, padding: "9px 13px",
   color: "#fff", fontSize: 13,
   transition: "border-color .2s, background .2s",
 };
 const focused = {
   background: "rgba(37,99,235,0.07)",
+  borderWidth: "1.5px",
+  borderStyle: "solid",
   borderColor: "rgba(37,99,235,0.5)",
   boxShadow: "0 0 0 3px rgba(37,99,235,0.08)",
 };
@@ -87,12 +91,13 @@ function FInput({ label, req, children, cls }) {
   );
 }
 
-function StyledInput({ type = "text", placeholder, value, onChange, req, min, step, sx, autoComplete, disabled }) {
+function StyledInput({ type = "text", placeholder, value, onChange, req, min, step, sx, autoComplete, disabled, inputMode }) {
   const [isFocused, setF] = useState(false);
   return (
     <input type={type} placeholder={placeholder} value={value} onChange={onChange}
       required={req} min={min} step={step} autoComplete={autoComplete || "off"}
       disabled={disabled}
+      inputMode={inputMode}
       onFocus={() => setF(true)} onBlur={() => setF(false)}
       style={{
         ...base,
@@ -139,7 +144,7 @@ function ProductPickerModal({ products, onSelect, onClose }) {
           <button onClick={onClose} className="text-gray-500 hover:text-white text-lg">✕</button>
         </div>
         <div className="px-4 py-3 border-b border-white/[0.05]">
-          <input placeholder="Search products..." value={search}
+          <input type="search" placeholder="Search products..." value={search}
             onChange={e => setSearch(e.target.value)} autoFocus
             style={{ ...base, padding: "8px 12px" }} />
         </div>
@@ -337,7 +342,7 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
 
         {/* description + autocomplete */}
         <div className="relative">
-          <input placeholder="Item / product name" value={item.description}
+          <input type="text" placeholder="Item / product name" value={item.description}
             onChange={e => isRowLocked ? undefined : handleDescChange(e.target.value)}
             onFocus={() => { if (!isRowLocked && suggestions.length > 0) setShowSug(true); }}
             readOnly={isRowLocked}
@@ -389,7 +394,7 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
           )}
         </div>
 
-        <input type="number" min="1" placeholder="1" value={item.qty}
+        <input type="number" inputMode="numeric" min="1" placeholder="1" value={item.qty}
           onChange={e => isRowLocked ? undefined : handleQtyChange(e.target.value)}
           readOnly={isRowLocked}
           max={item.stock || undefined}
@@ -397,14 +402,14 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
             ...base, 
             textAlign: "center", 
             padding: "9px 6px",
-            borderColor: (qty > stock && stock > 0) ? "#f87171" : base.border,
+            borderColor: (qty > stock && stock > 0) ? "#f87171" : "rgba(255,255,255,0.09)",
             opacity: isRowLocked ? 0.65 : 1,
             cursor: isRowLocked ? "default" : "text",
             background: isRowLocked ? "rgba(255,255,255,0.02)" : base.background,
             color: isRowLocked ? "#9ca3af" : "#fff",
           }} />
 
-        <input type="number" min="0" placeholder={
+        <input type="number" inputMode="decimal" min="0" placeholder={
           (!item.productId && item.variantLabel && item.variantUnit)
             ? `Price per ${item.variantUnit}`
             : "Unit price"
@@ -574,7 +579,7 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
                         style={{ ...base, fontSize: 12, padding: "6px 10px", flex: 1 }}
                       />
                       <input
-                        type="number" min="0" placeholder="Price per unit"
+                        type="number" inputMode="decimal" min="0" placeholder="Price per unit"
                         value={customVarPrice}
                         onChange={e => {
                           setCustomVarPrice(e.target.value);
@@ -887,11 +892,32 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                 <StyledInput placeholder="e.g. Ali Traders" value={form.customerName}
                   onChange={set("customerName")} req />
               </FInput>
-              <FInput label="Phone Number">
-                <StyledInput type="tel" placeholder="+92 300 1234567" value={form.phone} onChange={set("phone")} />
+              <FInput label="Phone Number" req>
+                <StyledInput
+                  type="tel"
+                  inputMode="tel"
+                  placeholder="+92 300 1234567"
+                  value={form.phone}
+                  onChange={e => {
+                    let val = e.target.value;
+                    // If user cleared the field, allow empty
+                    if (val === "" || val === "+") {
+                      set("phone")({ target: { value: "" } });
+                      return;
+                    }
+                    // Strip any non-digit characters except leading +
+                    val = val.replace(/[^+\d]/g, "");
+                    // Ensure it starts with +
+                    if (!val.startsWith("+")) val = "+" + val.replace(/^\+*/, "");
+                    // Max 13 characters
+                    if (val.length > 13) val = val.slice(0, 13);
+                    set("phone")({ target: { value: val } });
+                  }}
+                  req
+                />
               </FInput>
-              <FInput label="Email (optional)">
-                <StyledInput type="email" placeholder="customer@example.com" value={form.email} onChange={set("email")} />
+              <FInput label="Email" req>
+                <StyledInput type="email" placeholder="customer@example.com" value={form.email} onChange={set("email")} req />
               </FInput>
               <FInput label="Address" cls="col-span-2">
                 <StyledInput placeholder="Street, City..." value={form.address} onChange={set("address")} />
@@ -1000,8 +1026,8 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                   <div className="rounded-xl overflow-hidden"
                     style={{ border: "1px solid rgba(245,158,11,0.3)", background: "rgba(245,158,11,0.04)" }}>
                     {/* Header */}
-                    <div className="flex items-center justify-between px-4 py-3 border-b"
-                      style={{ borderColor: "rgba(245,158,11,0.15)" }}>
+                    <div className="flex items-center justify-between px-4 py-3"
+                      style={{ borderBottom: "1px solid rgba(245,158,11,0.15)" }}>
                       <p className="text-xs font-bold uppercase tracking-widest" style={{ color: "#f59e0b" }}>
                         ➕ Add More Purchase
                       </p>
@@ -1033,7 +1059,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                             {/* Unit qty input with decimal support + presets */}
                             <div className="flex flex-col gap-1">
                               <input
-                                type="number" min="0.01" step="0.01" placeholder={`e.g. 0.5`}
+                                type="number" inputMode="decimal" min="0.01" step="0.01" placeholder={`e.g. 0.5`}
                                 value={additionalItems[0]?.qty || ""}
                                 onChange={e => setAddItem(0, "qty", e.target.value)}
                                 style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(245,158,11,0.3)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" }}
@@ -1090,14 +1116,14 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                             </div>
                             {/* Qty — editable */}
                             <input
-                              type="number" min="1" placeholder="Qty"
+                              type="number" inputMode="numeric" min="1" placeholder="Qty"
                               value={additionalItems[0]?.qty || ""}
                               onChange={e => setAddItem(0, "qty", e.target.value)}
                               style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(255,255,255,0.09)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" }}
                             />
                             {/* Rate — editable */}
                             <input
-                              type="number" min="0" placeholder="Rate"
+                              type="number" inputMode="decimal" min="0" placeholder="Rate"
                               value={additionalItems[0]?.unitPrice || ""}
                               onChange={e => setAddItem(0, "unitPrice", e.target.value)}
                               style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(255,255,255,0.09)", borderRadius:10, padding:"9px 10px", color:"#fff", fontSize:13, textAlign:"right" }}
@@ -1163,8 +1189,8 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                 {pastReturns.length > 0 && (
                   <div className="rounded-xl overflow-hidden"
                     style={{ border: "1px solid rgba(248,113,113,0.2)", background: "rgba(248,113,113,0.03)" }}>
-                    <div className="px-4 py-3 border-b flex items-center gap-2"
-                      style={{ borderColor: "rgba(248,113,113,0.12)" }}>
+                    <div className="px-4 py-3 flex items-center gap-2"
+                      style={{ borderBottom: "1px solid rgba(248,113,113,0.12)" }}>
                       <span style={{ color: "#f87171", fontSize: 12 }}>↩️</span>
                       <p className="text-[10px] font-bold uppercase tracking-widest" style={{ color: "#f87171" }}>
                         Previously Returned
@@ -1296,7 +1322,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
 
                             {/* Qty input with max cap */}
                             <div>
-                              <input type="number"
+                              <input type="number" inputMode="numeric"
                                 min="1"
                                 max={returnItem.maxQty || undefined}
                                 placeholder="Qty"
@@ -1317,7 +1343,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
 
                             {/* Rate input */}
                             <div>
-                              <input type="number" min="0" placeholder="Rate"
+                              <input type="number" inputMode="decimal" min="0" placeholder="Rate"
                                 value={returnItem.rate}
                                 onChange={e => setReturnItem(p => ({ ...p, rate: e.target.value }))}
                                 style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(248,113,113,0.3)", borderRadius:10, padding:"9px 10px", color:"#fff", fontSize:13, textAlign:"right" }}
@@ -1365,7 +1391,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                 </StyledSelect>
               </FInput>
               <FInput label={form.discountType === "percent" ? "Discount %" : "Discount (Rs.)"}>
-                <StyledInput type="number" min="0" step="0.01"
+                <StyledInput type="number" inputMode="decimal" min="0" step="0.01"
                   placeholder={form.discountType === "percent" ? "e.g. 10" : "e.g. 500"}
                   value={form.discountValue} onChange={set("discountValue")} />
               </FInput>
@@ -1377,7 +1403,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
             <p className={sect} style={{ color: "#34d399" }}>Payment Details</p>
             <div className="grid grid-cols-2 gap-3">
               <FInput label="Amount Already Paid (Rs.)">
-                <StyledInput type="number" min="0" placeholder="0"
+                <StyledInput type="number" inputMode="decimal" min="0" placeholder="0"
                   value={form.amountPaid} onChange={set("amountPaid")}
                   disabled={!!initial} />
               </FInput>
@@ -1487,32 +1513,46 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                   <div className="col-span-2">
                     <p className="text-xs font-bold text-green-400 mb-2 uppercase tracking-wide">👤 Payment From (Payer)</p>
                   </div>
-                  <FInput label="Payer Name">
+                  <FInput label="Payer Name" req>
                     <StyledInput placeholder="e.g. Ali Ahmed" value={form.payerName || ""}
-                      onChange={(e) => setForm(p => ({ ...p, payerName: e.target.value }))} />
+                      onChange={(e) => setForm(p => ({ ...p, payerName: e.target.value }))} req />
                   </FInput>
-                  <FInput label="Payer Contact">
-                    <StyledInput type="tel" placeholder="+92 300 1234567" value={form.payerContact || ""}
-                      onChange={(e) => setForm(p => ({ ...p, payerContact: e.target.value }))} />
+                  <FInput label="Payer Contact" req>
+                    <StyledInput type="tel" inputMode="tel" placeholder="+92 300 1234567" value={form.payerContact || ""}
+                      onChange={(e) => {
+                        let val = e.target.value;
+                        if (val === "" || val === "+") { setForm(p => ({ ...p, payerContact: "" })); return; }
+                        val = val.replace(/[^+\d]/g, "");
+                        if (!val.startsWith("+")) val = "+" + val.replace(/^\+*/, "");
+                        if (val.length > 13) val = val.slice(0, 13);
+                        setForm(p => ({ ...p, payerContact: val }));
+                      }} req />
                   </FInput>
                   
                   {/* Receiver Info */}
                   <div className="col-span-2 mt-2">
                     <p className="text-xs font-bold text-blue-400 mb-2 uppercase tracking-wide">💵 Payment To (Receiver)</p>
                   </div>
-                  <FInput label="Receiver Name">
+                  <FInput label="Receiver Name" req>
                     <StyledInput placeholder="e.g. Muhammad Salman" value={form.receiverName || ""}
-                      onChange={(e) => setForm(p => ({ ...p, receiverName: e.target.value }))} />
+                      onChange={(e) => setForm(p => ({ ...p, receiverName: e.target.value }))} req />
                   </FInput>
-                  <FInput label="Receiver Contact">
-                    <StyledInput type="tel" placeholder="+92 300 7654321" value={form.receiverContact || ""}
-                      onChange={(e) => setForm(p => ({ ...p, receiverContact: e.target.value }))} />
+                  <FInput label="Receiver Contact" req>
+                    <StyledInput type="tel" inputMode="tel" placeholder="+92 300 7654321" value={form.receiverContact || ""}
+                      onChange={(e) => {
+                        let val = e.target.value;
+                        if (val === "" || val === "+") { setForm(p => ({ ...p, receiverContact: "" })); return; }
+                        val = val.replace(/[^+\d]/g, "");
+                        if (!val.startsWith("+")) val = "+" + val.replace(/^\+*/, "");
+                        if (val.length > 13) val = val.slice(0, 13);
+                        setForm(p => ({ ...p, receiverContact: val }));
+                      }} req />
                   </FInput>
                   
                   {/* Payment Amount */}
                   <div className="col-span-2 mt-2">
                     <FInput label={`💸 Payment Amount (Max: ${formatRs(displayActualBalance)})`}>
-                      <StyledInput type="number" min="0" max={displayActualBalance} step="0.01"
+                      <StyledInput type="number" inputMode="decimal" min="0" max={displayActualBalance} step="0.01"
                         placeholder="0" value={form.newPaymentAmount || ""}
                         onChange={(e) => {
                           const val = Number(e.target.value) || 0;
@@ -1581,11 +1621,11 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
             <p className="text-gray-600 text-xs mb-3">Pay within X days → get Y% extra discount</p>
             <div className="grid grid-cols-2 gap-3">
               <FInput label="Pay within (days)">
-                <StyledInput type="number" min="1" placeholder="e.g. 7"
+                <StyledInput type="number" inputMode="numeric" min="1" placeholder="e.g. 7"
                   value={form.earlyDiscountDays} onChange={set("earlyDiscountDays")} />
               </FInput>
               <FInput label="Bonus Discount (%)">
-                <StyledInput type="number" min="0" max="100" placeholder="e.g. 5"
+                <StyledInput type="number" inputMode="decimal" min="0" max="100" placeholder="e.g. 5"
                   value={form.earlyDiscountPercent} onChange={set("earlyDiscountPercent")} />
               </FInput>
             </div>

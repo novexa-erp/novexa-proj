@@ -860,6 +860,7 @@ function AddPaymentModal({ onSave, onClose, invoices }) {
             </label>
             <input
               type="number"
+              inputMode="decimal"
               placeholder="0"
               value={formData.amount}
               onChange={e => setFormData(f => ({ ...f, amount: e.target.value }))}

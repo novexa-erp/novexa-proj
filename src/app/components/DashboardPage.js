@@ -402,6 +402,9 @@ function DashboardContent() {
   // Total Revenue = sum of actual amounts across ALL active invoices
   const totalRevenue = activeInvoices.reduce((s, i) => s + getInvActualAmount(i), 0);
 
+  // Total Collected = sum of amountPaid across all active invoices
+  const totalCollected = activeInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
+
   // Split invoices
   const customerInvoices = activeInvoices.filter(i => i.customerId);
   const otherInvoices    = activeInvoices.filter(i => !i.customerId);
@@ -419,7 +422,7 @@ function DashboardContent() {
   // Pending = total outstanding
   const pendingAmount = customerBalance + otherBalance;
 
-  const collectedPct    = totalRevenue > 0 ? Math.round(((totalRevenue - pendingAmount) / totalRevenue) * 100) : 0;
+  const collectedPct    = totalRevenue > 0 ? Math.round((totalCollected / totalRevenue) * 100) : 0;
   const pendingPct      = 100 - collectedPct;
   const activeCustomers = customers.filter(c => c.status !== "inactive").length;
   // Stock helper — variant-aware (same as InventoryView)
@@ -438,10 +441,10 @@ function DashboardContent() {
   const allInvoices = activeInvoices;
 
   const stats = [
-    { label: "Total Revenue",        value: formatRs(totalRevenue),    change: `${allInvoices.filter(i => (Number(i.amountPaid)||0) >= getInvActualAmount(i) && getInvActualAmount(i) > 0).length} paid`, icon: "💰", color: "from-amber-500 to-orange-600" },
-    { label: "Total Purchasing",      value: formatRs(totalPurchasing), change: "All orders",                                                                                                               icon: "🛒", color: "from-green-500 to-emerald-600", onClick: () => handleNavChange("purchases") },
-    { label: "Customer Balance",      value: formatRs(customerBalance), change: `${customerInvoices.length} invoices`,                                                                                      icon: "👥", color: "from-orange-500 to-amber-600",  onClick: () => handleNavChange("customers") },
-    { label: "Other Invoice Balance", value: formatRs(otherBalance),    change: `${otherInvoices.length} invoices`,                                                                                         icon: "🧾", color: "from-blue-500 to-cyan-600",    onClick: () => handleNavChange("invoices") },
+    { label: "Total Revenue",     value: formatRs(totalRevenue),   change: `${allInvoices.length} invoices`,                                                                                                                                         icon: "💰", color: "from-amber-500 to-orange-600" },
+    { label: "Total Collected",   value: formatRs(totalCollected), change: `${allInvoices.filter(i => (Number(i.amountPaid)||0) >= getInvActualAmount(i) && getInvActualAmount(i) > 0).length} paid`, icon: "💵", color: "from-green-500 to-emerald-600" },
+    { label: "Total Purchasing",  value: formatRs(totalPurchasing),change: "All orders",                                                                                                                                                              icon: "🛒", color: "from-purple-500 to-violet-600", onClick: () => handleNavChange("purchases") },
+    { label: "Total Balance Due", value: formatRs(pendingAmount),  change: `${otherInvoices.length + customerInvoices.length} invoices`,                                                                                                              icon: "⏳", color: "from-rose-500 to-red-600" },
   ];
 
   // ── Sign out ─────────────────────────────────────────────────────────────────
@@ -1040,7 +1043,7 @@ function DashboardContent() {
                   <div>
                     <div className="flex justify-between mb-1.5">
                       <span className="text-gray-400 text-xs">Collected</span>
-                      <span className="text-white text-xs font-semibold">{formatRs(totalRevenue)}</span>
+                      <span className="text-white text-xs font-semibold">{formatRs(totalCollected)}</span>
                     </div>
                     <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
                       <div className="h-full rounded-full transition-all duration-700"
@@ -1140,7 +1143,7 @@ function DashboardContent() {
           </div>
           <div>
             <label style={labelStyle}>Phone</label>
-            <input type="tel" style={inputStyle} placeholder="+92 300 1234567"
+            <input type="tel" inputMode="tel" style={inputStyle} placeholder="+92 300 1234567"
               value={custForm.phone} onChange={e => setCustForm({ ...custForm, phone: e.target.value })} />
           </div>
           <div>
@@ -1166,17 +1169,17 @@ function DashboardContent() {
           </div>
           <div>
             <label style={labelStyle}>Stock Quantity</label>
-            <input required type="number" min="0" style={inputStyle} placeholder="e.g. 100"
+            <input required type="number" inputMode="numeric" min="0" style={inputStyle} placeholder="e.g. 100"
               value={prodForm.stock} onChange={e => setProdForm({ ...prodForm, stock: e.target.value })} />
           </div>
           <div>
             <label style={labelStyle}>Price (Rs.)</label>
-            <input type="number" min="0" style={inputStyle} placeholder="e.g. 500"
+            <input type="number" inputMode="decimal" min="0" style={inputStyle} placeholder="e.g. 500"
               value={prodForm.price} onChange={e => setProdForm({ ...prodForm, price: e.target.value })} />
           </div>
           <div>
             <label style={labelStyle}>Low Stock Alert Below</label>
-            <input type="number" min="0" style={inputStyle} placeholder="e.g. 10"
+            <input type="number" inputMode="numeric" min="0" style={inputStyle} placeholder="e.g. 10"
               value={prodForm.lowStockThreshold} onChange={e => setProdForm({ ...prodForm, lowStockThreshold: e.target.value })} />
           </div>
         </Modal>

@@ -11,7 +11,7 @@ const base = {
   transition: "border-color .2s, background .2s",
 };
 const focusStyle = {
-  background: "rgba(37,99,235,0.07)", borderColor: "rgba(37,99,235,0.5)",
+  background: "rgba(37,99,235,0.07)", border: "1.5px solid rgba(37,99,235,0.5)",
   boxShadow: "0 0 0 3px rgba(37,99,235,0.08)",
 };
 const lbl = {
@@ -19,11 +19,11 @@ const lbl = {
   textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5,
 };
 
-function SInput({ type = "text", placeholder, value, onChange, req, disabled }) {
+function SInput({ type = "text", placeholder, value, onChange, req, disabled, inputMode }) {
   const [f, setF] = useState(false);
   return (
     <input type={type} placeholder={placeholder} value={value} onChange={onChange}
-      required={req} disabled={disabled} autoComplete="off"
+      required={req} disabled={disabled} autoComplete="off" inputMode={inputMode}
       onFocus={() => setF(true)} onBlur={() => setF(false)}
       style={{ ...base, ...(f && !disabled ? focusStyle : {}), opacity: disabled ? 0.5 : 1, cursor: disabled ? "not-allowed" : "text" }} />
   );
@@ -292,7 +292,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
             </div>
             <div>
               <label style={lbl}>Phone Number</label>
-              <SInput type="tel" placeholder="+92 300 1234567" value={profile.phone} onChange={set("phone")} />
+              <SInput type="tel" inputMode="tel" placeholder="+92 300 1234567" value={profile.phone} onChange={set("phone")} />
             </div>
             <div>
               <label style={lbl}>Email</label>
@@ -307,7 +307,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
             </div>
             <div className="col-span-2">
               <label style={lbl}>Website (optional)</label>
-              <SInput placeholder="https://yourbusiness.com" value={profile.website} onChange={set("website")} />
+              <SInput type="url" inputMode="url" placeholder="https://yourbusiness.com" value={profile.website} onChange={set("website")} />
             </div>
           </div>
         </SECT>

@@ -41,14 +41,14 @@ const base = {
   padding: "9px 13px", color: "#fff", fontSize: 13,
   transition: "border-color .2s, background .2s",
 };
-const focusStyle = { background: "rgba(37,99,235,0.07)", borderColor: "rgba(37,99,235,0.5)", boxShadow: "0 0 0 3px rgba(37,99,235,0.08)" };
+const focusStyle = { background: "rgba(37,99,235,0.07)", border: "1.5px solid rgba(37,99,235,0.5)", boxShadow: "0 0 0 3px rgba(37,99,235,0.08)" };
 const lbl = { display: "block", color: "#9ca3af", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 };
 
-function SInput({ type = "text", placeholder, value, onChange, req }) {
+function SInput({ type = "text", placeholder, value, onChange, req, inputMode }) {
   const [f, setF] = useState(false);
   return (
     <input type={type} placeholder={placeholder} value={value} onChange={onChange}
-      required={req} autoComplete="off"
+      required={req} autoComplete="off" inputMode={inputMode}
       onFocus={() => setF(true)} onBlur={() => setF(false)}
       style={{ ...base, ...(f ? focusStyle : {}) }} />
   );
@@ -94,21 +94,29 @@ function SupplierModal({ initial, onClose, onSave, saving }) {
           <div className="grid grid-cols-2 gap-3">
             <div>
               <label style={lbl}>Phone <span style={{ color: "#f87171" }}>*</span></label>
-              <SInput type="tel" placeholder="+92 300 1234567" value={form.phone} onChange={set("phone")} req />
+              <SInput type="tel" inputMode="tel" placeholder="+92 300 1234567" value={form.phone}
+                onChange={e => {
+                  let val = e.target.value;
+                  if (val === "" || val === "+") { setForm(p => ({ ...p, phone: "" })); return; }
+                  val = val.replace(/[^+\d]/g, "");
+                  if (!val.startsWith("+")) val = "+" + val.replace(/^\+*/, "");
+                  if (val.length > 13) val = val.slice(0, 13);
+                  setForm(p => ({ ...p, phone: val }));
+                }} req />
             </div>
             <div>
-              <label style={lbl}>Email (optional)</label>
-              <SInput type="email" placeholder="supplier@email.com" value={form.email} onChange={set("email")} />
+              <label style={lbl}>Email <span style={{ color: "#f87171" }}>*</span></label>
+              <SInput type="email" placeholder="supplier@email.com" value={form.email} onChange={set("email")} req />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label style={lbl}>City</label>
-              <SInput placeholder="e.g. Lahore" value={form.city} onChange={set("city")} />
+              <label style={lbl}>City <span style={{ color: "#f87171" }}>*</span></label>
+              <SInput placeholder="e.g. Lahore" value={form.city} onChange={set("city")} req />
             </div>
             <div>
-              <label style={lbl}>Address</label>
-              <SInput placeholder="Street, Area..." value={form.address} onChange={set("address")} />
+              <label style={lbl}>Address <span style={{ color: "#f87171" }}>*</span></label>
+              <SInput placeholder="Street, Area..." value={form.address} onChange={set("address")} req />
             </div>
           </div>
           <div>

@@ -467,18 +467,61 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
     saveInvoiceToFirebase(formData);
   }
 
-  // ── Delete (soft) ─────────────────────────────────────────────────────────
+  // ── Delete (soft) — restores stock + reverses financials ─────────────────
   async function handleDelete(id) {
+    const inv = invoices.find(i => i.id === id);
+    if (!inv) { setDeleteConf(null); return; }
+
     try {
+      // 1. Restore stock for every item in the invoice
+      for (const item of (inv.items || [])) {
+        const isPrevBal = (item.description || "").startsWith("Previous Balance · INV-");
+        if (isPrevBal || !item.productId || !item.qty) continue;
+
+        const product = products.find(p => p.id === item.productId);
+        if (!product) continue;
+
+        const qtyToRestore = Number(item.qty) || 0;
+        const productRef = doc(db, "users", uid, "products", item.productId);
+
+        if (item.variantId && product.variants?.length > 0) {
+          const updatedVariants = product.variants.map((v, vIdx) => {
+            const varId = v.id || `var_${vIdx}`;
+            if (varId === item.variantId) {
+              return { ...v, stock: (Number(v.stock) || 0) + qtyToRestore };
+            }
+            return v;
+          });
+          await updateDoc(productRef, { variants: updatedVariants, updatedAt: serverTimestamp() });
+        } else {
+          await updateDoc(productRef, {
+            stock: (Number(product.stock) || 0) + qtyToRestore,
+            updatedAt: serverTimestamp(),
+          });
+        }
+      }
+
+      // 2. Soft-delete the invoice (with snapshot of stock-items for restore later)
       await updateDoc(doc(db, "users", uid, "invoices", id), {
-        deleted:   true,
-        deletedAt: serverTimestamp(),
+        deleted:          true,
+        deletedAt:        serverTimestamp(),
+        // snapshot financials so restore can reverse them correctly
+        _deletedAmount:   Number(inv.amount)      || 0,
+        _deletedAmtPaid:  Number(inv.amountPaid)  || 0,
+        _deletedBalance:  Number(inv.balance)     || 0,
       });
+
+      // 3. Build a concise item description for the success message
+      const itemSummary = (inv.items || [])
+        .filter(it => !(it.description || "").startsWith("Previous Balance · INV-") && it.description)
+        .map(it => `${it.qty}× ${it.description}${it.variantLabel ? ` (${it.variantLabel})` : ""}`)
+        .join(", ");
+
       setAlert({
         show: true,
         type: "success",
-        title: "Invoice Deleted! 🗑️",
-        message: "The invoice has been removed from your records.",
+        title: "Invoice Deleted 🗑️",
+        message: `Invoice moved to Trash. Stock restored${itemSummary ? ": " + itemSummary : ""}. You can restore it within 15 days.`,
       });
     } catch (err) {
       setAlert({
@@ -794,33 +837,96 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
       )}
 
       {/* ── Delete Confirm ── */}
-      {deleteConf && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(4px)" }}>
-          <div className="w-full max-w-sm rounded-2xl p-6 flex flex-col gap-4 text-center"
-            style={{ background: "#0d1117", border: "1px solid rgba(248,113,113,0.3)" }}>
-            <p className="text-3xl">🗑️</p>
-            <h3 className="text-white font-bold text-base">Delete Invoice?</h3>
-            <p className="text-gray-400 text-sm">
-              This invoice will be <span className="text-white font-bold">removed from your view</span>.
-              Once gone, recovery is only possible in a genuine emergency by contacting support —
-              and it is <span className="text-red-400 font-bold">not guaranteed</span>.
-            </p>
-            <div className="flex gap-3">
-              <button onClick={() => setDeleteConf(null)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
-                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
-                Cancel
-              </button>
-              <button onClick={() => handleDelete(deleteConf)}
-                className="flex-1 py-2.5 rounded-xl text-sm font-bold"
-                style={{ background: "rgba(248,113,113,0.15)", border: "1px solid rgba(248,113,113,0.4)", color: "#f87171" }}>
-                Delete
-              </button>
+      {deleteConf && (() => {
+        const inv = invoices.find(i => i.id === deleteConf);
+        const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+        const invActualAmt = inv
+          ? (inv.actualAmount != null
+              ? Number(inv.actualAmount)
+              : (inv.items || []).filter(it => !isPrevBalItem(it))
+                  .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0)
+                || Number(inv.amount) || 0)
+          : 0;
+        const invAmtPaid   = inv ? (Number(inv.amountPaid) || 0) : 0;
+        const invBalance   = Math.max(0, invActualAmt - invAmtPaid);
+        const hasBalance   = invBalance > 0;
+
+        // Build item summary for display
+        const itemRows = (inv?.items || []).filter(
+          it => !isPrevBalItem(it) && it.description && it.qty
+        );
+
+        return (
+          <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+            style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)" }}>
+            <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+              style={{ background: "#0d1117", border: "1px solid rgba(248,113,113,0.35)", boxShadow: "0 24px 64px rgba(0,0,0,0.7)" }}>
+
+              {/* Header */}
+              <div className="px-6 pt-6 pb-4 text-center border-b border-white/[0.06]">
+                <p className="text-4xl mb-2">🗑️</p>
+                <h3 className="text-white font-bold text-base">Delete this Invoice?</h3>
+                {inv && (
+                  <p className="text-gray-500 text-xs mt-1">
+                    INV-{(inv.id || "").slice(-4).toUpperCase()} · {inv.customerName || inv.customer || "Unknown"}
+                  </p>
+                )}
+              </div>
+
+              {/* Balance warning */}
+              {hasBalance && (
+                <div className="mx-4 mt-4 px-4 py-3 rounded-xl"
+                  style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)" }}>
+                  <p className="text-red-400 text-xs font-bold text-center">
+                    ⚠️ This invoice still has <span className="text-white font-black">Rs. {invBalance.toLocaleString("en-PK")}</span> balance due
+                  </p>
+                </div>
+              )}
+
+              {/* Items that will be restocked */}
+              {itemRows.length > 0 && (
+                <div className="mx-4 mt-3 px-4 py-3 rounded-xl"
+                  style={{ background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.2)" }}>
+                  <p className="text-green-400 text-[10px] font-bold uppercase tracking-widest mb-2">
+                    📦 Stock will be returned
+                  </p>
+                  {itemRows.map((it, i) => (
+                    <p key={i} className="text-gray-300 text-xs">
+                      + {it.qty}{it.variantLabel ? ` ${it.variantLabel}` : ""} {it.description}
+                    </p>
+                  ))}
+                </div>
+              )}
+
+              {/* Financial reversal note */}
+              <div className="mx-4 mt-3 px-4 py-3 rounded-xl mb-1"
+                style={{ background: "rgba(96,165,250,0.06)", border: "1px solid rgba(96,165,250,0.15)" }}>
+                <p className="text-blue-300 text-xs leading-relaxed">
+                  ℹ️ What happens after deleting:
+                  <br />• Invoice moves to Trash (can restore within 15 days)
+                  <br />• Stock will be fully returned to inventory
+                  {invAmtPaid > 0 && <><br />• <span className="text-amber-400 font-semibold">Rs. {invAmtPaid.toLocaleString("en-PK")}</span> collected amount will be removed from records</>}
+                  {invActualAmt > 0 && <><br />• Invoice total of <span className="text-amber-400 font-semibold">Rs. {invActualAmt.toLocaleString("en-PK")}</span> will be removed</>}
+                </p>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex gap-3 px-4 py-4">
+                <button onClick={() => setDeleteConf(null)}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/10"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+                  Cancel
+                </button>
+                <button onClick={() => handleDelete(deleteConf)}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all hover:scale-[1.02]"
+                  style={{ background: "rgba(248,113,113,0.15)", border: "1px solid rgba(248,113,113,0.4)", color: "#f87171" }}>
+                  Yes, Delete
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Email Confirmation Dialog ── */}
       <EmailConfirmationDialog
@@ -927,6 +1033,7 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
                       </label>
                       <input
                         type="number"
+                        inputMode="decimal"
                         min="0"
                         step="0.01"
                         placeholder="e.g. 120"

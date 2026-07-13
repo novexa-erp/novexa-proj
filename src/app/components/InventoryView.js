@@ -725,6 +725,7 @@ function AddProductModal({ product, onSave, onClose }) {
                 </label>
                 <input
                   type="number"
+                  inputMode="decimal"
                   placeholder="0"
                   value={formData.costPrice}
                   onChange={e => setFormData(f => ({ ...f, costPrice: e.target.value }))}
@@ -739,6 +740,7 @@ function AddProductModal({ product, onSave, onClose }) {
                 </label>
                 <input
                   type="number"
+                  inputMode="decimal"
                   placeholder="0"
                   value={formData.sellingPrice}
                   onChange={e => setFormData(f => ({ ...f, sellingPrice: e.target.value }))}
@@ -753,6 +755,7 @@ function AddProductModal({ product, onSave, onClose }) {
                 </label>
                 <input
                   type="number"
+                  inputMode="numeric"
                   placeholder="0"
                   value={formData.stock}
                   onChange={e => setFormData(f => ({ ...f, stock: e.target.value }))}
@@ -805,6 +808,7 @@ function AddProductModal({ product, onSave, onClose }) {
                   />
                   <input
                     type="number"
+                    inputMode="decimal"
                     placeholder="💰 Cost Price (Rs.)"
                     value={newVariant.costPrice}
                     onChange={e => setNewVariant(v => ({ ...v, costPrice: e.target.value }))}
@@ -813,6 +817,7 @@ function AddProductModal({ product, onSave, onClose }) {
                   />
                   <input
                     type="number"
+                    inputMode="decimal"
                     placeholder="₨ Selling Price (Rs.)"
                     value={newVariant.sellingPrice}
                     onChange={e => setNewVariant(v => ({ ...v, sellingPrice: e.target.value }))}
@@ -821,6 +826,7 @@ function AddProductModal({ product, onSave, onClose }) {
                   />
                   <input
                     type="number"
+                    inputMode="numeric"
                     placeholder="Stock"
                     value={newVariant.stock}
                     onChange={e => setNewVariant(v => ({ ...v, stock: e.target.value }))}

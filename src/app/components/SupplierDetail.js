@@ -192,7 +192,7 @@ function VariantItemRow({ item, idx, locked, newLocked, isEdit, onChange, onRemo
               {q} {variantMeta.unit}
             </button>
           ))}
-          <input type="number" min="0" step="any" placeholder="custom"
+          <input type="number" inputMode="decimal" min="0" step="any" placeholder="custom"
             value={item.variantQty}
             onChange={e => onChange("variantQty", e.target.value)}
             style={{ ...base, width: 72, padding: "4px 8px", fontSize: 11 }} />
@@ -206,7 +206,7 @@ function VariantItemRow({ item, idx, locked, newLocked, isEdit, onChange, onRemo
         {(!item.variantType || item.variantType === "none") && !isLocked && (
           <div className="flex items-center gap-1">
             <span className="text-[10px] text-gray-500">Qty</span>
-            <input type="number" min="1" placeholder="1" value={item.qty}
+            <input type="number" inputMode="numeric" min="1" placeholder="1" value={item.qty}
               onChange={e => onChange("qty", e.target.value)}
               style={{ ...base, width: 64, padding: "6px 6px", fontSize: 12, textAlign: "center" }} />
           </div>
@@ -224,7 +224,7 @@ function VariantItemRow({ item, idx, locked, newLocked, isEdit, onChange, onRemo
             {/* Number of units */}
             <div className="flex items-center gap-1">
               <span className="text-[10px] text-gray-500">Units</span>
-              <input type="number" min="1" placeholder="1" value={item.qty}
+              <input type="number" inputMode="numeric" min="1" placeholder="1" value={item.qty}
                 onChange={e => onChange("qty", e.target.value)}
                 style={{ ...base, width: 64, padding: "6px 6px", fontSize: 12, textAlign: "center" }} />
             </div>
@@ -254,7 +254,7 @@ function VariantItemRow({ item, idx, locked, newLocked, isEdit, onChange, onRemo
           <span className="text-[10px] text-gray-500 whitespace-nowrap">
             {item.variantType && item.variantType !== "none" ? `Per ${variantMeta.unit}` : "Price"}
           </span>
-          <input type="number" min="0" placeholder="0" value={item.unitPrice}
+          <input type="number" inputMode="decimal" min="0" placeholder="0" value={item.unitPrice}
             onChange={e => onChange("unitPrice", e.target.value)}
             readOnly={locked}
             style={{ ...base, flex: 1, padding: "6px 8px", fontSize: 12, textAlign: "right", ...(locked ? disabledStyle : {}) }} />
@@ -299,12 +299,12 @@ function calcPOTotals(form) {
   return { subtotal, discount, afterDiscount, paid, balance };
 }
 
-function SInput({ type = "text", placeholder, value, onChange, req, readOnly }) {
+function SInput({ type = "text", placeholder, value, onChange, req, readOnly, inputMode }) {
   const [f, setF] = useState(false);
-  const focused = { background: "rgba(37,99,235,0.07)", borderColor: "rgba(37,99,235,0.5)", boxShadow: "0 0 0 3px rgba(37,99,235,0.08)" };
+  const focused = { background: "rgba(37,99,235,0.07)", border: "1.5px solid rgba(37,99,235,0.5)", boxShadow: "0 0 0 3px rgba(37,99,235,0.08)" };
   return (
     <input type={type} placeholder={placeholder} value={value} onChange={onChange}
-      required={req} autoComplete="off" readOnly={readOnly}
+      required={req} autoComplete="off" readOnly={readOnly} inputMode={inputMode}
       onFocus={() => setF(true)} onBlur={() => setF(false)}
       style={{ ...base, ...(f && !readOnly ? focused : {}), ...(readOnly ? { opacity: 0.55, cursor: "not-allowed", background: "rgba(255,255,255,0.02)" } : {}) }} />
   );
@@ -455,7 +455,7 @@ function PurchaseOrderModal({ initial, supplier, onClose, onSave, saving, isEdit
             </div>
             <div>
               <label style={lbl}>Discount Value</label>
-              <SInput type="number" min="0" placeholder="0" value={form.discountValue}
+              <SInput type="number" inputMode="decimal" min="0" placeholder="0" value={form.discountValue}
                 onChange={set("discountValue")} readOnly={isEdit} />
             </div>
           </div>
@@ -479,7 +479,7 @@ function PurchaseOrderModal({ initial, supplier, onClose, onSave, saving, isEdit
               <>
                 <div>
                   <label style={{ ...lbl, marginTop: 8 }}>Amount Paid Now (Rs.)</label>
-                  <SInput type="number" min="0" placeholder="0" value={form.amountPaid}
+                  <SInput type="number" inputMode="decimal" min="0" placeholder="0" value={form.amountPaid}
                     onChange={set("amountPaid")} />
                 </div>
                 <div className="flex justify-between text-sm font-bold mt-1">
@@ -557,7 +557,7 @@ function PaySupplierModal({ order, supplier, onClose, onSave, saving }) {
         }} className="flex flex-col gap-4 p-6">
           <div>
             <label style={lbl}>Amount to Pay (Rs.) <span style={{ color: "#f87171" }}>*</span></label>
-            <input type="number" min="1" max={maxPayable} placeholder={`Max: ${maxPayable}`}
+            <input type="number" inputMode="decimal" min="1" max={maxPayable} placeholder={`Max: ${maxPayable}`}
               value={amount} onChange={e => setAmount(e.target.value)} required
               style={{ ...base }} />
           </div>
@@ -573,25 +573,32 @@ function PaySupplierModal({ order, supplier, onClose, onSave, saving }) {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label style={lbl}>Paid By (Your Name)</label>
+              <label style={lbl}>Paid By (Your Name) <span style={{ color: "#f87171" }}>*</span></label>
               <input type="text" placeholder="e.g. Ahmed" value={payerName}
-                onChange={e => setPayerName(e.target.value)} style={{ ...base }} />
+                onChange={e => setPayerName(e.target.value)} required style={{ ...base }} />
             </div>
             <div>
-              <label style={lbl}>Received By</label>
+              <label style={lbl}>Received By <span style={{ color: "#f87171" }}>*</span></label>
               <input type="text" placeholder={supplier.name} value={receiverName}
-                onChange={e => setReceiverName(e.target.value)} style={{ ...base }} />
+                onChange={e => setReceiverName(e.target.value)} required style={{ ...base }} />
             </div>
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label style={lbl}>Supplier Contact</label>
-              <input type="tel" placeholder={supplier.phone} value={receiverContact}
-                onChange={e => setReceiverContact(e.target.value)} style={{ ...base }} />
+              <label style={lbl}>Supplier Contact <span style={{ color: "#f87171" }}>*</span></label>
+              <input type="tel" inputMode="tel" placeholder={supplier.phone || "+92 300 1234567"} value={receiverContact}
+                onChange={e => {
+                  let val = e.target.value;
+                  if (val === "" || val === "+") { setReceiverContact(""); return; }
+                  val = val.replace(/[^+\d]/g, "");
+                  if (!val.startsWith("+")) val = "+" + val.replace(/^\+*/, "");
+                  if (val.length > 13) val = val.slice(0, 13);
+                  setReceiverContact(val);
+                }} required style={{ ...base }} />
             </div>
             <div>
-              <label style={lbl}>Payment Date</label>
-              <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} style={{ ...base }} />
+              <label style={lbl}>Payment Date <span style={{ color: "#f87171" }}>*</span></label>
+              <input type="date" value={payDate} onChange={e => setPayDate(e.target.value)} required style={{ ...base }} />
             </div>
           </div>
           <div>
@@ -739,8 +746,8 @@ function ReturnGoodsModal({ order, supplier, receipts = [], onClose, onSave, sav
 
           {/* Return Date */}
           <div>
-            <label style={lbl}>Return Date</label>
-            <input type="date" value={returnDate} onChange={e => setReturnDate(e.target.value)} style={{ ...base }} />
+            <label style={lbl}>Return Date <span style={{ color: "#f87171" }}>*</span></label>
+            <input type="date" value={returnDate} onChange={e => setReturnDate(e.target.value)} required style={{ ...base }} />
           </div>
 
           {/* Return Items */}
@@ -793,7 +800,7 @@ function ReturnGoodsModal({ order, supplier, receipts = [], onClose, onSave, sav
                             {q} {meta.unit}
                           </button>
                         ))}
-                        <input type="number" min="0" step="any" placeholder="custom"
+                        <input type="number" inputMode="decimal" min="0" step="any" placeholder="custom"
                           value={item.variantQty}
                           onChange={e => setItem(idx, "variantQty", e.target.value)}
                           style={{ ...base, width: 72, padding: "4px 8px", fontSize: 11 }} />
@@ -805,7 +812,7 @@ function ReturnGoodsModal({ order, supplier, receipts = [], onClose, onSave, sav
                       {item.isVariant ? (
                         <div className="flex items-center gap-1.5">
                           <span className="text-[10px] text-gray-500">Units to return</span>
-                          <input type="number" min="1" placeholder="0" value={item.qty}
+                          <input type="number" inputMode="numeric" min="1" placeholder="0" value={item.qty}
                             onChange={e => setItem(idx, "qty", e.target.value)}
                             style={{ ...base, width: 70, padding: "6px 6px", fontSize: 12, textAlign: "center" }} />
                           {item.variantQty && Number(item.qty) > 0 && (
@@ -818,7 +825,7 @@ function ReturnGoodsModal({ order, supplier, receipts = [], onClose, onSave, sav
                       ) : (
                         <div className="flex items-center gap-1">
                           <span className="text-[10px] text-gray-500">Qty</span>
-                          <input type="number" min="1" placeholder="0" value={item.qty}
+                          <input type="number" inputMode="numeric" min="1" placeholder="0" value={item.qty}
                             onChange={e => setItem(idx, "qty", e.target.value)}
                             style={{ ...base, width: 70, padding: "6px 6px", fontSize: 12, textAlign: "center" }} />
                         </div>
@@ -828,7 +835,7 @@ function ReturnGoodsModal({ order, supplier, receipts = [], onClose, onSave, sav
                         <span className="text-[10px] text-gray-500 whitespace-nowrap">
                           {item.isVariant && meta ? `Per ${meta.unit}` : "Unit Price"}
                         </span>
-                        <input type="number" min="0" placeholder="0" value={item.unitPrice}
+                        <input type="number" inputMode="decimal" min="0" placeholder="0" value={item.unitPrice}
                           onChange={e => setItem(idx, "unitPrice", e.target.value)}
                           style={{ ...base, flex: 1, padding: "6px 8px", fontSize: 12, textAlign: "right" }} />
                       </div>
@@ -1394,23 +1401,28 @@ function PurchaseOrderViewModal({ order, supplier, userDoc = {}, receipts, retur
 }
 
 // ── Blank Order Form — multi-page, printable ────────────────────────────────
-function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
+function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false }) {
   const hasVariant  = formType === "variant";
   const generatedOn = new Date().toLocaleDateString("en-PK", { day:"2-digit", month:"long", year:"numeric" });
   const cols = hasVariant
     ? ["Item / Description", "Variant Type", "Size / Unit", "Units", "Total Qty", "Unit Price", "Total Amount"]
     : ["Item / Description", "Qty", "Unit Price", "Total Amount"];
 
-  // How many item rows fit per page
-  // Page total height: 1123px
-  // Padding top: 0, bottom: 70px (for footer space)
-  // Header: accent(6) + gap(14) + header-row(~72) + divider(2) + gap(12) = ~106px
-  // Footer: absolutely positioned at bottom 20px, needs ~70px space reserved
-  // Table thead: ~28px
-  // PageSubtotal row: ~28px
-  // Each item row: reduced padding 6px top+bottom = 12px + content ~18px = ~30px
-  // Available for rows (page1): 1123 - 70 - 106 - 28 - 28 - meta(~160) = ~731 → floor(731/30) = 24, use 8 rows safe
-  // Available for rows (mid/last): 1123 - 70 - 106 - 28 - 28 = ~891 → floor(891/30) = 29, use 14 to be safe
+  // Color palette — switches between color and B&W
+  const accent     = bw ? "#000"    : "#b45309";
+  const accentBg   = bw ? "#eee"    : "#fff8e1";
+  const accentText = bw ? "#000"    : "#7c2d12";
+  const headBg     = bw ? "#222"    : "#b45309";
+  const borderMid  = bw ? "#444"    : "#999";
+  const borderDark = bw ? "#000"    : "#555";
+  const textMid    = bw ? "#222"    : "#333";
+  const textSub    = bw ? "#444"    : "#444";
+  const sectionBg  = bw ? "#f0f0f0" : "#f9f9f9";
+  const sectionBdr = bw ? "#666"    : "#bbb";
+  const greenBdr   = bw ? "#444"    : "#4d7a5a";
+  const greenBg    = bw ? "#f0f0f0" : "#f0fdf4";
+  const greenText  = bw ? "#000"    : "#14532d";
+
   const rowsP1   = 15;
   const rowsMid  = 20;
   const rowsLast = 11;
@@ -1419,60 +1431,57 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
   function PageHeader({ pageNum }) {
     return (
       <div>
-        {/* Top accent */}
-        <div style={{ height: 5, marginBottom: 10, }} />
+        <div style={{ height: 5, marginBottom: 10 }} />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
           <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
             {userDoc?.logoDataUrl && (
               <img src={userDoc.logoDataUrl} alt="Logo"
-                style={{ width: 48, height: 48, objectFit: "contain", borderRadius: 8, border: "1px solid #e5e7eb" }} />
+                style={{ width: 48, height: 48, objectFit: "contain", borderRadius: 8, border: `1px solid ${borderDark}` }} />
             )}
             <div>
-              <div style={{ fontWeight: 900, fontSize: 18, color: "#111", lineHeight: 1.1 }}>
+              <div style={{ fontWeight: 900, fontSize: 18, color: "#000", lineHeight: 1.1 }}>
                 {userDoc?.business || userDoc?.name || "Your Business"}
               </div>
-              {userDoc?.phone   && <div style={{ fontSize: 9, color: "#6b7280", marginTop: 1 }}>📞 {userDoc.phone}</div>}
-              {userDoc?.email   && <div style={{ fontSize: 9, color: "#6b7280" }}>✉️ {userDoc.email}</div>}
-              {userDoc?.website && <div style={{ fontSize: 9, color: "#6b7280" }}>🌐 {userDoc.website}</div>}
-              {userDoc?.address && <div style={{ fontSize: 9, color: "#6b7280" }}>📍 {userDoc.address}</div>}
+              {userDoc?.phone   && <div style={{ fontSize: 9, color: textMid, marginTop: 1 }}>📞 {userDoc.phone}</div>}
+              {userDoc?.email   && <div style={{ fontSize: 9, color: textMid }}>✉️ {userDoc.email}</div>}
+              {userDoc?.website && <div style={{ fontSize: 9, color: textMid }}>🌐 {userDoc.website}</div>}
+              {userDoc?.address && <div style={{ fontSize: 9, color: textMid }}>📍 {userDoc.address}</div>}
             </div>
           </div>
           <div style={{ textAlign: "right", paddingRight: "10px" }}>
-            <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: "-1.5px", color: "#d97706", lineHeight: 1.1 }}>ORDER FORM</div>
-            <div style={{ fontSize: 9, color: "#9ca3af", marginTop: 2 }}>
+            <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: "-1.5px", color: accent, lineHeight: 1.1 }}>ORDER FORM</div>
+            <div style={{ fontSize: 9, color: textSub, marginTop: 2 }}>
               {hasVariant ? "Variant / Measurement Order" : "Standard Order Form"}
             </div>
             <div style={{ marginTop: 4, display: "flex", justifyContent: "flex-end", gap: 6, alignItems: "center" }}>
-              <span style={{ padding: "2px 10px", borderRadius: 20, background: "#fffbeb",
-                border: "1px solid #fde68a", fontSize: 8, color: "#92400e", fontWeight: 700 }}>
+              <span style={{ padding: "2px 10px", borderRadius: 20, background: accentBg,
+                border: `1px solid ${accent}`, fontSize: 8, color: accentText, fontWeight: 700 }}>
                 {hasVariant ? "📦 WITH VARIANTS" : "📋 STANDARD"}
               </span>
-              <span style={{ fontSize: 9, color: "#9ca3af" }}>Page {pageNum} / {totalPages}</span>
+              <span style={{ fontSize: 9, color: textMid }}>Page {pageNum} / {totalPages}</span>
             </div>
           </div>
         </div>
-        <div style={{ height: 2, background: "linear-gradient(to right,#f59e0b,#e5e7eb)", marginBottom: 10 }} />
+        <div style={{ height: 2, background: accent, marginBottom: 10 }} />
       </div>
     );
   }
 
-  // Footer component — absolutely pinned to page bottom, always visible
+  // Footer component — sits at bottom of flex column, no overlap
   function PageFooter({ pageNum }) {
     return (
-      <div style={{
-        position: "absolute", bottom: 20, left: 52, right: 52,
-      }}>
-        <div style={{ height: 1, background: "linear-gradient(to right,#f59e0b,#d97706,#e5e7eb)", marginBottom: 8 }} />
+      <div style={{ marginTop: "auto", paddingTop: 6 }}>
+        <div style={{ height: 1.5, background: accent, marginBottom: 5 }} />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
-            <div style={{ fontSize: 11, fontWeight: 900, color: "#d97706" }}>Novexa ERP</div>
-            <div style={{ fontSize: 9, color: "#9ca3af" }}>Smart Business Management — novexa.app</div>
+            <div style={{ fontSize: 10, fontWeight: 900, color: accent }}>Novexa ERP</div>
+            <div style={{ fontSize: 8, color: textSub }}>Smart Business Management — novexa.app</div>
           </div>
-          <div style={{ textAlign: "center", fontSize: 9, color: "#9ca3af" }}>
+          <div style={{ textAlign: "center", fontSize: 8, color: textSub }}>
             <div>This form was generated by Novexa ERP</div>
             <div>Print · Fill · Sign · File</div>
           </div>
-          <div style={{ textAlign: "right", fontSize: 9, color: "#9ca3af" }}>
+          <div style={{ textAlign: "right", fontSize: 8, color: textSub }}>
             <div>Generated: {generatedOn}</div>
             <div>Page {pageNum} of {totalPages} · © Novexa</div>
           </div>
@@ -1484,11 +1493,11 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
   // Table header row
   function TableHead() {
     return (
-      <tr style={{ background: "#d97706", color: "#fff" }}>
-        <th style={{ padding: "5px 5px", fontSize: 9, fontWeight: 700, textTransform: "uppercase",
+      <tr style={{ background: headBg, color: "#fff" }}>
+        <th style={{ padding: "5px 5px", fontSize: 9, fontWeight: 800, textTransform: "uppercase",
           letterSpacing: "0.04em", textAlign: "center", width: 22 }}>#</th>
         {cols.map((h, i) => (
-          <th key={h} style={{ padding: "5px 7px", fontSize: 9, fontWeight: 700, textTransform: "uppercase",
+          <th key={h} style={{ padding: "5px 7px", fontSize: 9, fontWeight: 800, textTransform: "uppercase",
             letterSpacing: "0.04em", textAlign: i === 0 ? "left" : "right" }}>{h}</th>
         ))}
       </tr>
@@ -1498,10 +1507,10 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
   // Blank item rows
   function ItemRows({ from, count, shade }) {
     return Array.from({ length: count }).map((_, i) => (
-      <tr key={i} style={{ background: (from + i) % 2 === 0 ? "#fff" : "#fff", borderBottom: "1px solid #e5e7eb" }}>
-        <td style={{ padding: "6px 5px", textAlign: "center", fontSize: 10, color: "#000", fontWeight: 600 }}>{from + i + 1}</td>
+      <tr key={i} style={{ background: "#fff", borderBottom: `1px solid ${borderMid}` }}>
+        <td style={{ padding: "6px 5px", textAlign: "center", fontSize: 10, color: "#000", fontWeight: 700 }}>{from + i + 1}</td>
         {cols.map((_, ci) => (
-          <td key={ci} style={{ padding: "6px 5px", borderLeft: "1px solid #e5e7eb" }} />
+          <td key={ci} style={{ padding: "6px 5px", borderLeft: `1px solid ${borderMid}` }} />
         ))}
       </tr>
     ));
@@ -1510,13 +1519,13 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
   // Page subtotal row (on every page)
   function PageSubtotal() {
     return (
-      <tr style={{ background: "#fafafa", borderTop: "2px solid #e5e7eb" }}>
+      <tr style={{ background: "#f5f5f5", borderTop: `2px solid ${borderDark}` }}>
         <td colSpan={cols.length} style={{ padding: "5px 7px", textAlign: "right",
-          fontSize: 9, fontWeight: 700, color: "#6b7280", textTransform: "uppercase",
-          letterSpacing: "0.05em", borderLeft: "1px solid #e5e7eb" }}>
+          fontSize: 9, fontWeight: 800, color: "#111", textTransform: "uppercase",
+          letterSpacing: "0.05em", borderLeft: `1px solid ${borderMid}` }}>
           Page Subtotal
         </td>
-        <td style={{ padding: "5px 7px", borderLeft: "1.5px solid #d97706", width: 110 }} />
+        <td style={{ padding: "5px 7px", borderLeft: `2px solid ${accent}`, width: 110 }} />
       </tr>
     );
   }
@@ -1528,12 +1537,9 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
   }
 
   const pageStyle = {
-    width: 794, height: 1123, minHeight: 1123, background: "#fff", color: "#111",
-     fontSize: 13,
-    padding: "0 25px 70px 10px", boxSizing: "border-box",
-    display: "flex", flexDirection: "column",
-    overflow: "hidden",
-    position: "relative",
+    width: 794, height: 1123, minHeight: 1123, background: "#fff", color: "#000",
+    fontSize: 13, padding: "10px 25px 10px 20px", boxSizing: "border-box",
+    display: "flex", flexDirection: "column", overflow: "hidden",
   };
 
   // Gradient border wrapper — screen only, stripped on print
@@ -1570,31 +1576,31 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
                   {[["ORDER DATE","DD / MM / YYYY"],["ORDER REF #",""],["DELIVERY DATE","DD / MM / YYYY"]].map(([lbl, ph]) => (
                     <div key={lbl}>
-                      <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", color: "#9ca3af",
+                      <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#111",
                         letterSpacing: "0.06em", marginBottom: 2 }}>{lbl}</div>
-                      <div style={{ borderBottom: "1.5px solid #d1d5db", height: 24, display: "flex",
-                        alignItems: "flex-end", paddingBottom: 2, fontSize: 10, color: "#d1d5db" }}>{ph}</div>
+                      <div style={{ borderBottom: `1.5px solid ${borderDark}`, height: 24, display: "flex",
+                        alignItems: "flex-end", paddingBottom: 2, fontSize: 10, color: "#888" }}>{ph}</div>
                     </div>
                   ))}
                 </div>
                 {/* Supplier + Notes */}
                 <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12,
-                  padding: "10px 14px", background: "#fafafa", border: "1px solid #e5e7eb", borderRadius: 8 }}>
+                  padding: "10px 14px", background: sectionBg, border: `1px solid ${sectionBdr}`, borderRadius: 8 }}>
                   <div>
-                    <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#d97706",
+                    <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: accent,
                       letterSpacing: "0.07em", marginBottom: 6 }}>SUPPLIER / PARTY DETAILS</div>
                     {["Name","Shop / Company","Phone","Email","Address"].map(lbl => (
                       <div key={lbl} style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 5 }}>
-                        <span style={{ fontSize: 10, color: "#6b7280", minWidth: 80, flexShrink: 0 }}>{lbl}:</span>
-                        <div style={{ flex: 1, borderBottom: "1.5px solid #d1d5db", height: 18 }} />
+                        <span style={{ fontSize: 10, color: "#111", fontWeight: 600, minWidth: 80, flexShrink: 0 }}>{lbl}:</span>
+                        <div style={{ flex: 1, borderBottom: `1.5px solid ${borderDark}`, height: 18 }} />
                       </div>
                     ))}
                   </div>
                   <div>
-                    <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#6b7280",
+                    <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#222",
                       letterSpacing: "0.07em", marginBottom: 6 }}>NOTES / SPECIAL INSTRUCTIONS</div>
                     {[1,2,3,4,5,6].map(i => (
-                      <div key={i} style={{ borderBottom: "1px solid #e5e7eb", height: 18, marginBottom: 3 }} />
+                      <div key={i} style={{ borderBottom: `1px solid ${borderMid}`, height: 18, marginBottom: 3 }} />
                     ))}
                   </div>
                 </div>
@@ -1617,50 +1623,50 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages }) {
                 <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
                   <tbody>
                     {[["SUBTOTAL",""],["DISCOUNT",""],["GRAND TOTAL","grand"]].map(([lbl, type]) => (
-                      <tr key={lbl} style={{ background: type === "grand" ? "#fffbeb" : "#fff",
-                        borderBottom: "1px solid #e5e7eb" }}>
+                      <tr key={lbl} style={{ background: type === "grand" ? accentBg : "#fff",
+                        borderBottom: `1px solid ${borderMid}` }}>
                         <td colSpan={cols.length} style={{ padding: "6px 8px", textAlign: "right",
-                          fontSize: type === "grand" ? 12 : 10, fontWeight: type === "grand" ? 900 : 600,
-                          color: type === "grand" ? "#d97706" : "#374151",
-                          borderLeft: "1px solid " + (type === "grand" ? "#d97706" : "#e5e7eb") }}>
+                          fontSize: type === "grand" ? 12 : 10, fontWeight: type === "grand" ? 900 : 700,
+                          color: type === "grand" ? accent : "#111",
+                          borderLeft: `1px solid ${type === "grand" ? accent : borderMid}` }}>
                           {lbl}
                         </td>
                         <td style={{ padding: "6px 8px", width: 110,
-                          borderLeft: "1.5px solid " + (type === "grand" ? "#d97706" : "#d1d5db"),
-                          borderBottom: type === "grand" ? "2px solid #d97706" : undefined }} />
+                          borderLeft: `2px solid ${type === "grand" ? accent : borderDark}`,
+                          borderBottom: type === "grand" ? `2px solid ${accent}` : undefined }} />
                       </tr>
                     ))}
                   </tbody>
                 </table>
 
                 {/* Payment + Terms */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 14 }}>
-                  <div style={{ padding: "8px 12px", background: "#f0fdf4", border: "1px solid #bbf7d0", borderRadius: 8 }}>
-                    <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#15803d",
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+                  <div style={{ padding: "8px 12px", background: greenBg, border: `1px solid ${greenBdr}`, borderRadius: 8 }}>
+                    <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: greenText,
                       letterSpacing: "0.07em", marginBottom: 6 }}>PAYMENT DETAILS</div>
                     {["Payment Method","Amount Paid","Remaining Balance","Payment Date"].map(lbl => (
                       <div key={lbl} style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 5 }}>
-                        <span style={{ fontSize: 10, color: "#6b7280", minWidth: 110, flexShrink: 0 }}>{lbl}:</span>
-                        <div style={{ flex: 1, borderBottom: "1.5px solid #bbf7d0", height: 18 }} />
+                        <span style={{ fontSize: 10, color: "#111", fontWeight: 600, minWidth: 110, flexShrink: 0 }}>{lbl}:</span>
+                        <div style={{ flex: 1, borderBottom: `1.5px solid ${greenBdr}`, height: 18 }} />
                       </div>
                     ))}
                   </div>
-                  <div style={{ padding: "8px 12px", background: "#fff", border: "1px solid #e5e7eb", borderRadius: 8 }}>
-                    <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#6b7280",
+                  <div style={{ padding: "8px 12px", background: "#fff", border: `1px solid ${sectionBdr}`, borderRadius: 8 }}>
+                    <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#222",
                       letterSpacing: "0.07em", marginBottom: 6 }}>TERMS & CONDITIONS</div>
                     {[1,2,3,4].map(i => (
-                      <div key={i} style={{ borderBottom: "1px solid #e5e7eb", height: 19, marginBottom: 3 }} />
+                      <div key={i} style={{ borderBottom: `1px solid ${borderMid}`, height: 19, marginBottom: 3 }} />
                     ))}
                   </div>
                 </div>
 
                 {/* Signatures */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 12 }}>
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 8 }}>
                   {["Ordered By","Authorized By","Received By"].map(lbl => (
                     <div key={lbl} style={{ textAlign: "center" }}>
-                      <div style={{ borderBottom: "1.5px solid #374151", height: 34, marginBottom: 5 }} />
-                      <div style={{ fontSize: 10, color: "#6b7280", fontWeight: 600 }}>{lbl}</div>
-                      <div style={{ fontSize: 9, color: "#d1d5db", marginTop: 1 }}>Signature / Name / Date</div>
+                      <div style={{ borderBottom: `2px solid #111`, height: 34, marginBottom: 5 }} />
+                      <div style={{ fontSize: 10, color: "#111", fontWeight: 700 }}>{lbl}</div>
+                      <div style={{ fontSize: 9, color: "#555", marginTop: 1 }}>Signature / Name / Date</div>
                     </div>
                   ))}
                 </div>
@@ -1684,6 +1690,7 @@ export function OrderFormView({ userDoc = {} }) {
   const [pages,    setPages]    = useState(5);
   const [loading,  setLoading]  = useState(false);
   const [scale,    setScale]    = useState(1);
+  const [bw,       setBw]       = useState(false);
 
   const PAGE_OPTIONS = [5, 10, 25, 50];
 
@@ -1706,11 +1713,14 @@ export function OrderFormView({ userDoc = {} }) {
     try {
       const html2canvas = (await import("html2canvas")).default;
       const jsPDF       = (await import("jspdf")).default;
-      const pageWrappers = printRef.current.children;
+      // printRef → BlankOrderFormTemplate outer div → its children are per-page wrapper divs
+      const templateRoot = printRef.current.firstElementChild;
+      const pageWrappers = templateRoot ? templateRoot.children : printRef.current.children;
       const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
       const pdfW = pdf.internal.pageSize.getWidth();
       const pdfH = pdf.internal.pageSize.getHeight();
       for (let i = 0; i < pageWrappers.length; i++) {
+        // each pageWrapper is the gradient border div; firstElementChild is the actual white page
         const pageEl = pageWrappers[i].firstElementChild || pageWrappers[i];
         const canvas = await html2canvas(pageEl, {
           scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false, width: 794,
@@ -1727,51 +1737,58 @@ export function OrderFormView({ userDoc = {} }) {
 
   function printForm() {
     if (!printRef.current) return;
-    
-    // Get raw HTML and create new window
-    const rawHTML = printRef.current.innerHTML;
-    
+
+    // Navigate: printRef → BlankOrderFormTemplate outer div → per-page gradient wrappers
+    const templateRoot = printRef.current.firstElementChild;
+    const pageWrappers = templateRoot
+      ? Array.from(templateRoot.children)
+      : Array.from(printRef.current.children);
+
+    // Extract only the actual white page div (firstElementChild of each gradient wrapper)
+    const pagesHTML = pageWrappers.map((wrapper, i) => {
+      const page = wrapper.firstElementChild || wrapper;
+      const isLast = i === pageWrappers.length - 1;
+      // Clone and override styles for clean print
+      const clone = page.cloneNode(true);
+      clone.style.cssText = [
+        "width:794px",
+        "height:1123px",
+        "min-height:1123px",
+        "max-height:1123px",
+        "padding:0 25px 70px 10px",
+        "margin:0",
+        "overflow:hidden",
+        "background:#fff",
+        "color:#111",
+        "font-size:13px",
+        "box-sizing:border-box",
+        "display:flex",
+        "flex-direction:column",
+        "position:relative",
+        isLast ? "page-break-after:avoid;break-after:avoid" : "page-break-after:always;break-after:page",
+      ].join(";");
+      return clone.outerHTML;
+    }).join("\n");
+
     const w = window.open("", "_blank", "width=900,height=900");
     w.document.write(`<!DOCTYPE html>
 <html><head><title>Order Form</title>
 <style>
-  * { box-sizing: border-box; }
-  body { margin: 0; padding: 0; background: #fff; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body { background: #fff; }
   @page { size: A4 portrait; margin: 0; }
+  @media print {
+    html, body { width: 794px; margin: 0; padding: 0; -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
+    .print-page { page-break-after: always; break-after: page; }
+    .print-page:last-child { page-break-after: avoid; break-after: avoid; }
+  }
+  body { -webkit-print-color-adjust: exact; print-color-adjust: exact; color-adjust: exact; }
 </style>
-</head><body>${rawHTML}</body></html>`);
-    
+</head><body>${pagesHTML}</body></html>`);
+
     w.document.close();
-    
-    // Remove gradient wrappers, keep only pages
-    const wrappers = Array.from(w.document.body.children);
-    wrappers.forEach(wrapper => {
-      // Make wrapper transparent
-      wrapper.style.background = 'none';
-      wrapper.style.border = 'none';
-      wrapper.style.padding = '0';
-      wrapper.style.margin = '0';
-      wrapper.style.borderRadius = '0';
-      wrapper.style.display = 'block';
-      
-      // Get the actual page inside
-      const page = wrapper.firstElementChild;
-      if (page) {
-        // Ensure page properties are correct
-        page.style.width = '794px';
-        page.style.height = '1123px';
-        page.style.padding = '0 52px 70px 52px';
-        page.style.margin = '0';
-        page.style.overflow = 'hidden';
-        page.style.background = '#fff';
-        page.style.position = 'relative';
-        page.style.display = 'flex';
-        page.style.flexDirection = 'column';
-      }
-    });
-    
     w.focus();
-    setTimeout(() => { w.print(); w.close(); }, 800);
+    setTimeout(() => { w.print(); w.close(); }, 600);
   }
 
   return (
@@ -1815,7 +1832,7 @@ export function OrderFormView({ userDoc = {} }) {
                       border: `1px solid ${pages === p ? "rgba(99,102,241,0.5)" : "rgba(255,255,255,0.08)"}`
                     }}>{p}</button>
                 ))}
-                <input type="number" min="1" max="100" value={pages}
+                <input type="number" inputMode="numeric" min="1" max="100" value={pages}
                   onChange={e => setPages(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
                   className="w-14 h-7 rounded-lg text-xs text-center text-white outline-none"
                   style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }} />
@@ -1836,25 +1853,64 @@ export function OrderFormView({ userDoc = {} }) {
         </div>
       </div>
 
-      {/* ── Info chips ── */}
-      <div className="flex flex-wrap gap-2">
-        {[
-          { icon: "📄", text: `${pages} pages` },
-          { icon: "✏️", text: "Fill by hand" },
-          { icon: "🖊️", text: "Sign & file" },
-          { icon: formType === "variant" ? "📦" : "📋", text: formType === "variant" ? "With Variants" : "Standard" },
-        ].map((chip, i) => (
-          <span key={i} className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium"
-            style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", color: "#d97706" }}>
-            {chip.icon} {chip.text}
+      {/* ── Info chips + Print Mode toggle ── */}
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {/* Info chips */}
+        <div className="flex flex-wrap gap-2">
+          {[
+            { icon: "📄", text: `${pages} pages` },
+            { icon: "✏️", text: "Fill by hand" },
+            { icon: "🖊️", text: "Sign & file" },
+            { icon: formType === "variant" ? "📦" : "📋", text: formType === "variant" ? "With Variants" : "Standard" },
+          ].map((chip, i) => (
+            <span key={i} className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium"
+              style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", color: "#d97706" }}>
+              {chip.icon} {chip.text}
+            </span>
+          ))}
+        </div>
+
+        {/* Print mode selector */}
+        <div className="flex items-center gap-3">
+          <span className="text-xs font-semibold" style={{ color: "#9ca3af" }}>Print Mode:</span>
+          <div className="flex gap-1 p-1 rounded-xl" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
+            <button onClick={() => setBw(false)}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all"
+              style={{
+                background: !bw ? "linear-gradient(135deg,#f59e0b,#d97706)" : "transparent",
+                color: !bw ? "#000" : "#9ca3af",
+                boxShadow: !bw ? "0 2px 8px rgba(245,158,11,0.3)" : "none"
+              }}>
+              🎨 Color Print
+            </button>
+            <button onClick={() => setBw(true)}
+              className="flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-xs font-bold transition-all"
+              style={{
+                background: bw ? "linear-gradient(135deg,#444,#111)" : "transparent",
+                color: bw ? "#fff" : "#9ca3af",
+                boxShadow: bw ? "0 2px 8px rgba(0,0,0,0.4)" : "none"
+              }}>
+              🖤 B&W Print
+            </button>
+          </div>
+          <span className="text-xs" style={{ color: bw ? "#9ca3af" : "rgba(245,158,11,0.7)" }}>
+            {bw ? "Black & White — saves ink" : "Color — orange highlights"}
           </span>
-        ))}
+        </div>
       </div>
 
       {/* ── Form Preview ── */}
-      <div style={{ background: "linear-gradient(135deg,#f59e0b,#6366f1,#8b5cf6)", margin: "0 auto", padding: "2px", borderRadius: 14, width: "75%" }}>
-        <div style={{ background: "#0d1117", borderRadius: 12, overflow: "hidden" }}>
-          <div ref={containerRef} style={{ width: "100%", overflow: "hidden" }}>
+      {/* measureRef: full width div to measure available space */}
+      <div ref={containerRef} style={{ width: "100%", position: "relative" }}>
+        {/* gradient border wrapper — exactly as wide as the scaled form */}
+        <div style={{
+          background: "linear-gradient(135deg,#f59e0b,#6366f1,#8b5cf6)",
+          padding: "2px",
+          borderRadius: 14,
+          width: scale < 1 ? `${794 * scale + 4}px` : "794px",
+          overflow: "hidden",
+        }}>
+          <div style={{ background: "#0d1117", borderRadius: 12, overflow: "hidden" }}>
             <div style={{
               width: 794,
               transformOrigin: "top left",
@@ -1862,7 +1918,7 @@ export function OrderFormView({ userDoc = {} }) {
               marginBottom: scale < 1 ? `${1123 * pages * (scale - 1)}px` : 0,
             }}>
               <div ref={printRef}>
-                <BlankOrderFormTemplate userDoc={userDoc} formType={formType} totalPages={pages} />
+                <BlankOrderFormTemplate userDoc={userDoc} formType={formType} totalPages={pages} bw={bw} />
               </div>
             </div>
           </div>
@@ -2035,7 +2091,7 @@ export function OrderFormModal({ order, userDoc = {}, onClose }) {
                   </button>
                 ))}
                 {/* Custom input */}
-                <input type="number" min="1" max="100" value={pages}
+                <input type="number" inputMode="numeric" min="1" max="100" value={pages}
                   onChange={e => setPages(Math.max(1, Math.min(100, Number(e.target.value) || 1)))}
                   className="w-14 h-7 rounded-lg text-xs text-center text-white outline-none"
                   style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }} />

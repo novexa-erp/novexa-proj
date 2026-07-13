@@ -3,7 +3,7 @@
 import { useState, useEffect } from "react";
 import {
   collection, query, where, onSnapshot,
-  doc, updateDoc, deleteDoc, serverTimestamp, getDocs,
+  doc, updateDoc, deleteDoc, serverTimestamp, getDocs, getDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { auth } from "@/lib/firebase";
@@ -223,8 +223,48 @@ export default function TrashView({ uid }) {
         await updateDoc(doc(db, "users", uid, "customers", item.customerId, "invoices", item.id), updates).catch(() => {});
       }
 
+      // ── Invoice-specific: re-deduct stock (undo the restore that happened on delete) ──
+      if (item._col === "invoices") {
+        for (const lineItem of (item.items || [])) {
+          const isPrevBal = (lineItem.description || "").startsWith("Previous Balance · INV-");
+          if (isPrevBal || !lineItem.productId || !lineItem.qty) continue;
+
+          try {
+            const productRef = doc(db, "users", uid, "products", lineItem.productId);
+            // Get the product document directly
+            const prodDoc = await getDoc(productRef);
+            if (!prodDoc.exists()) continue;
+
+            const product        = prodDoc.data();
+            const qtyToDeduct    = Number(lineItem.qty) || 0;
+
+            if (lineItem.variantId && product.variants?.length > 0) {
+              const updatedVariants = product.variants.map((v, vIdx) => {
+                const varId = v.id || `var_${vIdx}`;
+                if (varId === lineItem.variantId) {
+                  const newStock = Math.max(0, (Number(v.stock) || 0) - qtyToDeduct);
+                  return { ...v, stock: newStock };
+                }
+                return v;
+              });
+              await updateDoc(productRef, { variants: updatedVariants, updatedAt: serverTimestamp() });
+            } else {
+              const newStock = Math.max(0, (Number(product.stock) || 0) - qtyToDeduct);
+              await updateDoc(productRef, { stock: newStock, updatedAt: serverTimestamp() });
+            }
+          } catch {
+            // Non-critical — continue with other items
+          }
+        }
+      }
+
       // Show success popup FIRST, then close confirm dialog
-      showSuccessPopup("Restored Successfully! ✓", "Item has been restored to its original section.");
+      showSuccessPopup(
+        "Restored Successfully! ✓",
+        item._col === "invoices"
+          ? "Invoice restored. Stock re-deducted and financial records updated."
+          : "Item has been restored to its original section."
+      );
       setWorking(false);
       setRestoreId(null);
       return;
@@ -285,7 +325,13 @@ export default function TrashView({ uid }) {
     return "Item";
   }
   function getSublabel(item) {
-    if (item._col === "invoices")  return `INV-${item.id.slice(-4).toUpperCase()} · ${formatRs(item.amount)} · ${item.status || ""}`;
+    if (item._col === "invoices") {
+      const isPrevBal = it => (it.description || "").startsWith("Previous Balance · INV-");
+      const realItems = (item.items || []).filter(it => !isPrevBal(it) && it.description && it.qty);
+      const itemStr   = realItems.slice(0, 2).map(it => `${it.qty}× ${it.description}`).join(", ");
+      const more      = realItems.length > 2 ? ` +${realItems.length - 2}` : "";
+      return `INV-${item.id.slice(-4).toUpperCase()} · ${formatRs(item.amount)} · ${item.status || ""}${itemStr ? " · " + itemStr + more : ""}`;
+    }
     if (item._col === "customers") return `${item.phone || ""} · ${item.email || ""}`.replace(/^·\s|·\s$/, "").trim() || "—";
     if (item._col === "products")  return `Stock: ${item.stock ?? "—"} · Price: ${formatRs(item.price)}`;
     if (item._col === "payments")  return `${formatRs(item.paid || item.amount)} · ${item.method || "cash"}`;
@@ -425,6 +471,19 @@ export default function TrashView({ uid }) {
                         {countdown?.display || "—"}
                       </p>
                     </>
+                  ) : item._col === "invoices" ? (
+                    // Show 15-day countdown for deleted invoices
+                    (() => {
+                      const cd = calc15DayCountdown(item.deletedAt);
+                      return (
+                        <>
+                          <p className="text-gray-600 text-[10px] uppercase tracking-wide">Restore within</p>
+                          <p className={`text-xs font-bold ${cd.expired ? "text-red-400" : cd.daysLeft <= 3 ? "text-amber-400" : "text-green-400"}`}>
+                            {cd.expired ? "⚠️ Expired" : cd.display}
+                          </p>
+                        </>
+                      );
+                    })()
                   ) : (
                     <>
                       <p className="text-gray-600 text-[10px] uppercase tracking-wide">Deleted</p>
@@ -465,48 +524,96 @@ export default function TrashView({ uid }) {
       {/* Restore Confirm */}
       {restoreId && (() => { const item = current.find(i => i.id === restoreId); return item ? (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
-          style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}>
-          <div className="w-full max-w-sm rounded-2xl p-6 flex flex-col gap-4 text-center"
-            style={{ background: "#0d1117", border: "1px solid rgba(52,211,153,0.25)" }}>
+          style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(6px)" }}>
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+            style={{ background: "#0d1117", border: "1px solid rgba(52,211,153,0.3)", boxShadow: "0 24px 64px rgba(0,0,0,0.7)" }}>
 
-            {/* Icon — spinner while working */}
+            {/* Header */}
+            <div className="px-6 pt-6 pb-4 text-center border-b border-white/[0.06]">
+              {working ? (
+                <div className="flex justify-center mb-3">
+                  <div className="w-10 h-10 rounded-full border-4 border-t-green-400 border-transparent animate-spin" />
+                </div>
+              ) : (
+                <span className="text-4xl block mb-2">↩️</span>
+              )}
+              <h3 className="text-white font-bold text-lg">
+                {working ? "Restoring..." : `Restore ${TABS.find(t=>t.id===item._col)?.label.slice(0,-1)}?`}
+              </h3>
+              {!working && item._col === "invoices" && (
+                <p className="text-gray-500 text-xs mt-1">
+                  INV-{item.id.slice(-4).toUpperCase()} · {item.customerName || item.customer || "Unknown"}
+                </p>
+              )}
+            </div>
+
             {working ? (
-              <div className="flex justify-center">
-                <div className="w-10 h-10 rounded-full border-4 border-t-green-400 border-transparent animate-spin" />
-              </div>
+              <p className="text-gray-500 text-xs text-center py-4">Please wait...</p>
             ) : (
-              <span className="text-4xl">↩️</span>
-            )}
+              <>
+                {/* Invoice-specific info */}
+                {item._col === "invoices" && (() => {
+                  const isPrevBal = it => (it.description || "").startsWith("Previous Balance · INV-");
+                  const realItems = (item.items || []).filter(it => !isPrevBal(it) && it.description && it.qty);
+                  const amtPaid   = Number(item._deletedAmtPaid || item.amountPaid) || 0;
+                  const amount    = Number(item._deletedAmount  || item.amount)     || 0;
 
-            <h3 className="text-white font-bold text-lg">
-              {working ? "Restoring..." : `Restore ${TABS.find(t=>t.id===item._col)?.label.slice(0,-1)}?`}
-            </h3>
+                  return (
+                    <div className="px-5 pt-4 flex flex-col gap-3">
+                      {/* What will happen */}
+                      <div className="px-4 py-3 rounded-xl"
+                        style={{ background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.2)" }}>
+                        <p className="text-green-400 text-[10px] font-bold uppercase tracking-widest mb-2">
+                          📦 Stock will be deducted
+                        </p>
+                        {realItems.map((it, i) => (
+                          <p key={i} className="text-gray-300 text-xs">
+                            − {it.qty}{it.variantLabel ? ` ${it.variantLabel}` : ""} {it.description}
+                          </p>
+                        ))}
+                        {realItems.length === 0 && (
+                          <p className="text-gray-500 text-xs">No inventory items</p>
+                        )}
+                      </div>
 
-            {!working && (
-              <p className="text-gray-400 text-sm">
-                <span className="text-white font-semibold">{getLabel(item)}</span> will be restored and visible again.
-                {item._col === "customers" && " Their invoices and payments will also be restored."}
-                {item._col === "suppliers" && " Their orders will also be restored."}
-              </p>
-            )}
+                      <div className="px-4 py-3 rounded-xl"
+                        style={{ background: "rgba(96,165,250,0.06)", border: "1px solid rgba(96,165,250,0.15)" }}>
+                        <p className="text-blue-300 text-xs leading-relaxed">
+                          ℹ️ What happens after restoring:
+                          <br />• Invoice becomes active again
+                          <br />• Stock will be deducted back as before
+                          {amtPaid > 0 && <><br />• <span className="text-amber-400 font-semibold">Rs. {amtPaid.toLocaleString("en-PK")}</span> collected amount will be counted again</>}
+                          {amount > 0 && <><br />• Invoice total of <span className="text-amber-400 font-semibold">Rs. {amount.toLocaleString("en-PK")}</span> will be added back to records</>}
+                        </p>
+                      </div>
+                    </div>
+                  );
+                })()}
 
-            {working && (
-              <p className="text-gray-500 text-xs">Please wait...</p>
-            )}
+                {/* Generic info for non-invoice items */}
+                {item._col !== "invoices" && (
+                  <div className="px-5 pt-4">
+                    <p className="text-gray-400 text-sm text-center">
+                      <span className="text-white font-semibold">{getLabel(item)}</span> will be restored and visible again.
+                      {item._col === "customers" && " Their invoices and payments will also be restored."}
+                      {item._col === "suppliers" && " Their orders will also be restored."}
+                    </p>
+                  </div>
+                )}
 
-            {!working && (
-              <div className="flex gap-3">
-                <button onClick={() => setRestoreId(null)}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
-                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
-                  Cancel
-                </button>
-                <button onClick={() => handleRestore(item)}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-bold"
-                  style={{ background: "rgba(52,211,153,0.15)", border: "1px solid rgba(52,211,153,0.35)", color: "#34d399" }}>
-                  Yes, Restore
-                </button>
-              </div>
+                <div className="flex gap-3 px-5 py-5">
+                  <button onClick={() => setRestoreId(null)}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                    style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+                    Cancel
+                  </button>
+                  <button onClick={() => handleRestore(item)}
+                    className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all hover:scale-[1.02]"
+                    style={{ background: "rgba(52,211,153,0.15)", border: "1px solid rgba(52,211,153,0.35)", color: "#34d399" }}>
+                    Yes, Restore ↩️
+                  </button>
+                </div>
+              </>
             )}
           </div>
         </div>

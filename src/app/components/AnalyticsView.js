@@ -619,7 +619,10 @@ export default function AnalyticsView({ uid }) {
   });
 
   // ========== PAYMENT ANALYTICS ==========
-  const totalReceived = filteredPayments.reduce((s, p) => s + (Number(p.amount) || 0), 0);
+  // p.paid = actual amount received, p.amount = previous balance before payment (billing context)
+  const totalReceived = filteredPayments
+    .filter(p => p.type === "received")
+    .reduce((s, p) => s + (Number(p.paid ?? p.amount) || 0), 0);
   const pendingPayments = invoices.reduce((s, i) => {
     if (i.status === "Unpaid") return s + (Number(i.amount) || 0);
     if (i.status === "Partial") return s + (Number(i.balance) || 0);
@@ -638,17 +641,17 @@ export default function AnalyticsView({ uid }) {
 
   // Payment method breakdown
   const paymentMethods = {};
-  filteredPayments.forEach(p => {
+  filteredPayments.filter(p => p.type === "received").forEach(p => {
     const method = p.method || "Cash";
-    paymentMethods[method] = (paymentMethods[method] || 0) + (Number(p.amount) || 0);
+    paymentMethods[method] = (paymentMethods[method] || 0) + (Number(p.paid ?? p.amount) || 0);
   });
 
   // Monthly collection
   const monthlyCollection = {};
-  filteredPayments.forEach(p => {
+  filteredPayments.filter(p => p.type === "received").forEach(p => {
     const date = p.createdAt?.toDate ? p.createdAt.toDate() : new Date(p.createdAt);
     const monthKey = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
-    monthlyCollection[monthKey] = (monthlyCollection[monthKey] || 0) + (Number(p.amount) || 0);
+    monthlyCollection[monthKey] = (monthlyCollection[monthKey] || 0) + (Number(p.paid ?? p.amount) || 0);
   });
 
   const outstandingAmount = pendingPayments + overduePayments;
