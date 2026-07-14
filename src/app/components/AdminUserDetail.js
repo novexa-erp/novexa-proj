@@ -123,6 +123,12 @@ function ProfileTab({ data }) {
   const { user, authRecord } = data;
   const ss = STATUS_STYLE[user.status] || STATUS_STYLE.active;
   const dl = daysLeft(user.activeTo);
+
+  // ── parse gmail history (stored as array in Firestore) ───────────────────
+  const gmailHistory = Array.isArray(user.gmailHistory)
+    ? [...user.gmailHistory].sort((a, b) => new Date(b.changedAt) - new Date(a.changedAt))
+    : [];
+
   return (
     <div className="flex flex-col gap-6">
       <div>
@@ -159,6 +165,79 @@ function ProfileTab({ data }) {
           <InfoCell label="Device"   value={user.lastDevice} />
         </div>
       </div>
+
+      {/* ── Gmail App Password Section ── */}
+      <div>
+        <SectionHead icon="📧" label="Gmail App Password" />
+        {/* Current status */}
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-3 mb-4">
+          <InfoCell label="Gmail Address"
+            value={user.gmailSender || "—"}
+            highlight={user.gmailSender ? "#34d399" : undefined} />
+          <InfoCell label="App Password"
+            value={user.gmailAppPassword || "Not set"} />
+          <InfoCell label="Email Feature"
+            value={user.emailFeatureEnabled === false ? "❌ Disabled" : "✅ Enabled"}
+            highlight={user.emailFeatureEnabled === false ? "#f87171" : "#34d399"} />
+        </div>
+
+        {/* History table */}
+        {gmailHistory.length === 0 ? (
+          <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
+            style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.06)" }}>
+            <span className="text-gray-600 text-sm">No password change history yet.</span>
+          </div>
+        ) : (
+          <div className="rounded-xl overflow-hidden" style={{ border:"1px solid rgba(255,255,255,0.07)" }}>
+            {/* Table header */}
+            <div className="grid gap-3 px-4 py-2.5 text-[10px] font-bold uppercase tracking-wider"
+              style={{ gridTemplateColumns:"1.2fr 1.4fr 1.4fr 1.4fr 1.4fr 2fr", background:"rgba(37,99,235,0.1)", color:"#6b7280", borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+              <span>Changed At</span>
+              <span>Old Gmail</span>
+              <span>New Gmail</span>
+              <span>Old Password</span>
+              <span>New Password</span>
+              <span>Device</span>
+            </div>
+            {gmailHistory.map((h, i) => (
+              <div key={i}
+                className="grid gap-3 px-4 py-3 text-xs items-start"
+                style={{
+                  gridTemplateColumns:"1.2fr 1.4fr 1.4fr 1.4fr 1.4fr 2fr",
+                  background: i % 2 === 0 ? "rgba(255,255,255,0.015)" : "transparent",
+                  borderBottom: i < gmailHistory.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none",
+                }}>
+                {/* Changed At */}
+                <span className="font-mono text-[11px]" style={{ color:"#94a3b8" }}>
+                  {h.changedAt ? fmtDT(h.changedAt) : "—"}
+                </span>
+                {/* Old Gmail */}
+                <span className="break-all" style={{ color: h.prevSender ? "#f87171" : "#4b5563" }}>
+                  {h.prevSender || <span className="italic" style={{color:"#4b5563"}}>First time</span>}
+                </span>
+                {/* New Gmail */}
+                <span className="break-all" style={{ color:"#34d399" }}>{h.newSender || "—"}</span>
+                {/* Old Password */}
+                <span className="font-mono break-all" style={{ color: h.prevPass ? "#f87171" : "#4b5563" }}>
+                  {h.prevPass || <span className="italic" style={{color:"#4b5563"}}>—</span>}
+                </span>
+                {/* New Password */}
+                <span className="font-mono break-all" style={{ color:"#fbbf24" }}>
+                  {h.newPass || "—"}
+                </span>
+                {/* Device */}
+                <span className="truncate" style={{ color:"#6b7280" }} title={h.device}>
+                  {h.device
+                    ? (h.device.includes("Windows") ? "🖥 " : h.device.includes("iPhone") ? "📱 " : h.device.includes("Android") ? "📱 " : h.device.includes("Mac") ? "🍎 " : "💻 ")
+                      + (h.device.match(/Chrome\/[\d]+/)?.[0] || h.device.match(/Firefox\/[\d]+/)?.[0] || h.device.match(/Safari\/[\d]+/)?.[0] || h.device.slice(0,40))
+                    : "—"}
+                </span>
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
     </div>
   );
 }
@@ -1295,6 +1374,335 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+   TICKETS TAB
+══════════════════════════════════════════════════════════════════════ */
+const TICKET_STATUS_META = {
+  "Open":        { color:"#3b82f6", bg:"rgba(59,130,246,0.12)",  border:"rgba(59,130,246,0.3)",  icon:"🔵" },
+  "In Progress": { color:"#f59e0b", bg:"rgba(245,158,11,0.12)",  border:"rgba(245,158,11,0.3)",  icon:"🟡" },
+  "Resolved":    { color:"#34d399", bg:"rgba(52,211,153,0.12)",  border:"rgba(52,211,153,0.3)",  icon:"✅" },
+  "Closed":      { color:"#6b7280", bg:"rgba(107,114,128,0.12)", border:"rgba(107,114,128,0.3)", icon:"⬛" },
+};
+
+function TicketStatusBadge({ status }) {
+  const m = TICKET_STATUS_META[status] || TICKET_STATUS_META["Open"];
+  return (
+    <span style={{ background:m.bg, border:`1px solid ${m.border}`, color:m.color,
+      padding:"3px 10px", borderRadius:20, fontSize:11, fontWeight:700, whiteSpace:"nowrap" }}>
+      {m.icon} {status}
+    </span>
+  );
+}
+
+function TicketConversation({ ticket, getToken, onToast, onRefresh }) {
+  const [reply,         setReply]         = useState("");
+  const [sending,       setSending]       = useState(false);
+  const [acting,        setActing]        = useState(false);
+  const [resolvePopup,  setResolvePopup]  = useState(false);
+  const [resolveMsg,    setResolveMsg]    = useState("");
+
+  async function handleReply() {
+    if (!reply.trim()) return;
+    setSending(true);
+    try {
+      const token = await getToken();
+      const res = await fetch("/api/admin/ticket-action", {
+        method: "POST",
+        headers: { authorization:`Bearer ${token}`, "Content-Type":"application/json" },
+        body: JSON.stringify({ ticketId: ticket.ticketId, action:"reply", replyText: reply.trim() }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      setReply("");
+      onToast("Reply sent!", "success");
+      onRefresh();
+    } catch (err) { onToast(err.message, "error"); }
+    setSending(false);
+  }
+
+  async function handleStatus(newStatus) {
+    setActing(true);
+    try {
+      const token = await getToken();
+      const res = await fetch("/api/admin/ticket-action", {
+        method: "POST",
+        headers: { authorization:`Bearer ${token}`, "Content-Type":"application/json" },
+        body: JSON.stringify({ ticketId: ticket.ticketId, action:"status", newStatus }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      onToast(`Status → ${newStatus}`, "success");
+      onRefresh();
+    } catch (err) { onToast(err.message, "error"); }
+    setActing(false);
+  }
+
+  async function handleResolve() {
+    setActing(true);
+    try {
+      const token = await getToken();
+      const res = await fetch("/api/admin/ticket-action", {
+        method: "POST",
+        headers: { authorization:`Bearer ${token}`, "Content-Type":"application/json" },
+        body: JSON.stringify({ ticketId: ticket.ticketId, action:"status", newStatus:"Resolved", resolveNote: resolveMsg.trim() }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+
+      // Auto-close after 3s
+      setTimeout(async () => {
+        try {
+          const t2 = await getToken();
+          await fetch("/api/admin/ticket-action", {
+            method: "POST",
+            headers: { authorization:`Bearer ${t2}`, "Content-Type":"application/json" },
+            body: JSON.stringify({ ticketId: ticket.ticketId, action:"status", newStatus:"Closed" }),
+          });
+          onRefresh();
+        } catch {}
+      }, 3000);
+
+      onToast("Resolved! Auto-closing in 3s...", "success");
+      setResolvePopup(false);
+      setResolveMsg("");
+      onRefresh();
+    } catch (err) { onToast(err.message, "error"); }
+    setActing(false);
+  }
+
+  async function handleDelete() {
+    if (!confirm(`Delete ticket ${ticket.ticketId}?`)) return;
+    setActing(true);
+    try {
+      const token = await getToken();
+      const res = await fetch("/api/admin/ticket-action", {
+        method: "POST",
+        headers: { authorization:`Bearer ${token}`, "Content-Type":"application/json" },
+        body: JSON.stringify({ ticketId: ticket.ticketId, action:"delete" }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      onToast("Ticket deleted", "success");
+      onRefresh();
+    } catch (err) { onToast(err.message, "error"); }
+    setActing(false);
+  }
+
+  return (
+    <div className="rounded-2xl overflow-hidden mb-4"
+      style={{ border:"1px solid rgba(255,255,255,0.08)", background:"rgba(255,255,255,0.02)" }}>
+
+      {/* Resolve popup */}
+      {resolvePopup && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          style={{ background:"rgba(0,0,0,0.8)", backdropFilter:"blur(8px)" }}>
+          <div className="w-full max-w-md rounded-2xl p-6 flex flex-col gap-4"
+            style={{ background:"#0d1117", border:"1px solid rgba(52,211,153,0.3)", boxShadow:"0 24px 64px rgba(0,0,0,0.7)" }}>
+            <div className="flex items-center gap-3">
+              <div className="w-11 h-11 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                style={{ background:"rgba(52,211,153,0.12)", border:"1px solid rgba(52,211,153,0.3)" }}>✅</div>
+              <div>
+                <p className="text-white font-black text-base">Mark as Resolved</p>
+                <p className="text-gray-500 text-xs mt-0.5">{ticket.ticketId} · {ticket.name}</p>
+              </div>
+            </div>
+            <div className="flex flex-col gap-2">
+              <label className="text-xs font-bold uppercase tracking-widest text-gray-500">
+                Resolution Summary <span className="text-gray-600 normal-case tracking-normal font-normal">(sent to user)</span>
+              </label>
+              <textarea rows={4} value={resolveMsg} onChange={e => setResolveMsg(e.target.value)}
+                placeholder="Describe what was the issue and how it was resolved..."
+                style={{ width:"100%", outline:"none", resize:"vertical",
+                  background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(52,211,153,0.3)",
+                  borderRadius:12, padding:"10px 14px", color:"#fff", fontSize:13, lineHeight:1.7 }} />
+              <p className="text-gray-600 text-[10px]">Ticket auto-closes after marking resolved.</p>
+            </div>
+            <div className="flex gap-3">
+              <button onClick={() => { setResolvePopup(false); setResolveMsg(""); }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"#9ca3af" }}>
+                Cancel
+              </button>
+              <button onClick={handleResolve} disabled={acting || !resolveMsg.trim()}
+                className="flex-1 py-2.5 rounded-xl text-sm font-bold"
+                style={{ background:"linear-gradient(135deg,#34d399,#059669)", color:"#fff",
+                  opacity:(acting||!resolveMsg.trim())?0.5:1, cursor:(acting||!resolveMsg.trim())?"not-allowed":"pointer" }}>
+                {acting ? "Resolving..." : "Resolve & Notify →"}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Ticket header */}
+      <div className="px-4 py-3 flex items-start justify-between gap-3 flex-wrap"
+        style={{ background:"rgba(37,99,235,0.07)", borderBottom:"1px solid rgba(255,255,255,0.06)" }}>
+        <div>
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            <span className="font-mono text-xs font-black" style={{ color:"#60a5fa" }}>{ticket.ticketId}</span>
+            <TicketStatusBadge status={ticket.status} />
+            <span className="text-[10px] px-2 py-0.5 rounded-full font-semibold"
+              style={{ background:"rgba(255,255,255,0.05)", color:"#6b7280", border:"1px solid rgba(255,255,255,0.08)" }}>
+              {ticket.category}
+            </span>
+          </div>
+          <p className="text-white text-sm font-semibold">{ticket.subject}</p>
+          <p className="text-gray-600 text-[10px] mt-0.5">{fmtDT(ticket.createdAt)}</p>
+        </div>
+        <button onClick={handleDelete} disabled={acting}
+          className="text-xs px-3 py-1.5 rounded-lg font-bold transition-all hover:scale-105"
+          style={{ background:"rgba(239,68,68,0.08)", border:"1px solid rgba(239,68,68,0.25)", color:"#f87171",
+            cursor: acting ? "not-allowed":"pointer", opacity: acting ? 0.5:1 }}>
+          🗑 Delete
+        </button>
+      </div>
+
+      {/* Status action buttons */}
+      <div className="px-4 py-2.5 flex flex-wrap gap-2"
+        style={{ borderBottom:"1px solid rgba(255,255,255,0.05)" }}>
+        {["Open","In Progress","Closed"].map(s => {
+          const m   = TICKET_STATUS_META[s];
+          const isA = ticket.status === s;
+          return (
+            <button key={s} disabled={acting || isA}
+              onClick={() => handleStatus(s)}
+              style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:700,
+                border:`1px solid ${isA ? m.border : "rgba(255,255,255,0.07)"}`,
+                background: isA ? m.bg : "rgba(255,255,255,0.03)",
+                color: isA ? m.color : "#6b7280",
+                cursor:(acting||isA)?"not-allowed":"pointer", opacity:acting?0.6:1 }}>
+              {m.icon} {s}
+            </button>
+          );
+        })}
+        {/* Resolved — special with popup */}
+        <button disabled={acting || ticket.status === "Resolved"}
+          onClick={() => setResolvePopup(true)}
+          style={{ padding:"5px 12px", borderRadius:8, fontSize:11, fontWeight:700,
+            border:`1px solid ${ticket.status==="Resolved" ? TICKET_STATUS_META["Resolved"].border : "rgba(52,211,153,0.35)"}`,
+            background: ticket.status==="Resolved" ? TICKET_STATUS_META["Resolved"].bg : "rgba(52,211,153,0.1)",
+            color: ticket.status==="Resolved" ? TICKET_STATUS_META["Resolved"].color : "#34d399",
+            cursor:(acting||ticket.status==="Resolved")?"not-allowed":"pointer", opacity:acting?0.6:1 }}>
+          ✅ Resolved
+        </button>
+      </div>
+
+      {/* Messages */}
+      <div className="px-4 py-3 flex flex-col gap-2 max-h-56 overflow-y-auto">
+        {(ticket.messages||[]).map((msg, i) => {
+          const isAdmin = msg.from === "admin";
+          return (
+            <div key={i} className={`flex ${isAdmin?"justify-end":"justify-start"}`}>
+              <div style={{
+                maxWidth:"82%", padding:"9px 13px",
+                borderRadius: isAdmin ? "12px 12px 3px 12px" : "12px 12px 12px 3px",
+                background: isAdmin ? "rgba(37,99,235,0.15)" : "rgba(255,255,255,0.04)",
+                border:`1px solid ${isAdmin ? "rgba(37,99,235,0.3)" : "rgba(255,255,255,0.07)"}`,
+              }}>
+                <p className="text-[10px] font-bold mb-1" style={{ color: isAdmin?"#60a5fa":"#9ca3af" }}>
+                  {isAdmin ? "🛡 Novexa Support" : "👤 User"}
+                </p>
+                <p className="text-xs text-white leading-relaxed" style={{ whiteSpace:"pre-wrap" }}>{msg.text}</p>
+                <p className="text-[9px] text-gray-600 mt-1">{fmtDT(msg.createdAt)}</p>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      {/* Reply box */}
+      <div className="px-4 py-3 flex gap-2"
+        style={{ borderTop:"1px solid rgba(255,255,255,0.05)" }}>
+        <textarea rows={2} value={reply} onChange={e => setReply(e.target.value)}
+          placeholder="Reply to user..."
+          style={{ flex:1, outline:"none", resize:"none",
+            background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(37,99,235,0.25)",
+            borderRadius:10, padding:"8px 12px", color:"#fff", fontSize:12 }} />
+        <button onClick={handleReply} disabled={sending || !reply.trim()}
+          style={{ padding:"8px 16px", borderRadius:10, fontSize:12, fontWeight:800,
+            background:"linear-gradient(135deg,#2563eb,#1d4ed8)", color:"#fff",
+            border:"none", cursor:(sending||!reply.trim())?"not-allowed":"pointer",
+            opacity:(sending||!reply.trim())?0.5:1, flexShrink:0, alignSelf:"flex-end" }}>
+          {sending ? "..." : "Send →"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function TicketsTab({ uid, getToken, onToast }) {
+  const [tickets,  setTickets]  = useState([]);
+  const [loading,  setLoading]  = useState(true);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    try {
+      const token = await getToken();
+      const res   = await fetch(`/api/admin/get-tickets?uid=${uid}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      setTickets(d.tickets || []);
+    } catch (err) { console.error(err); }
+    setLoading(false);
+  }, [uid, getToken]);
+
+  useEffect(() => { load(); }, [load]);
+
+  if (loading) return (
+    <div className="flex justify-center py-16">
+      <div className="w-8 h-8 rounded-full border-4 border-transparent border-t-blue-500 animate-spin" />
+    </div>
+  );
+
+  if (tickets.length === 0) return (
+    <div className="flex flex-col items-center justify-center py-16 gap-3">
+      <span className="text-5xl">📭</span>
+      <p className="text-gray-500 text-sm">No support tickets from this user yet.</p>
+    </div>
+  );
+
+  // Summary counts
+  const counts = tickets.reduce((a,t) => { a[t.status]=(a[t.status]||0)+1; return a; }, {});
+
+  return (
+    <div className="flex flex-col gap-5">
+      <SectionHead icon="🎫" label="Support Tickets" count={tickets.length} />
+
+      {/* Summary pills */}
+      <div className="flex flex-wrap gap-2">
+        {Object.entries(counts).map(([status, n]) => {
+          const m = TICKET_STATUS_META[status] || TICKET_STATUS_META["Open"];
+          return (
+            <div key={status} style={{ background:m.bg, border:`1px solid ${m.border}`,
+              borderRadius:10, padding:"6px 14px", display:"flex", alignItems:"center", gap:6 }}>
+              <span style={{ fontSize:12 }}>{m.icon}</span>
+              <span style={{ color:m.color, fontSize:12, fontWeight:700 }}>{status}: {n}</span>
+            </div>
+          );
+        })}
+        <button onClick={load}
+          className="ml-auto text-xs px-3 py-1.5 rounded-lg font-semibold transition-all hover:bg-white/10"
+          style={{ border:"1px solid rgba(255,255,255,0.1)", color:"#6b7280" }}>
+          ↻ Refresh
+        </button>
+      </div>
+
+      {/* Tickets list */}
+      {tickets.map(t => (
+        <TicketConversation
+          key={t.id}
+          ticket={t}
+          getToken={getToken}
+          onToast={onToast}
+          onRefresh={load}
+        />
+      ))}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
    SIDEBAR TABS config  (no "Orders" tab — orders live inside Suppliers)
 ══════════════════════════════════════════════════════════════════════ */
 const TABS = [
@@ -1304,6 +1712,7 @@ const TABS = [
   { id:"products",  icon:"📦", label:"Products"   },
   { id:"payments",  icon:"💳", label:"Payments"   },
   { id:"suppliers", icon:"🏭", label:"Suppliers"  },
+  { id:"tickets",   icon:"🎫", label:"Tickets"    },
   { id:"trash",     icon:"🗑️", label:"Trash"      },
   { id:"activity",  icon:"⚡", label:"Activity"   },
 ];
@@ -1386,6 +1795,10 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
                   .flat().filter(i=>i.deleted).length;
                 if (n>0) badge = n;
               }
+              // tickets badge — show Open count (loaded lazily, so just show dot if tab active)
+              const ticketBadgeColor = tab.id==="tickets"
+                ? { bg:"rgba(59,130,246,0.2)", color:"#60a5fa", border:"1px solid rgba(59,130,246,0.3)" }
+                : { bg:"rgba(248,113,113,0.2)", color:"#f87171", border:"1px solid rgba(248,113,113,0.3)" };
               return (
                 <button key={tab.id} onClick={()=>setActiveTab(tab.id)}
                   className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all relative text-left w-full"
@@ -1398,7 +1811,7 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
                   <span className="text-xs">{tab.label}</span>
                   {badge!==null && (
                     <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-bold"
-                      style={{ background:"rgba(248,113,113,0.2)", color:"#f87171", border:"1px solid rgba(248,113,113,0.3)" }}>
+                      style={{ background:ticketBadgeColor.bg, color:ticketBadgeColor.color, border:ticketBadgeColor.border }}>
                       {badge}
                     </span>
                   )}
@@ -1434,6 +1847,7 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
                 {activeTab==="products"  && <ProductsTab products={data.products} />}
                 {activeTab==="payments"  && <PaymentsTab payments={data.payments} />}
                 {activeTab==="suppliers" && <SuppliersTab suppliers={data.suppliers} orders={data.orders} receipts={data.receipts||[]} supplierReturns={data.supplierReturns||[]} />}
+                {activeTab==="tickets"   && <TicketsTab uid={uid} getToken={getToken} onToast={onToast} />}
                 {activeTab==="trash"     && <TrashTab uid={uid} data={data} getToken={getToken} onToast={onToast} onRefresh={loadData} />}
                 {activeTab==="activity"  && <ActivityTab activityLogs={data.activityLogs} />}
               </>

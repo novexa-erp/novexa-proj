@@ -6,6 +6,7 @@ import Image from "next/image";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import AdminUserDetail from "./AdminUserDetail";
+import SupportInbox from "./SupportInbox";
 
 const ADMIN_UID = process.env.NEXT_PUBLIC_ADMIN_UID;
 
@@ -345,6 +346,7 @@ function UserDetailModal({ detailUser, detailLoading, onClose, fmtDate, daysLeft
 /* ── Sidebar nav items ────────────────────────────────────────────────────── */
 const NAV_ITEMS = [
   { id: "users",     icon: "👥", label: "Users",     badge: null },
+  { id: "inbox",     icon: "📬", label: "Support",   badge: null },
   { id: "analytics", icon: "📊", label: "Analytics", badge: null },
   { id: "debug",     icon: "🔍", label: "Debug",     badge: null },
 ];
@@ -696,7 +698,7 @@ export default function AdminPanel() {
             <div>
               <h1 className="text-white font-black text-base leading-tight">
                 {NAV_ITEMS.find(n=>n.id===activeTab)?.icon} {" "}
-                {activeTab==="users"?"User Management":activeTab==="analytics"?"Analytics Overview":"Debug Console"}
+                {activeTab==="users"?"User Management":activeTab==="inbox"?"Support Inbox":activeTab==="analytics"?"Analytics Overview":"Debug Console"}
               </h1>
               <p className="text-gray-600 text-[10px] font-semibold tracking-widest uppercase">{todayStr()}</p>
             </div>
@@ -963,6 +965,11 @@ export default function AdminPanel() {
                 )}
               </div>
             </div>
+          )}
+
+          {/* ──────────── SUPPORT INBOX TAB ──────────── */}
+          {activeTab==="inbox" && (
+            <SupportInbox getToken={getToken} onToast={toast} />
           )}
 
           {/* ──────────── ANALYTICS TAB ──────────── */}

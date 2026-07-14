@@ -20,6 +20,7 @@ import AnalyticsView from "./AnalyticsView";
 import SweetAlert from "./SweetAlert";
 import { OrderFormView } from "./SupplierDetail";
 import ContactView from "./ContactView";
+import MyTicketsView from "./MyTicketsView";
 import TrashView from "./TrashView";
 
 // ── Sidebar nav items ────────────────────────────────────────────────────────
@@ -34,6 +35,7 @@ const navItems = [
   { icon: "📈", label: "Analytics",   id: "analytics"   },
   { icon: "⚙️", label: "Settings",   id: "settings"    },
   { icon: "📞", label: "Contact Us",  id: "contact"     },
+  { icon: "🎫", label: "My Tickets",  id: "my-tickets"  },
 ];
 
 const statusStyle = {
@@ -856,6 +858,9 @@ function DashboardContent() {
               onSettingsSaved={(updated) => setUserDoc(prev => ({ ...prev, ...updated }))} />
           ) : activeNav === "contact" ? (
             <ContactView key={`contact-${refreshKey}`} userDoc={userDoc} user={user} />
+          ) : activeNav === "my-tickets" ? (
+            <MyTicketsView key={`tickets-${refreshKey}`} uid={user?.uid} userDoc={userDoc} user={user}
+              onNewTicket={() => setActiveNav("contact")} />
           ) : activeNav === "trash" ? (
             <TrashView key={`trash-${refreshKey}`} uid={user?.uid} />
           ) : (
