@@ -7,6 +7,7 @@ import { onAuthStateChanged, signOut } from "firebase/auth";
 import { auth } from "@/lib/firebase";
 import AdminUserDetail from "./AdminUserDetail";
 import SupportInbox from "./SupportInbox";
+import PackageManager from "./PackageManager";
 
 const ADMIN_UID = process.env.NEXT_PUBLIC_ADMIN_UID;
 
@@ -144,7 +145,22 @@ function ConfirmDialog({ title, message, confirmLabel, confirmColor, onConfirm, 
 }
 
 /* ── User Form Modal ──────────────────────────────────────────────────────── */
-const EMPTY_FORM = { name: "", email: "", password: "", phone: "", address: "", activeFrom: "", activeTo: "", activeToTime: "", maxDevices: "1" };
+const EMPTY_FORM = { name: "", email: "", password: "", phone: "", address: "", activeFrom: "", activeTo: "", activeToTime: "", maxDevices: "1", plan: "starter", subscriptionType: "active" };
+
+// Plan default maxDevices — jab plan select ho, yeh automatically set hota hai
+const PLAN_DEFAULT_DEVICES = {
+  starter:      1,
+  business:     5,
+  professional: 15,
+  enterprise:   50,
+};
+
+const PLAN_OPTIONS = [
+  { id: "starter",      label: "💎 Starter",      desc: "1 device · 100 invoices · Basic features",        color: "#10B981" },
+  { id: "business",     label: "🚀 Business",      desc: "5 devices · Unlimited invoices · Analytics",      color: "#2563EB" },
+  { id: "professional", label: "👑 Professional",  desc: "15 devices · All features · Multi-branch",        color: "#F59E0B" },
+  { id: "enterprise",   label: "🏢 Enterprise",    desc: "50 devices · Custom setup · Full access",         color: "#A855F7" },
+];
 
 function UserFormModal({ initial, onClose, onSave, saving }) {
   const [form, setForm] = useState(initial ? {
@@ -154,18 +170,72 @@ function UserFormModal({ initial, onClose, onSave, saving }) {
     activeFrom: initial.activeFrom || "", activeTo: initial.activeTo || "",
     activeToTime: initial.activeToTime || "",
     maxDevices: String(initial.maxDevices || "1"),
+    plan: initial.plan || "starter",
+    subscriptionType: initial.subscriptionType || "active",
   } : { ...EMPTY_FORM });
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
   const isEdit = !!initial;
+
+  // ── Load plan options dynamically from Firestore ─────────────────────────
+  const [dynamicPlans, setDynamicPlans] = useState(null);
+  useEffect(() => {
+    import("firebase/firestore").then(({ getDoc, doc: fsDoc }) => {
+      import("@/lib/firebase").then(({ db: fdb }) => {
+        getDoc(fsDoc(fdb, "adminConfig", "plans")).then(snap => {
+          if (snap.exists()) {
+            const list = snap.data().list || [];
+            if (list.length > 0) setDynamicPlans(list);
+          }
+        }).catch(() => {});
+      });
+    });
+  }, []);
+
+  // Merge Firestore data with static PLAN_OPTIONS (keep color/ctaStyle from static)
+  const activePlanOptions = (dynamicPlans || PLAN_OPTIONS).map(p => {
+    const staticPlan = PLAN_OPTIONS.find(s => s.id === p.id) || {};
+    const afterPrice = p.monthlyPrice || staticPlan.id;
+    const beforePrice = p.beforeMonthlyPrice ?? null;
+    return {
+      ...staticPlan,
+      id:    p.id    || staticPlan.id,
+      label: `${p.icon || staticPlan.label?.split(" ")[0]} ${p.name || staticPlan.id}`,
+      desc:  [
+        p.maxDevices ? `${p.maxDevices} device${p.maxDevices > 1 ? "s" : ""}` : null,
+        p.limits?.invoicesPerMonth !== undefined
+          ? (p.limits.invoicesPerMonth === null ? "Unlimited invoices" : `${p.limits.invoicesPerMonth} invoices/mo`)
+          : null,
+        afterPrice
+          ? (beforePrice
+            ? `~~Rs.${Number(beforePrice).toLocaleString()}~~ Rs.${Number(afterPrice).toLocaleString()}/mo`
+            : `Rs.${Number(afterPrice).toLocaleString()}/mo`)
+          : null,
+      ].filter(Boolean).join(" · ") || staticPlan.desc,
+      color: staticPlan.color || "#10B981",
+    };
+  });
+
+  // ── When subscriptionType changes to trial, auto-set dates ──────────────
+  function handleSubscriptionTypeChange(type) {
+    if (type === "trial") {
+      const today = new Date();
+      const trialEnd = new Date(today);
+      trialEnd.setDate(today.getDate() + 7);
+      const fmt = d => d.toISOString().slice(0, 10);
+      setForm(p => ({ ...p, subscriptionType: "trial", activeFrom: fmt(today), activeTo: fmt(trialEnd) }));
+    } else {
+      setForm(p => ({ ...p, subscriptionType: "active" }));
+    }
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto"
       style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)" }}
       onClick={e => e.target === e.currentTarget && onClose()}>
-      <div className="w-full max-w-lg my-6 rounded-2xl overflow-hidden"
+      <div className="w-full max-w-lg my-6 rounded-2xl"
         style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.1)", boxShadow: "0 32px 80px rgba(0,0,0,0.7)" }}>
 
-        <div className="flex items-center justify-between px-6 py-5"
+        <div className="flex items-center justify-between px-6 py-5 rounded-t-2xl"
           style={{ borderBottom: "1px solid rgba(255,255,255,0.07)", background: "linear-gradient(135deg,rgba(37,99,235,0.08),rgba(245,158,11,0.04))" }}>
           <div>
             <h2 className="text-white font-black text-xl">{isEdit ? "Edit User" : "Register New User"}</h2>
@@ -185,6 +255,56 @@ function UserFormModal({ initial, onClose, onSave, saving }) {
             value={form.password} onChange={set("password")} placeholder="Min. 8 characters" required={!isEdit} />
           <SInput label="Address" value={form.address} onChange={set("address")} placeholder="City, Street..." />
 
+          {/* ── Subscription Type ── */}
+          <div className="rounded-xl p-4" style={{ background: "rgba(16,185,129,0.04)", border: "1px solid rgba(16,185,129,0.18)" }}>
+            <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3">🎯 Subscription Type</p>
+            <div className="grid grid-cols-2 gap-3">
+              {/* Active */}
+              <button type="button" onClick={() => handleSubscriptionTypeChange("active")}
+                className="flex flex-col items-start px-4 py-3 rounded-xl text-left transition-all"
+                style={{
+                  background: form.subscriptionType === "active" ? "rgba(37,99,235,0.18)" : "rgba(255,255,255,0.03)",
+                  border: `1.5px solid ${form.subscriptionType === "active" ? "#2563EB" : "rgba(255,255,255,0.08)"}`,
+                  boxShadow: form.subscriptionType === "active" ? "0 0 14px rgba(37,99,235,0.25)" : "none",
+                }}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-base">✅</span>
+                  <span className="text-sm font-bold" style={{ color: form.subscriptionType === "active" ? "#60a5fa" : "#9ca3af" }}>Active</span>
+                </div>
+                <span className="text-[10px] leading-tight" style={{ color: form.subscriptionType === "active" ? "#d1d5db" : "#4b5563" }}>
+                  Full subscription — dates manually set karein
+                </span>
+              </button>
+
+              {/* Trial */}
+              <button type="button" onClick={() => handleSubscriptionTypeChange("trial")}
+                className="flex flex-col items-start px-4 py-3 rounded-xl text-left transition-all"
+                style={{
+                  background: form.subscriptionType === "trial" ? "rgba(245,158,11,0.18)" : "rgba(255,255,255,0.03)",
+                  border: `1.5px solid ${form.subscriptionType === "trial" ? "#F59E0B" : "rgba(255,255,255,0.08)"}`,
+                  boxShadow: form.subscriptionType === "trial" ? "0 0 14px rgba(245,158,11,0.25)" : "none",
+                }}>
+                <div className="flex items-center gap-2 mb-1">
+                  <span className="text-base">⏳</span>
+                  <span className="text-sm font-bold" style={{ color: form.subscriptionType === "trial" ? "#fbbf24" : "#9ca3af" }}>Trial</span>
+                </div>
+                <span className="text-[10px] leading-tight" style={{ color: form.subscriptionType === "trial" ? "#d1d5db" : "#4b5563" }}>
+                  7 days free — auto dates set, auto freeze
+                </span>
+              </button>
+            </div>
+            {form.subscriptionType === "trial" && (
+              <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg"
+                style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }}>
+                <span className="text-amber-400 text-sm">⚠️</span>
+                <p className="text-amber-400 text-[11px] font-medium">
+                  Trial: {form.activeFrom} → {form.activeTo} (7 days). Account auto-freeze hoga.
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* ── Subscription Period ── */}
           <div className="rounded-xl p-4" style={{ background: "rgba(37,99,235,0.05)", border: "1px solid rgba(37,99,235,0.15)" }}>
             <p className="text-blue-400 text-xs font-bold uppercase tracking-widest mb-3">📅 Subscription Period</p>
             <div className="grid grid-cols-2 gap-4 mb-3">
@@ -203,22 +323,102 @@ function UserFormModal({ initial, onClose, onSave, saving }) {
             </div>
           </div>
 
-          <div className="rounded-xl p-4" style={{ background: "rgba(139,92,246,0.05)", border: "1px solid rgba(139,92,246,0.15)" }}>
-            <p className="text-purple-400 text-xs font-bold uppercase tracking-widest mb-3">📱 Device / Session Limit</p>
-            <div className="flex gap-2">
-              {[1, 2, 3, 5].map(n => (
-                <button key={n} type="button"
-                  onClick={() => setForm(p => ({ ...p, maxDevices: String(n) }))}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-bold transition-all hover:scale-[1.02]"
+          {/* ── Plan / Package Selector ── */}
+          <div className="rounded-xl p-4" style={{ background: "rgba(245,158,11,0.05)", border: "1px solid rgba(245,158,11,0.2)" }}>
+            <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-3">📦 Subscription Plan</p>
+            <div className="grid grid-cols-2 gap-2">
+              {activePlanOptions.map(opt => (
+                <button key={opt.id} type="button"
+                  onClick={() => {
+                    // Use Firestore maxDevices if available, else static default
+                    const fsPlan = dynamicPlans?.find(p => p.id === opt.id);
+                    const devices = fsPlan?.maxDevices ?? PLAN_DEFAULT_DEVICES[opt.id] ?? 1;
+                    setForm(p => ({ ...p, plan: opt.id, maxDevices: String(devices) }));
+                  }}
+                  className="flex flex-col items-start px-3 py-2.5 rounded-xl text-left transition-all"
                   style={{
-                    background: form.maxDevices === String(n) ? "rgba(139,92,246,0.25)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.maxDevices === String(n) ? "rgba(139,92,246,0.6)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.maxDevices === String(n) ? "#c4b5fd" : "#6b7280",
+                    background: form.plan === opt.id
+                      ? `rgba(${opt.id === "starter" ? "16,185,129" : opt.id === "business" ? "37,99,235" : opt.id === "professional" ? "245,158,11" : "168,85,247"},0.18)`
+                      : "rgba(255,255,255,0.03)",
+                    border: `1.5px solid ${form.plan === opt.id ? opt.color : "rgba(255,255,255,0.08)"}`,
+                    boxShadow: form.plan === opt.id ? `0 0 12px ${opt.color}30` : "none",
                   }}>
-                  {n} {n === 1 ? "Device" : "Devices"}
+                  <span className="text-xs font-bold mb-0.5" style={{ color: form.plan === opt.id ? opt.color : "#9ca3af" }}>
+                    {opt.label}
+                  </span>
+                  <span className="text-[10px] leading-tight" style={{ color: form.plan === opt.id ? "#d1d5db" : "#4b5563" }}>
+                    {opt.desc}
+                  </span>
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* ── Device / Session Limit ── */}
+          <div className="rounded-xl p-4" style={{ background: "rgba(139,92,246,0.05)", border: "1px solid rgba(139,92,246,0.15)" }}>
+            <p className="text-purple-400 text-xs font-bold uppercase tracking-widest mb-3">📱 Device / Session Limit</p>
+            <div className="flex items-center gap-3">
+              {/* Decrement */}
+              <button type="button"
+                onClick={() => setForm(p => ({ ...p, maxDevices: String(Math.max(1, Number(p.maxDevices) - 1)) }))}
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold transition-all hover:scale-110 flex-shrink-0"
+                style={{ background: "rgba(139,92,246,0.15)", border: "1.5px solid rgba(139,92,246,0.35)", color: "#c4b5fd" }}>
+                −
+              </button>
+
+              {/* Number input */}
+              <div className="flex-1 relative">
+                <input
+                  type="number"
+                  min="1"
+                  max="100"
+                  value={form.maxDevices}
+                  onChange={e => {
+                    const val = e.target.value.replace(/[^0-9]/g, "");
+                    const num = Math.max(1, Math.min(100, Number(val) || 1));
+                    setForm(p => ({ ...p, maxDevices: String(num) }));
+                  }}
+                  className="w-full text-center font-black text-lg outline-none"
+                  style={{
+                    background: "rgba(139,92,246,0.1)",
+                    border: "1.5px solid rgba(139,92,246,0.4)",
+                    borderRadius: 10,
+                    padding: "8px 12px",
+                    color: "#c4b5fd",
+                    MozAppearance: "textfield",
+                  }}
+                />
+              </div>
+
+              {/* Increment */}
+              <button type="button"
+                onClick={() => setForm(p => ({ ...p, maxDevices: String(Math.min(100, Number(p.maxDevices) + 1)) }))}
+                className="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold transition-all hover:scale-110 flex-shrink-0"
+                style={{ background: "rgba(139,92,246,0.15)", border: "1.5px solid rgba(139,92,246,0.35)", color: "#c4b5fd" }}>
+                +
+              </button>
+
+              <span className="text-gray-400 text-sm font-medium flex-shrink-0">
+                {Number(form.maxDevices) === 1 ? "Device" : "Devices"}
+              </span>
+            </div>
+
+            {/* Quick presets */}
+            <div className="flex gap-2 mt-3">
+              {[1, 2, 3, 5, 10].map(n => (
+                <button key={n} type="button"
+                  onClick={() => setForm(p => ({ ...p, maxDevices: String(n) }))}
+                  className="flex-1 py-1.5 rounded-lg text-xs font-bold transition-all"
+                  style={{
+                    background: Number(form.maxDevices) === n ? "rgba(139,92,246,0.25)" : "rgba(255,255,255,0.03)",
+                    border: `1px solid ${Number(form.maxDevices) === n ? "rgba(139,92,246,0.5)" : "rgba(255,255,255,0.06)"}`,
+                    color: Number(form.maxDevices) === n ? "#c4b5fd" : "#4b5563",
+                  }}>
+                  {n}
+                </button>
+              ))}
+            </div>
+            <p className="text-gray-600 text-[10px] mt-2">Aap koi bhi number set kar sakte hain (1–100)</p>
           </div>
 
           <button type="submit" disabled={saving}
@@ -346,6 +546,7 @@ function UserDetailModal({ detailUser, detailLoading, onClose, fmtDate, daysLeft
 /* ── Sidebar nav items ────────────────────────────────────────────────────── */
 const NAV_ITEMS = [
   { id: "users",     icon: "👥", label: "Users",     badge: null },
+  { id: "packages",  icon: "📦", label: "Packages",  badge: null },
   { id: "inbox",     icon: "📬", label: "Support",   badge: null },
   { id: "analytics", icon: "📊", label: "Analytics", badge: null },
   { id: "debug",     icon: "🔍", label: "Debug",     badge: null },
@@ -443,7 +644,7 @@ export default function AdminPanel() {
       const token   = await getToken();
       const headers = { "Content-Type": "application/json", authorization: `Bearer ${token}` };
       if (editUser) {
-        const body = { uid: editUser.uid, name: form.name, phone: form.phone, address: form.address, activeFrom: form.activeFrom, activeTo: form.activeTo, activeToTime: form.activeToTime, maxDevices: form.maxDevices };
+        const body = { uid: editUser.uid, name: form.name, phone: form.phone, address: form.address, activeFrom: form.activeFrom, activeTo: form.activeTo, activeToTime: form.activeToTime, maxDevices: form.maxDevices, plan: form.plan, subscriptionType: form.subscriptionType };
         if (form.password) body.newPassword = form.password;
         const res  = await fetch("/api/admin/update-user", { method:"POST", headers, body: JSON.stringify(body) });
         const data = await res.json();
@@ -698,7 +899,7 @@ export default function AdminPanel() {
             <div>
               <h1 className="text-white font-black text-base leading-tight">
                 {NAV_ITEMS.find(n=>n.id===activeTab)?.icon} {" "}
-                {activeTab==="users"?"User Management":activeTab==="inbox"?"Support Inbox":activeTab==="analytics"?"Analytics Overview":"Debug Console"}
+                {activeTab==="users"?"User Management":activeTab==="packages"?"Package Manager":activeTab==="inbox"?"Support Inbox":activeTab==="analytics"?"Analytics Overview":"Debug Console"}
               </h1>
               <p className="text-gray-600 text-[10px] font-semibold tracking-widest uppercase">{todayStr()}</p>
             </div>
@@ -823,7 +1024,13 @@ export default function AdminPanel() {
                             </div>
 
                             {/* Status badge */}
-                            <div className="hidden md:block flex-shrink-0">
+                            <div className="hidden md:flex items-center gap-1.5 flex-shrink-0">
+                              {u.subscriptionType === "trial" && (
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
+                                  style={{ background: "rgba(245,158,11,0.12)", color: "#fbbf24", border: "1px solid rgba(245,158,11,0.3)" }}>
+                                  ⏳ Trial
+                                </span>
+                              )}
                               {(() => { const ss = STATUS_STYLE[u.status]||STATUS_STYLE.active; return (
                                 <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
                                   style={{ background:ss.bg, color:ss.color, border:`1px solid ${ss.border}` }}>
@@ -910,7 +1117,13 @@ export default function AdminPanel() {
                             )}
                           </div>
 
-                          <div className="flex items-center">
+                          <div className="flex items-center gap-1.5 flex-wrap">
+                            {u.subscriptionType === "trial" && (
+                              <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
+                                style={{ background: "rgba(245,158,11,0.12)", color: "#fbbf24", border: "1px solid rgba(245,158,11,0.3)" }}>
+                                ⏳ Trial
+                              </span>
+                            )}
                             <span className="text-[11px] font-bold px-2.5 py-1 rounded-lg"
                               style={{ background:ss.bg, color:ss.color, border:`1px solid ${ss.border}` }}>
                               {ss.label}
@@ -970,6 +1183,11 @@ export default function AdminPanel() {
           {/* ──────────── SUPPORT INBOX TAB ──────────── */}
           {activeTab==="inbox" && (
             <SupportInbox getToken={getToken} onToast={toast} />
+          )}
+
+          {/* ──────────── PACKAGES TAB ──────────── */}
+          {activeTab==="packages" && (
+            <PackageManager getToken={getToken} onToast={toast} />
           )}
 
           {/* ──────────── ANALYTICS TAB ──────────── */}

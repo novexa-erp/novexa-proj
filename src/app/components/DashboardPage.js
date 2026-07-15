@@ -38,8 +38,43 @@ const navItems = [
   { icon: "🎫", label: "My Tickets",  id: "my-tickets"  },
 ];
 
+// ── Plan → allowed tab IDs ────────────────────────────────────────────────────
+// Tabs always visible to everyone: overview, settings, contact, my-tickets, trash
+// Tabs gated by plan:
+const PLAN_PERMISSIONS = {
+  starter: new Set([
+    "overview", "invoices", "customers", "inventory",
+    "payments", "purchases", "settings", "contact", "my-tickets", "trash",
+  ]),
+  business: new Set([
+    "overview", "invoices", "customers", "inventory",
+    "payments", "purchases", "order-form", "analytics",
+    "settings", "contact", "my-tickets", "trash",
+  ]),
+  professional: new Set([
+    "overview", "invoices", "customers", "inventory",
+    "payments", "purchases", "order-form", "analytics",
+    "settings", "contact", "my-tickets", "trash",
+  ]),
+  enterprise: new Set([
+    "overview", "invoices", "customers", "inventory",
+    "payments", "purchases", "order-form", "analytics",
+    "settings", "contact", "my-tickets", "trash",
+  ]),
+};
+
+// Tabs that are locked (shown greyed with lock icon) vs completely hidden
+const ALWAYS_SHOW_TABS = new Set([
+  "overview", "invoices", "customers", "inventory",
+  "payments", "purchases", "order-form", "analytics",
+  "settings", "contact", "my-tickets",
+]);
+
+function getPlanPermissions(plan) {
+  return PLAN_PERMISSIONS[plan] || PLAN_PERMISSIONS.starter;
+}
+
 const statusStyle = {
-  Paid:    { color: "#34d399", bg: "rgba(52,211,153,0.1)",  border: "rgba(52,211,153,0.25)"  },
   Unpaid:  { color: "#f87171", bg: "rgba(248,113,113,0.1)", border: "rgba(248,113,113,0.25)" },
   Partial: { color: "#fbbf24", bg: "rgba(251,191,36,0.1)",  border: "rgba(251,191,36,0.25)"  },
 };
@@ -99,6 +134,11 @@ function DashboardContent() {
   const [user, setUser]         = useState(null);
   const [userDoc, setUserDoc]   = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  // ── Dynamic plan tabs (loaded from Firestore adminConfig/plans) ─────────────
+  const [allowedTabsSet, setAllowedTabsSet] = useState(null); // null = loading
+  // ── Plan details modal ────────────────────────────────────────────────────
+  const [showPlanModal, setShowPlanModal] = useState(false);
+  const [planDetails,   setPlanDetails]   = useState(null);
 
   // ── Nav / UI ────────────────────────────────────────────────────────────────
   // Initialize from URL query param or default to "overview"
@@ -188,13 +228,16 @@ function DashboardContent() {
         const data = snap.data();
         setUserDoc(data);
         // ── Check expiry and show popup once per session ──────────────────
+        // Trial users: warn from day 1 (all 7 days show warning)
+        // Regular users: warn 3 days before
         if (data.activeTo) {
           const diff = Math.ceil(
             (new Date(data.activeTo + "T23:59:59") - new Date()) / 86400000
           );
-          if (diff >= 0 && diff <= 3) {
+          const warnThreshold = data.subscriptionType === "trial" ? 7 : 3;
+          if (diff >= 0 && diff <= warnThreshold) {
             setExpiryDaysLeft(diff);
-            const popupKey = `novexa_expiry_shown_${user.uid}`;
+            const popupKey = `novexa_expiry_shown_${user.uid}_${data.activeTo}`;
             if (!sessionStorage.getItem(popupKey)) {
               setShowExpiryPopup(true);
               sessionStorage.setItem(popupKey, "1");
@@ -205,6 +248,31 @@ function DashboardContent() {
     });
     return () => unsubUser();
   }, [user]);
+
+  // ── Load allowed tabs + plan details from Firestore adminConfig/plans ───────
+  useEffect(() => {
+    if (!userDoc?.plan) return;
+    const planId = userDoc.plan;
+    import("firebase/firestore").then(({ getDoc, doc: fsDoc }) => {
+      import("@/lib/firebase").then(({ db: fdb }) => {
+        getDoc(fsDoc(fdb, "adminConfig", "plans")).then(snap => {
+          if (snap.exists()) {
+            const list = snap.data().list || [];
+            const planData = list.find(p => p.id === planId);
+            if (planData) {
+              setPlanDetails(planData);
+              if (planData?.allowedTabs) {
+                setAllowedTabsSet(new Set([...planData.allowedTabs, "trash"]));
+                return;
+              }
+            }
+          }
+          // Fallback to hardcoded
+          setAllowedTabsSet(getPlanPermissions(planId));
+        }).catch(() => setAllowedTabsSet(getPlanPermissions(planId)));
+      });
+    });
+  }, [userDoc?.plan]);
 
   // ── Heartbeat — verify session every 8s ─────────────────────────────────────
   useEffect(() => {
@@ -478,6 +546,27 @@ function DashboardContent() {
     e.preventDefault();
     if (!user || formSaving) return;
     setFormSaving(true);
+
+    // ── Monthly customer limit check ──────────────────────────────────────
+    const plan   = userDoc?.plan || "starter";
+    const { getLimits, checkMonthlyLimit, loadPlansFromFirestore } = await import("@/lib/planLimits");
+    const fsPlans = await loadPlansFromFirestore();
+    const limits = getLimits(plan, fsPlans);
+    if (limits.customersPerMonth !== null) {
+      const { collection: col } = await import("firebase/firestore");
+      const { db: fdb } = await import("@/lib/firebase");
+      const { allowed, current, limit } = await checkMonthlyLimit(
+        col(fdb, "users", user.uid, "customers"),
+        limits.customersPerMonth
+      );
+      if (!allowed) {
+        setAlert({ show: true, type: "error", title: "Monthly Limit Reached 🚫",
+          message: `Aapne is mahine ${current} customers add kar liye hain. ${plan.charAt(0).toUpperCase()+plan.slice(1)} plan ki limit ${limit}/month hai.` });
+        setFormSaving(false);
+        return;
+      }
+    }
+
     try {
       await addDoc(collection(db, "users", user.uid, "customers"), {
         name:      custForm.name,
@@ -625,7 +714,7 @@ function DashboardContent() {
               </div>
               <div>
                 <h2 className="text-white font-black text-xl mb-1">
-                  Subscription Expiring Soon!
+                  {userDoc?.subscriptionType === "trial" ? "Free Trial Expiring!" : "Subscription Expiring Soon!"}
                 </h2>
                 <p className="text-gray-400 text-sm leading-relaxed">
                   {expiryDaysLeft === 0
@@ -683,7 +772,27 @@ function DashboardContent() {
         <nav className="flex-1 px-3 py-4 flex flex-col gap-1 overflow-y-auto">
           <p className="text-[10px] font-bold tracking-widest uppercase px-3 mb-2" style={{ color: "rgba(255,255,255,0.2)" }}>Main Menu</p>
           {navItems.map((item) => {
-            const isActive = activeNav === item.id;
+            const isActive  = activeNav === item.id;
+            const userPlan  = userDoc?.plan || "starter";
+            // Use Firestore-loaded tabs if available, fallback to hardcoded
+            const tabsSet   = allowedTabsSet || getPlanPermissions(userPlan);
+            const allowed   = tabsSet.has(item.id);
+            const isLocked  = !allowed && ALWAYS_SHOW_TABS.has(item.id);
+
+            if (isLocked) {
+              // Show tab greyed out with lock tooltip — clicking shows upgrade notice
+              return (
+                <div key={item.id}
+                  title={`Upgrade to unlock ${item.label}`}
+                  className="relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full cursor-not-allowed select-none"
+                  style={{ color: "#374151", borderLeft: "2px solid transparent", opacity: 0.55 }}>
+                  <span className="text-base grayscale">{item.icon}</span>
+                  {item.label}
+                  <span className="ml-auto text-[10px]" style={{ color: "#374151" }}>🔒</span>
+                </div>
+              );
+            }
+
             return (
               <button key={item.id} onClick={() => handleNavChange(item.id)}
                 className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full text-left transition-all duration-200"
@@ -717,6 +826,32 @@ function DashboardContent() {
               <p className="text-gray-500 text-[10px] truncate">{user?.email}</p>
             </div>
           </div>
+          {/* Plan badge — click to see details */}
+          {userDoc?.plan && (
+            <button
+              onClick={() => setShowPlanModal(true)}
+              className="mx-2 mb-2 px-3 py-1.5 rounded-lg flex items-center gap-2 w-full text-left transition-all duration-200 hover:scale-[1.02] group"
+              style={{
+                background: userDoc.subscriptionType === "trial"
+                  ? "rgba(245,158,11,0.12)"
+                  : userDoc.plan === "enterprise" ? "rgba(168,85,247,0.12)" : userDoc.plan === "professional" ? "rgba(245,158,11,0.10)" : userDoc.plan === "business" ? "rgba(37,99,235,0.10)" : "rgba(16,185,129,0.10)",
+                border: `1px solid ${userDoc.subscriptionType === "trial"
+                  ? "rgba(245,158,11,0.4)"
+                  : userDoc.plan === "enterprise" ? "rgba(168,85,247,0.35)" : userDoc.plan === "professional" ? "rgba(245,158,11,0.35)" : userDoc.plan === "business" ? "rgba(37,99,235,0.35)" : "rgba(16,185,129,0.35)"}`,
+              }}>
+              <span className="text-xs">
+                {userDoc.subscriptionType === "trial" ? "⏳" : userDoc.plan === "enterprise" ? "🏢" : userDoc.plan === "professional" ? "👑" : userDoc.plan === "business" ? "🚀" : "💎"}
+              </span>
+              <span className="text-xs font-bold capitalize flex-1" style={{
+                color: userDoc.subscriptionType === "trial"
+                  ? "#fbbf24"
+                  : userDoc.plan === "enterprise" ? "#c084fc" : userDoc.plan === "professional" ? "#fbbf24" : userDoc.plan === "business" ? "#60a5fa" : "#34d399"
+              }}>
+                {userDoc.subscriptionType === "trial" ? `Trial — ${userDoc.plan}` : `${userDoc.plan} Plan`}
+              </span>
+              <span className="text-[10px] opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: "#6b7280" }}>ℹ️</span>
+            </button>
+          )}
           {/* Trash Button */}
           <button
             onClick={() => handleNavChange("trash")}
@@ -744,6 +879,198 @@ function DashboardContent() {
 
       {sidebarOpen && (
         <div className="fixed inset-0 z-30 bg-black/50 lg:hidden" onClick={() => setSidebarOpen(false)} />
+      )}
+
+      {/* ── Plan Details Modal ── */}
+      {showPlanModal && (
+        <div
+          className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center"
+          style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)" }}
+          onClick={e => e.target === e.currentTarget && setShowPlanModal(false)}
+        >
+          {/* Modal container — bottom sheet on mobile, centered on sm+ */}
+          <div
+            className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl flex flex-col"
+            style={{
+              background: "#0d1117",
+              border: `1px solid ${
+                userDoc?.plan === "enterprise" ? "rgba(168,85,247,0.35)"
+                : userDoc?.plan === "professional" ? "rgba(245,158,11,0.35)"
+                : userDoc?.plan === "business" ? "rgba(37,99,235,0.35)"
+                : "rgba(16,185,129,0.35)"
+              }`,
+              boxShadow: "0 -8px 40px rgba(0,0,0,0.6)",
+              maxHeight: "90vh",
+            }}
+          >
+            {/* Drag handle (mobile) */}
+            <div className="flex justify-center pt-3 pb-1 sm:hidden">
+              <div className="w-10 h-1 rounded-full" style={{ background: "rgba(255,255,255,0.15)" }} />
+            </div>
+
+            {/* Header — sticky */}
+            <div
+              className="flex items-center justify-between px-5 py-4 flex-shrink-0 rounded-t-3xl"
+              style={{
+                borderBottom: "1px solid rgba(255,255,255,0.07)",
+                background: `linear-gradient(135deg, ${
+                  userDoc?.plan === "enterprise" ? "rgba(168,85,247,0.1)"
+                  : userDoc?.plan === "professional" ? "rgba(245,158,11,0.08)"
+                  : userDoc?.plan === "business" ? "rgba(37,99,235,0.1)"
+                  : "rgba(16,185,129,0.08)"
+                }, transparent)`,
+              }}
+            >
+              <div className="flex items-center gap-3">
+                <div
+                  className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+                  style={{
+                    background: userDoc?.plan === "enterprise" ? "rgba(168,85,247,0.15)"
+                      : userDoc?.plan === "professional" ? "rgba(245,158,11,0.12)"
+                      : userDoc?.plan === "business" ? "rgba(37,99,235,0.15)"
+                      : "rgba(16,185,129,0.12)",
+                    border: `1px solid ${
+                      userDoc?.plan === "enterprise" ? "rgba(168,85,247,0.3)"
+                      : userDoc?.plan === "professional" ? "rgba(245,158,11,0.3)"
+                      : userDoc?.plan === "business" ? "rgba(37,99,235,0.3)"
+                      : "rgba(16,185,129,0.3)"
+                    }`,
+                  }}
+                >
+                  {planDetails?.icon || (userDoc?.plan === "enterprise" ? "🏢" : userDoc?.plan === "professional" ? "👑" : userDoc?.plan === "business" ? "🚀" : "💎")}
+                </div>
+                <div>
+                  <h2 className="text-white font-black text-base leading-tight capitalize">
+                    {userDoc?.subscriptionType === "trial"
+                      ? `⏳ Trial — ${planDetails?.name || userDoc?.plan}`
+                      : `${planDetails?.name || userDoc?.plan} Plan`}
+                  </h2>
+                  <p className="text-gray-500 text-[11px] mt-0.5">
+                    {userDoc?.subscriptionType === "trial" ? "7-day free trial" : "Aapka current subscription"}
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowPlanModal(false)}
+                className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all hover:bg-white/10"
+                style={{ color: "#6b7280" }}
+              >✕</button>
+            </div>
+
+            {/* Scrollable body */}
+            <div className="overflow-y-auto flex-1 p-5 flex flex-col gap-4" style={{ overscrollBehavior: "contain" }}>
+
+              {/* Price */}
+              {planDetails?.monthlyPrice && (
+                <div
+                  className="flex items-center gap-3 px-4 py-3 rounded-2xl"
+                  style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
+                >
+                  <span className="text-xl flex-shrink-0">💰</span>
+                  <div className="flex-1 min-w-0">
+                    <p className="text-gray-500 text-[10px] uppercase tracking-widest mb-0.5">Monthly Price</p>
+                    <p className="text-white font-black text-lg leading-tight">
+                      Rs. {Number(planDetails.monthlyPrice).toLocaleString()}
+                      <span className="text-gray-500 text-xs font-normal">/mo</span>
+                    </p>
+                  </div>
+                  {planDetails?.yearlyPrice && (
+                    <div className="text-right flex-shrink-0">
+                      <p className="text-gray-500 text-[10px] uppercase tracking-widest mb-0.5">Yearly</p>
+                      <p className="font-bold text-sm" style={{ color: "#34d399" }}>
+                        Rs. {Number(planDetails.yearlyPrice).toLocaleString()}/yr
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Subscription dates */}
+              <div className="grid grid-cols-2 gap-2">
+                {[
+                  { label: "Active From", value: userDoc?.activeFrom ? new Date(userDoc.activeFrom + "T00:00:00").toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" }) : "—" },
+                  { label: "Active Until", value: userDoc?.activeTo ? new Date(userDoc.activeTo + "T00:00:00").toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" }) : "—" },
+                ].map(r => (
+                  <div key={r.label} className="px-3 py-2.5 rounded-xl"
+                    style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
+                    <p className="text-gray-600 text-[9px] uppercase tracking-widest font-bold mb-1">{r.label}</p>
+                    <p className="text-white text-sm font-semibold">{r.value}</p>
+                  </div>
+                ))}
+              </div>
+
+              {/* Monthly Limits */}
+              {planDetails?.limits && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-2">📊 Monthly Limits</p>
+                  <div className="flex flex-col gap-1.5">
+                    {[
+                      { label: "Invoices / Month",              val: planDetails.limits.invoicesPerMonth },
+                      { label: "Invoices per Customer / Month", val: planDetails.limits.invoicesPerCustomerPerMonth },
+                      { label: "Customers / Month",             val: planDetails.limits.customersPerMonth },
+                      { label: "Suppliers / Month",             val: planDetails.limits.suppliersPerMonth },
+                      { label: "Orders per Supplier / Month",   val: planDetails.limits.ordersPerSupplierPerMonth },
+                    ].map(item => (
+                      <div key={item.label}
+                        className="flex items-center justify-between px-3 py-2 rounded-xl"
+                        style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}
+                      >
+                        <span className="text-gray-400 text-xs">{item.label}</span>
+                        <span className="text-xs font-bold ml-2 flex-shrink-0"
+                          style={{ color: item.val === null || item.val === undefined ? "#34d399" : "#60a5fa" }}>
+                          {item.val === null || item.val === undefined ? "∞ Unlimited" : item.val.toLocaleString()}
+                        </span>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Dashboard Access */}
+              {planDetails?.allowedTabs && (
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-2">🔐 Dashboard Access</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {[
+                      { id: "overview",   icon: "📊" }, { id: "invoices",   icon: "🧾" },
+                      { id: "customers",  icon: "👥" }, { id: "inventory",  icon: "📦" },
+                      { id: "payments",   icon: "💳" }, { id: "purchases",  icon: "🛒" },
+                      { id: "order-form", icon: "📋" }, { id: "analytics",  icon: "📈" },
+                      { id: "settings",   icon: "⚙️" }, { id: "contact",    icon: "📞" },
+                      { id: "my-tickets", icon: "🎫" },
+                    ].map(tab => {
+                      const has = planDetails.allowedTabs.includes(tab.id);
+                      return (
+                        <div key={tab.id}
+                          className="flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-medium"
+                          style={{
+                            background: has ? "rgba(52,211,153,0.1)" : "rgba(255,255,255,0.03)",
+                            border: `1px solid ${has ? "rgba(52,211,153,0.25)" : "rgba(255,255,255,0.05)"}`,
+                            color: has ? "#34d399" : "#374151",
+                          }}
+                        >
+                          <span>{tab.icon}</span>
+                          <span className="capitalize">{tab.id.replace("-", " ")}</span>
+                          <span>{has ? "✓" : "🔒"}</span>
+                        </div>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Upgrade CTA */}
+              <a
+                href="https://wa.me/923001234567?text=Hello%20Novexa%2C%20I%20want%20to%20upgrade%20my%20plan."
+                target="_blank" rel="noopener noreferrer"
+                className="flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold transition-all active:scale-95"
+                style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", color: "#000", boxShadow: "0 4px 20px rgba(245,158,11,0.3)" }}
+              >
+                🚀 Plan Upgrade Karein →
+              </a>
+            </div>
+          </div>
+        </div>
       )}
 
       {/* ── Main content ── */}
@@ -822,8 +1149,8 @@ function DashboardContent() {
               </span>
               <p className="text-sm font-semibold truncate" style={{ color: expiryDaysLeft === 0 ? "#fca5a5" : "#fdba74" }}>
                 {expiryDaysLeft === 0
-                  ? "Your subscription expires today! Renew now to avoid losing access."
-                  : `Your subscription expires in ${expiryDaysLeft} ${expiryDaysLeft === 1 ? "day" : "days"}. Renew before it's too late.`}
+                  ? `Your ${userDoc?.subscriptionType === "trial" ? "free trial" : "subscription"} expires today! ${userDoc?.subscriptionType === "trial" ? "Upgrade to a paid plan to keep access." : "Renew now to avoid losing access."}`
+                  : `Your ${userDoc?.subscriptionType === "trial" ? "free trial" : "subscription"} expires in ${expiryDaysLeft} ${expiryDaysLeft === 1 ? "day" : "days"}. ${userDoc?.subscriptionType === "trial" ? "Upgrade now to continue using Novexa." : "Renew before it's too late."}`}
               </p>
             </div>
             <a href="https://wa.me/923001234567?text=Hello%20Novexa%2C%20I%20need%20to%20renew%20my%20subscription."
@@ -838,6 +1165,40 @@ function DashboardContent() {
         {/* page body */}
         <main className="flex-1 p-5 md:p-7 overflow-y-auto">
 
+          {/* ── Invoices full page ── */}
+          {(() => {
+            const userPlan = userDoc?.plan || "starter";
+            const tabsSet  = allowedTabsSet || getPlanPermissions(userPlan);
+            const allowed  = tabsSet.has(activeNav);
+            if (!allowed && ALWAYS_SHOW_TABS.has(activeNav)) {
+              const planUpgrade = userPlan === "starter" ? "Business" : userPlan === "business" ? "Professional" : "Enterprise";
+              return (
+                <div className="flex flex-col items-center justify-center min-h-[60vh] text-center px-4">
+                  <div className="w-24 h-24 rounded-3xl flex items-center justify-center text-5xl mb-6"
+                    style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                    🔒
+                  </div>
+                  <h2 className="text-white font-black text-2xl mb-2">Feature Locked</h2>
+                  <p className="text-gray-400 text-base mb-1">
+                    <span className="font-semibold text-white">{navItems.find(n => n.id === activeNav)?.label}</span> is not included in your current{" "}
+                    <span className="font-bold capitalize" style={{ color: "#60a5fa" }}>{userPlan}</span> plan.
+                  </p>
+                  <p className="text-gray-500 text-sm mb-8">Upgrade to <span className="font-bold text-amber-400">{planUpgrade}</span> or higher to unlock this feature.</p>
+                  <a href="https://wa.me/923001234567?text=Hello%20Novexa%2C%20I%20want%20to%20upgrade%20my%20plan."
+                    target="_blank" rel="noopener noreferrer"
+                    className="inline-flex items-center gap-2 px-8 py-3.5 rounded-2xl font-bold text-white transition-all hover:scale-105"
+                    style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", boxShadow: "0 6px 25px rgba(245,158,11,0.4)" }}>
+                    🚀 Upgrade Plan →
+                  </a>
+                  <p className="text-gray-600 text-xs mt-4">Contact Novexa support to upgrade your subscription</p>
+                </div>
+              );
+            }
+            return null;
+          })()}
+
+          {/* ── Plan-allowed views ── */}
+          {(allowedTabsSet || getPlanPermissions(userDoc?.plan || "starter")).has(activeNav) && (<>
           {/* ── Invoices full page ── */}
           {activeNav === "invoices" ? (
             <InvoicesView key={`invoices-${refreshKey}`} uid={user?.uid} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} payments={payments} highlightId={searchParams.get("highlightId")} />
@@ -1133,6 +1494,7 @@ function DashboardContent() {
           )}
           </>
           )}
+          </>)} {/* end plan-allowed views */}
         </main>
       </div>
 

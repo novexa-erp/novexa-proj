@@ -6,6 +6,7 @@ import {
   getDocs, writeBatch, where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { getLimits, checkMonthlyLimit, loadPlansFromFirestore } from "@/lib/planLimits";
 import SweetAlert from "./SweetAlert";
 import EmailConfirmationDialog from "./EmailConfirmationDialog";
 import { autoEmailSupplierOrder } from "@/lib/emailUtils";
@@ -2706,6 +2707,27 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
 
       } else {
         // ── CREATE MODE ───────────────────────────────────────────────────
+
+        // ── Monthly orders-per-supplier limit check ───────────────────────
+        const plan        = userDoc?.plan || "starter";
+        const fsPlans     = await loadPlansFromFirestore();
+        const limits      = getLimits(plan, fsPlans);
+        if (limits.ordersPerSupplierPerMonth !== null) {
+          const { allowed, current, limit } = await checkMonthlyLimit(
+            collection(db, "users", uid, "suppliers", supplier.id, "orders"),
+            limits.ordersPerSupplierPerMonth
+          );
+          if (!allowed) {
+            setAlert({
+              show: true, type: "error",
+              title: "Monthly Order Limit Reached 🚫",
+              message: `Is supplier ke liye aapne is mahine ${current} orders bana liye hain. ${plan.charAt(0).toUpperCase()+plan.slice(1)} plan ki limit ${limit}/month hai. Aglay mahine phir bana sakte hain ya plan upgrade karein.`,
+            });
+            setSavingOrder(false);
+            return;
+          }
+        }
+
         const cleanItems = originalItems.map(({ isNew, isReceipt, ...rest }) => rest);
         const { subtotal, discount, afterDiscount, paid, balance } = calcPOTotals(formData);
 

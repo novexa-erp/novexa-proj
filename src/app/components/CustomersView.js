@@ -6,6 +6,7 @@ import {
   serverTimestamp, onSnapshot, query, orderBy, where, getDocs,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { getLimits, checkMonthlyLimit, loadPlansFromFirestore } from "@/lib/planLimits";
 import InvoiceModal, { EMPTY_FORM, calcTotals } from "./InvoiceModal";
 import InvoicePDFModal from "./InvoicePDF";
 import CustomerHistoryPDFModal from "./CustomerHistoryPDF";
@@ -827,6 +828,26 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
           }
         }
       } else {
+        // ── Monthly per-customer invoice limit check ────────────────────────
+        const plan        = userDoc?.plan || "starter";
+        const fsPlans     = await loadPlansFromFirestore();
+        const limits      = getLimits(plan, fsPlans);
+        if (limits.invoicesPerCustomerPerMonth !== null) {
+          const { allowed, current, limit } = await checkMonthlyLimit(
+            collection(db, "users", uid, "customers", customer.id, "invoices"),
+            limits.invoicesPerCustomerPerMonth
+          );
+          if (!allowed) {
+            setAlert({
+              show: true, type: "error",
+              title: "Customer Invoice Limit Reached 🚫",
+              message: `Is customer ke liye aapne is mahine ${current} invoices bana liye hain. ${plan.charAt(0).toUpperCase()+plan.slice(1)} plan ki limit ${limit}/month per customer hai. Aglay mahine phir bana sakte hain ya plan upgrade karein.`,
+            });
+            setSavingInv(false);
+            return;
+          }
+        }
+
         // add to customer subcollection first to get the id
         const ref = await addDoc(
           collection(db, "users", uid, "customers", customer.id, "invoices"),
@@ -2059,6 +2080,25 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
           message: `${form.name}'s information has been updated successfully.`,
         });
       } else {
+        // ── Monthly customer limit check ────────────────────────────────────
+        const plan        = userDoc?.plan || "starter";
+        const fsPlans     = await loadPlansFromFirestore();
+        const limits      = getLimits(plan, fsPlans);
+        if (limits.customersPerMonth !== null) {
+          const { allowed, current, limit } = await checkMonthlyLimit(
+            collection(db, "users", uid, "customers"),
+            limits.customersPerMonth
+          );
+          if (!allowed) {
+            setAlert({
+              show: true, type: "error",
+              title: "Monthly Limit Reached 🚫",
+              message: `Aapne is mahine ${current} customers add kar liye hain. ${plan.charAt(0).toUpperCase()+plan.slice(1)} plan ki limit ${limit}/month hai. Aglay mahine phir add kar sakte hain ya plan upgrade karein.`,
+            });
+            setSaving(false);
+            return;
+          }
+        }
         await addDoc(collection(db, "users", uid, "customers"), {
           name: form.name, shopName: form.shopName || "",
           phone: form.phone, email: form.email || "",
@@ -2207,10 +2247,14 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
           onClose={() => setAlert({ ...alert, show: false })}
         />
 
-        {/* ── Email Confirmation Dialog ── */}
+        {/* ── Email / WhatsApp Confirmation Dialog ── */}
         <EmailConfirmationDialog
           show={emailConfirm.show}
           recipientEmail={emailConfirm.invoice?.email}
+          recipientPhone={emailConfirm.invoice?.phone}
+          invoice={emailConfirm.invoice}
+          userDoc={userDoc}
+          isUpdate={emailConfirm.isUpdate}
           documentType={emailConfirm.documentType}
           onConfirm={async () => {
             if (emailConfirm.invoice) {
@@ -2240,14 +2284,22 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
             }
             setEmailConfirm({ show: false, invoice: null, isUpdate: false, documentType: "invoice" });
           }}
-          onCancel={() => {
+          onCancel={(reason) => {
             const docType = emailConfirm.isUpdate ? "Updated" : "Created";
             const docTypeText = emailConfirm.documentType === "return" ? "Return Recorded" : `Invoice ${docType}`;
-            setAlert({
-              show: true, type: "success",
-              title: `${docTypeText}! ${emailConfirm.documentType === "return" ? "↩️" : "🧾"}`,
-              message: `${emailConfirm.documentType === "return" ? "Return has been" : "Invoice has been"} ${docType.toLowerCase()} successfully. Email was not sent.`,
-            });
+            if (reason === "whatsapp") {
+              setAlert({
+                show: true, type: "success",
+                title: `${docTypeText}! 💬`,
+                message: `Saved successfully. WhatsApp khul gaya — message bhej dein.`,
+              });
+            } else {
+              setAlert({
+                show: true, type: "success",
+                title: `${docTypeText}! ${emailConfirm.documentType === "return" ? "↩️" : "🧾"}`,
+                message: `${emailConfirm.documentType === "return" ? "Return has been" : "Invoice has been"} ${docType.toLowerCase()} successfully. Koi notification nahi bheja.`,
+              });
+            }
             setEmailConfirm({ show: false, invoice: null, isUpdate: false, documentType: "invoice" });
           }}
         />
@@ -2480,10 +2532,14 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
           onConfirm={() => handleDelete(deleteConf)} onCancel={() => setDeleteConf(null)} />
       )}
 
-      {/* ── Email Confirmation Dialog ── */}
+      {/* ── Email / WhatsApp Confirmation Dialog ── */}
       <EmailConfirmationDialog
         show={emailConfirm.show}
         recipientEmail={emailConfirm.invoice?.email}
+        recipientPhone={emailConfirm.invoice?.phone}
+        invoice={emailConfirm.invoice}
+        userDoc={userDoc}
+        isUpdate={emailConfirm.isUpdate}
         documentType={emailConfirm.documentType}
         onConfirm={async () => {
           if (emailConfirm.invoice) {
@@ -2513,14 +2569,22 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
           }
           setEmailConfirm({ show: false, invoice: null, isUpdate: false, documentType: "invoice" });
         }}
-        onCancel={() => {
+        onCancel={(reason) => {
           const docType = emailConfirm.isUpdate ? "Updated" : "Created";
           const docTypeText = emailConfirm.documentType === "return" ? "Return Recorded" : `Invoice ${docType}`;
-          setAlert({
-            show: true, type: "success",
-            title: `${docTypeText}! ${emailConfirm.documentType === "return" ? "↩️" : "🧾"}`,
-            message: `${emailConfirm.documentType === "return" ? "Return has been" : "Invoice has been"} ${docType.toLowerCase()} successfully. Email was not sent.`,
-          });
+          if (reason === "whatsapp") {
+            setAlert({
+              show: true, type: "success",
+              title: `${docTypeText}! 💬`,
+              message: `Saved successfully. WhatsApp khul gaya — message bhej dein.`,
+            });
+          } else {
+            setAlert({
+              show: true, type: "success",
+              title: `${docTypeText}! ${emailConfirm.documentType === "return" ? "↩️" : "🧾"}`,
+              message: `${emailConfirm.documentType === "return" ? "Return has been" : "Invoice has been"} ${docType.toLowerCase()} successfully. Koi notification nahi bheja.`,
+            });
+          }
           setEmailConfirm({ show: false, invoice: null, isUpdate: false, documentType: "invoice" });
         }}
       />

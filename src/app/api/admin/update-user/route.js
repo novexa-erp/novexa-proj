@@ -25,7 +25,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const { uid, name, phone, address, activeFrom, activeTo, activeToTime, status, newPassword, maxDevices, emailFeatureEnabled } = body;
+    const { uid, name, phone, address, activeFrom, activeTo, activeToTime, status, newPassword, maxDevices, emailFeatureEnabled, plan, subscriptionType } = body;
     if (!uid) return NextResponse.json({ error: "Missing uid" }, { status: 400 });
 
     const { adminAuth, adminDb } = await getAdminModules();
@@ -40,6 +40,8 @@ export async function POST(request) {
     if (status)                  update.status       = status;
     if (maxDevices !== undefined) update.maxDevices  = Number(maxDevices) || 1;
     if (emailFeatureEnabled !== undefined) update.emailFeatureEnabled = Boolean(emailFeatureEnabled);
+    if (plan !== undefined) update.plan = plan;
+    if (subscriptionType !== undefined) update.subscriptionType = subscriptionType;
 
     // If unfreezing, clear the frozenAt / frozenReason
     if (status === "active") {

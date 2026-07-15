@@ -2,6 +2,12 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
+    // ── Helper: check if requester is the Super Admin ─────────────────────────
+    function isAdmin() {
+      return request.auth != null
+        && request.auth.uid == "LpfAmmxDFtZgLZnU2npnFknF8tu2";
+    }
+
     // ── Users collection ─────────────────────────────────────────────────────
     // Each user can read/write only their own subcollections.
     // Admin (server-side via Admin SDK) bypasses these rules entirely.
@@ -21,6 +27,17 @@ service cloud.firestore {
             allow read, write: if request.auth != null && request.auth.uid == uid;
           }
         }
+      }
+    }
+
+    // ── Admin Config (Package Manager, Plan Settings) ─────────────────────────
+    // Super Admin can read & write. All logged-in users can read (to load plan limits/tabs).
+    match /adminConfig/{docId} {
+      allow read:  if request.auth != null;
+      allow write: if isAdmin();
+      match /{subcol}/{subId} {
+        allow read:  if request.auth != null;
+        allow write: if isAdmin();
       }
     }
 

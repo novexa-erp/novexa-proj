@@ -4,6 +4,7 @@ import {
   collection, addDoc, doc, updateDoc, serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { getLimits, checkMonthlyLimit, loadPlansFromFirestore } from "@/lib/planLimits";
 import InvoiceModal, { formatRs } from "./InvoiceModal";
 import InvoicePDFModal, { InvoiceTemplateForEmail } from "./InvoicePDF";
 import SweetAlert from "./SweetAlert";
@@ -41,21 +42,42 @@ function docToForm(inv) {
 }
 
 export default function InvoicesView({ uid, invoices, loading, products = [], userDoc, payments = [], highlightId = null }) {
-  const [activeTab,   setActiveTab]   = useState("All");
-  const [showModal,   setShowModal]   = useState(false);
-  const [editTarget,  setEditTarget]  = useState(null); // {id, form}
-  const [saving,      setSaving]      = useState(false);
-  const [deleteConf,  setDeleteConf]  = useState(null); // invoice id
-  const [search,      setSearch]      = useState("");
-  const [pdfInvoice,  setPdfInvoice]  = useState(null); // invoice to preview PDF
-  const [flashId,     setFlashId]     = useState(null); // currently flashing row id
-  const rowRefs = useRef({});          // map: invoiceId → DOM element
+  const [activeTab,    setActiveTab]    = useState("All");
+  const [showModal,    setShowModal]    = useState(false);
+  const [editTarget,   setEditTarget]   = useState(null);
+  const [saving,       setSaving]       = useState(false);
+  const [deleteConf,   setDeleteConf]   = useState(null);
+  const [search,       setSearch]       = useState("");
+  const [pdfInvoice,   setPdfInvoice]   = useState(null);
+  const [flashId,      setFlashId]      = useState(null);
+  const [monthlyCount,  setMonthlyCount]  = useState(null); // invoices created this month
+  const [planLimitVal,  setPlanLimitVal]  = useState(null); // dynamic invoice limit from Firestore
+  const rowRefs = useRef({});
 
   // Sweet Alert State
   const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
   
   // Email Confirmation Dialog State
   const [emailConfirm, setEmailConfirm] = useState({ show: false, invoice: null, isUpdate: false });
+
+  // ── Load monthly invoice count ─────────────────────────────────────────────
+  useEffect(() => {
+    if (!uid) return;
+    const plan = userDoc?.plan || "starter";
+    // Load dynamic limit from Firestore
+    loadPlansFromFirestore().then(fsPlans => {
+      const limits = getLimits(plan, fsPlans);
+      setPlanLimitVal(limits.invoicesPerMonth ?? null);
+    });
+    import("@/lib/planLimits").then(({ countThisMonth }) => {
+      import("firebase/firestore").then(({ collection }) => {
+        import("@/lib/firebase").then(({ db: fdb }) => {
+          countThisMonth(collection(fdb, "users", uid, "invoices"))
+            .then(n => setMonthlyCount(n));
+        });
+      });
+    });
+  }, [uid, invoices, userDoc?.plan]);
 
   // ── Scroll to & flash highlighted invoice ──────────────────────────────────
   useEffect(() => {
@@ -134,6 +156,28 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
   // ★ Helper function to actually save invoice
   async function saveInvoiceToFirebase(formData) {
     if (!uid || saving) return;
+
+    // ── Monthly invoice limit check (create only, not edit) ──────────────────
+    if (!editTarget) {
+      const plan        = userDoc?.plan || "starter";
+      const fsPlans     = await loadPlansFromFirestore();
+      const limits      = getLimits(plan, fsPlans);
+      if (limits.invoicesPerMonth !== null) {
+        const { allowed, current, limit } = await checkMonthlyLimit(
+          collection(db, "users", uid, "invoices"),
+          limits.invoicesPerMonth
+        );
+        if (!allowed) {
+          setAlert({
+            show: true, type: "error",
+            title: "Monthly Limit Reached 🚫",
+            message: `Aapne is mahine ${current} invoices bana liye hain. ${plan.charAt(0).toUpperCase()+plan.slice(1)} plan ki limit ${limit}/month hai. Aglay mahine phir bana sakte hain ya plan upgrade karein.`,
+          });
+          return;
+        }
+      }
+    }
+
     setSaving(true);
     try {
       const payload = {
@@ -238,36 +282,30 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
             createdAt: serverTimestamp(),
           });
           
-          // Only show alert if no email will be sent
-          if (!formData.email?.trim()) {
+          // ── Show send dialog if email OR phone available ────────────────
+          const hasContact = !!(formData.email?.trim() || formData.phone?.trim());
+          if (!hasContact) {
             setAlert({
               show: true,
               type: "success",
               title: "Payment Collected! 💰",
               message: `Payment of ${formatRs(paymentAmount)} collected from ${formData.payerName || formData.customerName}. Invoice updated to ${newStatus}.`,
             });
-          }
-
-          // ── Auto-email updated invoice ──────────────────────────────────
-          if (formData.email?.trim()) {
+          } else {
             const updatedInvoice = { ...payload, id: editTarget.id, amountPaid: newTotalPaid, balance: newBalance, status: newStatus };
-            // Show email confirmation dialog
             setEmailConfirm({ show: true, invoice: updatedInvoice, isUpdate: true });
           }
         } else {
-          // Only show alert if no email will be sent
-          if (!formData.email?.trim()) {
+          // ── Show send dialog if email OR phone available ────────────────
+          const hasContactUpd = !!(formData.email?.trim() || formData.phone?.trim());
+          if (!hasContactUpd) {
             setAlert({
               show: true,
               type: "success",
               title: "Invoice Updated! ✓",
               message: `Invoice for ${formData.customerName} has been updated successfully.`,
             });
-          }
-
-          // ── Auto-email updated invoice ──────────────────────────────────
-          if (formData.email?.trim()) {
-            // Show email confirmation dialog
+          } else {
             setEmailConfirm({ show: true, invoice: { ...payload, id: editTarget.id }, isUpdate: true });
           }
         }
@@ -344,21 +382,18 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
           }
         }
         
-        // Only show alert if no email will be sent
-        if (!formData.email?.trim()) {
+        // ── Show send dialog if customer has email OR phone (for WhatsApp) ──────
+        const hasContactForNotify = !!(formData.email?.trim() || formData.phone?.trim());
+        if (!hasContactForNotify) {
           setAlert({
             show: true,
             type: "success",
             title: "Invoice Created! 🧾",
             message: `New invoice for ${formData.customerName} has been created successfully. Stock updated.`,
           });
-        }
-
-        // ── Auto-send email if customer has an email address ──────────────────
-        if (formData.email && formData.email.trim()) {
-          const invoiceForEmail = { ...payload, id: newDocRef.id };
-          // Show email confirmation dialog
-          setEmailConfirm({ show: true, invoice: invoiceForEmail, isUpdate: false });
+        } else {
+          const invoiceForSend = { ...payload, id: newDocRef.id };
+          setEmailConfirm({ show: true, invoice: invoiceForSend, isUpdate: false });
         }
       }
       setShowModal(false);
@@ -582,6 +617,43 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
           </button>
         </div>
       </div>
+
+      {/* Monthly Usage Banner */}
+      {(() => {
+        const limit  = planLimitVal;
+        if (limit === null || monthlyCount === null) return null;
+        const used   = monthlyCount;
+        const pct    = Math.min(100, Math.round((used / limit) * 100));
+        const left   = limit - used;
+        const isWarn = pct >= 80;
+        const isFull = pct >= 100;
+        return (
+          <div className="rounded-xl px-4 py-3 flex items-center gap-4"
+            style={{
+              background: isFull ? "rgba(239,68,68,0.08)" : isWarn ? "rgba(251,191,36,0.08)" : "rgba(37,99,235,0.06)",
+              border: `1px solid ${isFull ? "rgba(239,68,68,0.3)" : isWarn ? "rgba(251,191,36,0.3)" : "rgba(37,99,235,0.2)"}`,
+            }}>
+            <span className="text-xl flex-shrink-0">{isFull ? "🚫" : isWarn ? "⚠️" : "📊"}</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold" style={{ color: isFull ? "#f87171" : isWarn ? "#fbbf24" : "#93c5fd" }}>
+                  {isFull ? "Monthly limit full!" : `Is mahine ${used} / ${limit} invoices banayi hain`}
+                </p>
+                <span className="text-xs font-bold" style={{ color: isFull ? "#f87171" : isWarn ? "#fbbf24" : "#60a5fa" }}>
+                  {isFull ? "0 baqi" : `${left} baqi`}
+                </span>
+              </div>
+              <div className="w-full h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
+                <div className="h-full rounded-full transition-all duration-500"
+                  style={{
+                    width: `${pct}%`,
+                    background: isFull ? "#ef4444" : isWarn ? "linear-gradient(90deg,#fbbf24,#f97316)" : "linear-gradient(90deg,#2563eb,#60a5fa)",
+                  }} />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Professional Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
@@ -939,13 +1011,17 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
         );
       })()}
 
-      {/* ── Email Confirmation Dialog ── */}
+      {/* ── Email / WhatsApp Confirmation Dialog ── */}
       <EmailConfirmationDialog
         show={emailConfirm.show}
         recipientEmail={emailConfirm.invoice?.email}
+        recipientPhone={emailConfirm.invoice?.phone}
+        invoice={emailConfirm.invoice}
+        userDoc={userDoc}
+        isUpdate={emailConfirm.isUpdate}
         documentType="invoice"
         onConfirm={async () => {
-          // Send email first — dialog stays open (shows spinner) until done
+          // Send email — dialog stays open (shows spinner) until done
           if (emailConfirm.invoice) {
             try {
               // Fetch payments so email shows full payment history
@@ -978,18 +1054,25 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
               });
             }
           }
-          // Close dialog only after everything is done
           setEmailConfirm({ show: false, invoice: null, isUpdate: false });
         }}
-        onCancel={() => {
-          // User clicked "No" - show success without email
+        onCancel={(reason) => {
           const docType = emailConfirm.isUpdate ? "Updated" : "Created";
-          setAlert({
-            show: true,
-            type: "success",
-            title: `Invoice ${docType}! 🧾`,
-            message: `Invoice has been ${docType.toLowerCase()} successfully. Email was not sent.`,
-          });
+          if (reason === "whatsapp") {
+            // WhatsApp opened — show success with WhatsApp note
+            setAlert({
+              show: true, type: "success",
+              title: `Invoice ${docType}! 🧾💬`,
+              message: `Invoice ${docType.toLowerCase()} successfully. WhatsApp khul gaya — message bhej dein.`,
+            });
+          } else {
+            // Skipped — show plain success
+            setAlert({
+              show: true, type: "success",
+              title: `Invoice ${docType}! 🧾`,
+              message: `Invoice ${docType.toLowerCase()} successfully. Koi notification nahi bheja.`,
+            });
+          }
           setEmailConfirm({ show: false, invoice: null, isUpdate: false });
         }}
       />
