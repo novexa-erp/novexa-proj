@@ -25,7 +25,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const { uid, name, phone, address, activeFrom, activeTo, activeToTime, status, newPassword, maxDevices, emailFeatureEnabled, plan, subscriptionType } = body;
+    const { uid, name, phone, address, activeFrom, activeTo, activeToTime, status, newPassword, maxDevices, emailFeatureEnabled, plan, subscriptionType, billingPeriod, paymentMethod, extraLimits } = body;
     if (!uid) return NextResponse.json({ error: "Missing uid" }, { status: 400 });
 
     const { adminAuth, adminDb } = await getAdminModules();
@@ -42,6 +42,30 @@ export async function POST(request) {
     if (emailFeatureEnabled !== undefined) update.emailFeatureEnabled = Boolean(emailFeatureEnabled);
     if (plan !== undefined) update.plan = plan;
     if (subscriptionType !== undefined) update.subscriptionType = subscriptionType;
+    if (billingPeriod !== undefined) update.billingPeriod = billingPeriod;
+    if (paymentMethod !== undefined) update.paymentMethod = paymentMethod;
+
+    // Extra limits (admin-granted monthly add-ons per user)
+    if (extraLimits !== undefined) {
+      if (extraLimits === null) {
+        update.extraLimits = null;
+      } else {
+        // Only store numeric or null values for each known key
+        const allowed = ["invoicesPerMonth","invoicesPerCustomerPerMonth","customersPerMonth","suppliersPerMonth","ordersPerSupplierPerMonth"];
+        const cleaned = {};
+        allowed.forEach(k => {
+          if (extraLimits[k] !== undefined) {
+            cleaned[k] = extraLimits[k] === null || extraLimits[k] === "" ? 0 : Number(extraLimits[k]) || 0;
+          }
+        });
+        update.extraLimits = cleaned;
+      }
+    }
+
+    // Renewal tracking fields
+    const { lastRenewedAt, lastRenewedBy } = body;
+    if (lastRenewedAt) update.lastRenewedAt = lastRenewedAt;
+    if (lastRenewedBy) update.lastRenewedBy = lastRenewedBy;
 
     // If unfreezing, clear the frozenAt / frozenReason
     if (status === "active") {

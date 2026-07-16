@@ -25,7 +25,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const { name, email, password, phone, address, activeFrom, activeTo, activeToTime, maxDevices, plan, subscriptionType } = body;
+    const { name, email, password, phone, address, activeFrom, activeTo, activeToTime, maxDevices, plan, subscriptionType, billingPeriod, paymentMethod } = body;
 
     if (!name || !email || !password || !activeFrom || !activeTo)
       return NextResponse.json({ error: "Missing required fields: name, email, password, activeFrom, activeTo" }, { status: 400 });
@@ -52,6 +52,8 @@ export async function POST(request) {
       maxDevices:   Number(maxDevices) || 1,
       plan:             plan || "starter",
       subscriptionType: subscriptionType || "active",
+      billingPeriod:    billingPeriod || "monthly",
+      paymentMethod:    paymentMethod || "cash",
       status:           "active",
       createdAt:    new Date().toISOString(),
       createdBy:    admin.uid,

@@ -2,41 +2,149 @@ rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
 
-    // ── Helper: check if requester is the Super Admin ─────────────────────────
+    // ── Helpers ───────────────────────────────────────────────────────────────
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function isOwner(userId) {
+      return request.auth.uid == userId;
+    }
+    function isValidEmail(email) {
+      return email.matches('.*@.*[.].*');
+    }
     function isAdmin() {
       return request.auth != null
         && request.auth.uid == "LpfAmmxDFtZgLZnU2npnFknF8tu2";
     }
 
-    // ── Users collection ─────────────────────────────────────────────────────
-    // Each user can read/write only their own subcollections.
-    // Admin (server-side via Admin SDK) bypasses these rules entirely.
-    match /users/{uid} {
-      // Users can read their own profile doc (for settings, name etc.)
-      allow read: if request.auth != null && request.auth.uid == uid;
-      // Only server (Admin SDK) can write user profile docs — deny client writes
-      allow write: if false;
+    // ── Users ─────────────────────────────────────────────────────────────────
+    match /users/{userId} {
+      allow read: if isSignedIn() && isOwner(userId);
 
-      // User's own subcollections — full read/write for owner only
-      match /{subcollection}/{docId} {
-        allow read, write: if request.auth != null && request.auth.uid == uid;
-        // Nested subcollections (e.g. suppliers/{id}/orders)
-        match /{nested}/{nestedId} {
-          allow read, write: if request.auth != null && request.auth.uid == uid;
-          match /{deep}/{deepId} {
-            allow read, write: if request.auth != null && request.auth.uid == uid;
-          }
+      allow create: if isSignedIn() && isOwner(userId)
+        && request.resource.data.email is string
+        && isValidEmail(request.resource.data.email)
+        && request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 100;
+
+      // Users can update their own doc EXCEPT protected admin-only fields
+      allow update: if isSignedIn() && isOwner(userId)
+        && !("status"       in request.resource.data.diff(resource.data).affectedKeys())
+        && !("activeFrom"   in request.resource.data.diff(resource.data).affectedKeys())
+        && !("activeTo"     in request.resource.data.diff(resource.data).affectedKeys())
+        && !("frozenAt"     in request.resource.data.diff(resource.data).affectedKeys())
+        && !("createdBy"    in request.resource.data.diff(resource.data).affectedKeys())
+        && !("extraLimits"  in request.resource.data.diff(resource.data).affectedKeys())
+        && !("plan"         in request.resource.data.diff(resource.data).affectedKeys())
+        && !("maxDevices"   in request.resource.data.diff(resource.data).affectedKeys());
+
+      allow delete: if false;
+
+      // ── Subcollections ──────────────────────────────────────────────────────
+      match /invoices/{invoiceId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+      match /customers/{customerId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+        match /invoices/{invoiceId} {
+          allow read, write: if isSignedIn() && isOwner(userId);
         }
+      }
+      match /products/{productId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+      match /payments/{paymentId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+      match /purchases/{purchaseId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+      match /suppliers/{supplierId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+        match /purchases/{purchaseId} {
+          allow read, write: if isSignedIn() && isOwner(userId);
+        }
+        match /orders/{orderId} {
+          allow read, write: if isSignedIn() && isOwner(userId);
+        }
+        match /payments/{paymentId} {
+          allow read, write: if isSignedIn() && isOwner(userId);
+        }
+        match /receipts/{receiptId} {
+          allow read, write: if isSignedIn() && isOwner(userId);
+        }
+        match /returns/{returnId} {
+          allow read, write: if isSignedIn() && isOwner(userId);
+        }
+      }
+      match /supplierPayments/{paymentId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+      match /supplierReceipts/{receiptId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+      match /supplierReturns/{returnId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+      match /expenses/{expenseId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+      match /quotations/{quotationId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+      match /hr/{hrId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+      match /reports/{reportId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+      match /settings/{settingId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+      match /activityLogs/{logId} {
+        allow read, write: if isSignedIn() && isOwner(userId);
+      }
+      match /tickets/{ticketId} {
+        allow read: if isSignedIn() && isOwner(userId);
+        allow create: if isSignedIn() && isOwner(userId)
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.subject is string
+          && request.resource.data.subject.size() > 0
+          && request.resource.data.message is string
+          && request.resource.data.message.size() > 0;
+        allow update: if false;
+        allow delete: if false;
       }
     }
 
-    // ── Admin Config (Package Manager, Plan Settings) ─────────────────────────
-    // Super Admin can read & write. All logged-in users can read (to load plan limits/tabs).
+    // ── Businesses ────────────────────────────────────────────────────────────
+    match /businesses/{businessId} {
+      allow read:   if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow create: if isSignedIn()
+        && request.resource.data.ownerId == request.auth.uid
+        && request.resource.data.businessName is string
+        && request.resource.data.businessName.size() > 0;
+      allow update: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+    }
+
+    // ── Support Tickets (admin-facing) ────────────────────────────────────────
+    match /supportTickets/{ticketId} {
+      allow read:   if isSignedIn() && resource.data.uid == request.auth.uid;
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
+    }
+
+    // ── Admin Config (Package Manager / Plan Settings) ────────────────────────
+    // Logged-in users: read only (to load plan limits & tabs in dashboard)
+    // Super Admin only: write (to save plan changes from Package Manager)
     match /adminConfig/{docId} {
-      allow read:  if request.auth != null;
+      allow read:  if isSignedIn();
       allow write: if isAdmin();
       match /{subcol}/{subId} {
-        allow read:  if request.auth != null;
+        allow read:  if isSignedIn();
         allow write: if isAdmin();
       }
     }

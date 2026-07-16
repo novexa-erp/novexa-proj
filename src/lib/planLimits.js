@@ -118,12 +118,57 @@ export function currentMonthKey() {
 }
 
 /**
- * Counts Firestore documents created in the current calendar month.
+ * Returns the start of the current billing cycle based on the user's activeFrom date.
+ * e.g. activeFrom = "2026-06-14", today = "2026-07-20"
+ *   → cycle start = "2026-07-14", cycle end = "2026-08-14"
+ * e.g. activeFrom = "2026-06-14", today = "2026-07-10"
+ *   → cycle start = "2026-06-14", cycle end = "2026-07-14"
+ *
+ * Falls back to calendar month if activeFrom is not provided.
  */
-export async function countThisMonth(collRef) {
-  const now   = new Date();
-  const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
-  const end   = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
+export function getCurrentCycleWindow(activeFromStr) {
+  const now = new Date();
+
+  if (!activeFromStr) {
+    // Fallback: calendar month
+    const start = new Date(now.getFullYear(), now.getMonth(), 1, 0, 0, 0, 0);
+    const end   = new Date(now.getFullYear(), now.getMonth() + 1, 1, 0, 0, 0, 0);
+    return { start, end };
+  }
+
+  const from    = new Date(activeFromStr + "T00:00:00");
+  const dayOfMonth = from.getDate(); // e.g. 14
+
+  // Find the most recent cycle start (on or before today)
+  let cycleStart = new Date(now.getFullYear(), now.getMonth(), dayOfMonth, 0, 0, 0, 0);
+
+  // If cycleStart is in the future (e.g. today is the 10th, cycle day is the 14th)
+  // → go back one month
+  if (cycleStart > now) {
+    cycleStart = new Date(now.getFullYear(), now.getMonth() - 1, dayOfMonth, 0, 0, 0, 0);
+  }
+
+  // Cycle end = exactly 1 month after cycle start
+  const cycleEnd = new Date(
+    cycleStart.getFullYear(),
+    cycleStart.getMonth() + 1,
+    dayOfMonth,
+    0, 0, 0, 0
+  );
+
+  // Never go before the actual activeFrom date
+  const actualStart = cycleStart < from ? from : cycleStart;
+
+  return { start: actualStart, end: cycleEnd };
+}
+
+/**
+ * Counts Firestore documents created in the current billing cycle.
+ * Pass activeFrom (ISO date string "YYYY-MM-DD") from userDoc for subscription-cycle counting.
+ * Falls back to calendar month if activeFrom is not provided.
+ */
+export async function countThisMonth(collRef, activeFrom) {
+  const { start, end } = getCurrentCycleWindow(activeFrom);
 
   const q = query(
     collRef,
@@ -137,9 +182,24 @@ export async function countThisMonth(collRef) {
 
 /**
  * Checks if creating one more record would exceed the monthly limit.
+ * Pass activeFrom from userDoc for subscription-cycle-based counting.
+ * Pass extraAmount to add on top of the plan limit (admin-granted extras).
  */
-export async function checkMonthlyLimit(collRef, limitValue) {
+export async function checkMonthlyLimit(collRef, limitValue, activeFrom, extraAmount = 0) {
+  // If base limit is null (unlimited), still unlimited even without extras
   if (limitValue === null || limitValue === undefined) return { allowed: true, current: 0, limit: null };
-  const current = await countThisMonth(collRef);
-  return { allowed: current < limitValue, current, limit: limitValue };
+  const effectiveLimit = limitValue + (Number(extraAmount) || 0);
+  const current = await countThisMonth(collRef, activeFrom);
+  return { allowed: current < effectiveLimit, current, limit: effectiveLimit, baseLimit: limitValue, extra: Number(extraAmount) || 0 };
+}
+
+/**
+ * Returns the effective limit for a given limit key,
+ * combining the plan's base limit with admin-granted extras for this month.
+ * extraLimits = userDoc.extraLimits object, e.g. { invoicesPerMonth: 50, customersPerMonth: 20 }
+ */
+export function getEffectiveLimit(baseLimitValue, limitKey, extraLimits) {
+  if (baseLimitValue === null || baseLimitValue === undefined) return null; // unlimited stays unlimited
+  const extra = extraLimits?.[limitKey];
+  return baseLimitValue + (Number(extra) || 0);
 }

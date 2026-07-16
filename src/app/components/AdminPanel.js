@@ -145,7 +145,7 @@ function ConfirmDialog({ title, message, confirmLabel, confirmColor, onConfirm, 
 }
 
 /* ── User Form Modal ──────────────────────────────────────────────────────── */
-const EMPTY_FORM = { name: "", email: "", password: "", phone: "", address: "", activeFrom: "", activeTo: "", activeToTime: "", maxDevices: "1", plan: "starter", subscriptionType: "active" };
+const EMPTY_FORM = { name: "", email: "", password: "", phone: "", address: "", activeFrom: "", activeTo: "", activeToTime: "", maxDevices: "1", plan: "starter", subscriptionType: "active", billingPeriod: "monthly", paymentMethod: "cash" };
 
 // Plan default maxDevices — jab plan select ho, yeh automatically set hota hai
 const PLAN_DEFAULT_DEVICES = {
@@ -162,7 +162,43 @@ const PLAN_OPTIONS = [
   { id: "enterprise",   label: "🏢 Enterprise",    desc: "50 devices · Custom setup · Full access",         color: "#A855F7" },
 ];
 
-function UserFormModal({ initial, onClose, onSave, saving }) {
+// Pure helper — compute end date given a start date string and billing period
+// Used for NEW subscriptions (activeFrom → activeTo), applies -1 day so period is inclusive
+function calcEndDateStatic(fromDateStr, period) {
+  if (!fromDateStr) return "";
+  const d = new Date(fromDateStr + "T00:00:00");
+  if (period === "yearly") {
+    d.setFullYear(d.getFullYear() + 1);
+    d.setDate(d.getDate() - 1);
+  } else {
+    d.setMonth(d.getMonth() + 1);
+    d.setDate(d.getDate() - 1);
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+// Renewal helper — extend an existing end date by 1 month/year (no -1 day)
+// e.g. Aug 14 + 1 month = Sep 14
+function calcRenewalEndDate(currentEndStr, period) {
+  if (!currentEndStr) return "";
+  const d = new Date(currentEndStr + "T00:00:00");
+  if (period === "yearly") {
+    d.setFullYear(d.getFullYear() + 1);
+  } else {
+    d.setMonth(d.getMonth() + 1);
+  }
+  return d.toISOString().slice(0, 10);
+}
+
+// Get display start of next period (currentEnd + 1 day) — for UI display only
+function calcRenewalDisplayStart(currentEndStr) {
+  if (!currentEndStr) return "";
+  const d = new Date(currentEndStr + "T00:00:00");
+  d.setDate(d.getDate() + 1);
+  return d.toISOString().slice(0, 10);
+}
+
+function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, onRenewSuccess }) {
   const [form, setForm] = useState(initial ? {
     name: initial.name || "", email: initial.email || "",
     password: "", phone: initial.phone || "",
@@ -172,9 +208,43 @@ function UserFormModal({ initial, onClose, onSave, saving }) {
     maxDevices: String(initial.maxDevices || "1"),
     plan: initial.plan || "starter",
     subscriptionType: initial.subscriptionType || "active",
+    billingPeriod: initial.billingPeriod || "monthly",
+    paymentMethod: initial.paymentMethod || "cash",
   } : { ...EMPTY_FORM });
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
   const isEdit = !!initial;
+
+  // ── Extra limits state (edit mode only) ──────────────────────────────────
+  const [extraLimits, setExtraLimits] = useState(
+    initial?.extraLimits
+      ? {
+          invoicesPerMonth:            String(initial.extraLimits.invoicesPerMonth            || 0),
+          invoicesPerCustomerPerMonth: String(initial.extraLimits.invoicesPerCustomerPerMonth || 0),
+          customersPerMonth:           String(initial.extraLimits.customersPerMonth           || 0),
+          suppliersPerMonth:           String(initial.extraLimits.suppliersPerMonth           || 0),
+          ordersPerSupplierPerMonth:   String(initial.extraLimits.ordersPerSupplierPerMonth   || 0),
+        }
+      : { invoicesPerMonth: "0", invoicesPerCustomerPerMonth: "0", customersPerMonth: "0", suppliersPerMonth: "0", ordersPerSupplierPerMonth: "0" }
+  );
+  const [extraSaving, setExtraSaving] = useState(false);
+  const [extraDone,   setExtraDone]   = useState(false);
+
+  // ── Renewal state (edit mode only) ───────────────────────────────────────
+  const [renewPayMethod,  setRenewPayMethod]  = useState(initial?.paymentMethod || "cash");
+  const [renewSaving,     setRenewSaving]     = useState(false);
+  const [renewDone,       setRenewDone]       = useState(false);
+  const [renewConfirm,    setRenewConfirm]    = useState(false);   // "Are you sure?" popup
+  const [renewSuccess,    setRenewSuccess]    = useState(null);    // success popup data
+
+  // ── For NEW users: auto-set today as activeFrom + compute activeTo ───────
+  useEffect(() => {
+    if (!isEdit && !form.activeFrom) {
+      const today = new Date().toISOString().slice(0, 10);
+      const end   = calcEndDateStatic(today, form.billingPeriod || "monthly");
+      setForm(p => ({ ...p, activeFrom: today, activeTo: end }));
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // ── Load plan options dynamically from Firestore ─────────────────────────
   const [dynamicPlans, setDynamicPlans] = useState(null);
@@ -215,6 +285,11 @@ function UserFormModal({ initial, onClose, onSave, saving }) {
     };
   });
 
+  // ── Helper: calculate end date from start date + billing period ─────────
+  function calcEndDate(fromDateStr, period) {
+    return calcEndDateStatic(fromDateStr, period);
+  }
+
   // ── When subscriptionType changes to trial, auto-set dates ──────────────
   function handleSubscriptionTypeChange(type) {
     if (type === "trial") {
@@ -228,7 +303,25 @@ function UserFormModal({ initial, onClose, onSave, saving }) {
     }
   }
 
+  // ── When billingPeriod changes, auto-update activeTo ─────────────────────
+  function handleBillingPeriodChange(period) {
+    setForm(p => {
+      const newActiveTo = p.activeFrom ? calcEndDate(p.activeFrom, period) : p.activeTo;
+      return { ...p, billingPeriod: period, activeTo: newActiveTo };
+    });
+  }
+
+  // ── When activeFrom changes, auto-update activeTo ────────────────────────
+  function handleActiveFromChange(newFrom) {
+    setForm(p => {
+      if (p.subscriptionType === "trial") return { ...p, activeFrom: newFrom };
+      const newActiveTo = newFrom ? calcEndDate(newFrom, p.billingPeriod || "monthly") : p.activeTo;
+      return { ...p, activeFrom: newFrom, activeTo: newActiveTo };
+    });
+  }
+
   return (
+    <>
     <div className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto"
       style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)" }}
       onClick={e => e.target === e.currentTarget && onClose()}>
@@ -306,9 +399,13 @@ function UserFormModal({ initial, onClose, onSave, saving }) {
 
           {/* ── Subscription Period ── */}
           <div className="rounded-xl p-4" style={{ background: "rgba(37,99,235,0.05)", border: "1px solid rgba(37,99,235,0.15)" }}>
-            <p className="text-blue-400 text-xs font-bold uppercase tracking-widest mb-3">📅 Subscription Period</p>
+            <p className="text-blue-400 text-xs font-bold uppercase tracking-widest mb-1">📅 Subscription Period</p>
+            <p className="text-gray-600 text-[10px] mb-3">
+              Start date change karein — end date automatically {form.billingPeriod === "yearly" ? "1 saal" : "1 mahina"} baad set ho jaayegi. Aap manually bhi change kar sakte hain.
+            </p>
             <div className="grid grid-cols-2 gap-4 mb-3">
-              <SInput label="Active From *" type="date" value={form.activeFrom} onChange={set("activeFrom")} required />
+              <SInput label="Active From *" type="date" value={form.activeFrom}
+                onChange={e => handleActiveFromChange(e.target.value)} required />
               <SInput label="Active Until *" type="date" value={form.activeTo} onChange={set("activeTo")} required />
             </div>
             <div>
@@ -421,6 +518,403 @@ function UserFormModal({ initial, onClose, onSave, saving }) {
             <p className="text-gray-600 text-[10px] mt-2">Aap koi bhi number set kar sakte hain (1–100)</p>
           </div>
 
+          {/* ── Billing Period ── */}
+          <div className="rounded-xl p-4" style={{ background: "rgba(16,185,129,0.04)", border: "1px solid rgba(16,185,129,0.18)" }}>
+            <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3">🗓️ Billing Period</p>
+            <div className="grid grid-cols-2 gap-3">
+              {[
+                { id: "monthly",  label: "📅 Monthly",  desc: "Har mahina renewal" },
+                { id: "yearly",   label: "📆 Yearly",   desc: "Saal bhar ki plan" },
+              ].map(opt => (
+                <button key={opt.id} type="button"
+                  onClick={() => handleBillingPeriodChange(opt.id)}
+                  className="flex flex-col items-start px-4 py-3 rounded-xl text-left transition-all"
+                  style={{
+                    background: form.billingPeriod === opt.id ? "rgba(16,185,129,0.18)" : "rgba(255,255,255,0.03)",
+                    border: `1.5px solid ${form.billingPeriod === opt.id ? "#10B981" : "rgba(255,255,255,0.08)"}`,
+                    boxShadow: form.billingPeriod === opt.id ? "0 0 14px rgba(16,185,129,0.2)" : "none",
+                  }}>
+                  <span className="text-sm font-bold mb-0.5" style={{ color: form.billingPeriod === opt.id ? "#34d399" : "#9ca3af" }}>
+                    {opt.label}
+                  </span>
+                  <span className="text-[10px]" style={{ color: form.billingPeriod === opt.id ? "#d1d5db" : "#4b5563" }}>
+                    {opt.desc}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Payment Method ── */}
+          <div className="rounded-xl p-4" style={{ background: "rgba(245,158,11,0.04)", border: "1px solid rgba(245,158,11,0.18)" }}>
+            <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-3">💳 Payment Method</p>
+            <div className="grid grid-cols-3 gap-3">
+              {[
+                { id: "online",  label: "🌐 Online",  desc: "Card / Bank transfer" },
+                { id: "cash",    label: "💵 Cash",     desc: "Naqad ada ki" },
+                { id: "cheque",  label: "🧾 Cheque",  desc: "Cheque se payment" },
+              ].map(opt => (
+                <button key={opt.id} type="button"
+                  onClick={() => setForm(p => ({ ...p, paymentMethod: opt.id }))}
+                  className="flex flex-col items-start px-3 py-2.5 rounded-xl text-left transition-all"
+                  style={{
+                    background: form.paymentMethod === opt.id ? "rgba(245,158,11,0.18)" : "rgba(255,255,255,0.03)",
+                    border: `1.5px solid ${form.paymentMethod === opt.id ? "#F59E0B" : "rgba(255,255,255,0.08)"}`,
+                    boxShadow: form.paymentMethod === opt.id ? "0 0 12px rgba(245,158,11,0.2)" : "none",
+                  }}>
+                  <span className="text-xs font-bold mb-0.5" style={{ color: form.paymentMethod === opt.id ? "#fbbf24" : "#9ca3af" }}>
+                    {opt.label}
+                  </span>
+                  <span className="text-[10px] leading-tight" style={{ color: form.paymentMethod === opt.id ? "#d1d5db" : "#4b5563" }}>
+                    {opt.desc}
+                  </span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* ── Renew Subscription (edit mode only) ── */}
+          {isEdit && (() => {
+            // Renewal logic:
+            // - activeFrom stays the SAME (original start date, never changes)
+            // - newEnd   = current activeTo + 1 month/year
+            const currentEnd  = form.activeTo;
+            const currentFrom = form.activeFrom;   // stays unchanged
+            const period      = form.billingPeriod || "monthly";
+
+            // New end = extend current end by 1 month or 1 year
+            const newEnd = currentEnd ? calcRenewalEndDate(currentEnd, period) : "";
+            // Display start of next period (currentEnd + 1 day) — shown in UI only, not saved
+            const displayNewStart = calcRenewalDisplayStart(currentEnd);
+
+            // Days remaining on current plan
+            const daysRemaining = currentEnd
+              ? Math.ceil((new Date(currentEnd + "T23:59:59") - new Date()) / 86400000)
+              : null;
+
+            async function handleRenew() {
+              if (!newEnd) return;
+              setRenewConfirm(false);
+              setRenewSaving(true);
+              try {
+                const token   = await getToken();
+                const headers = { "Content-Type": "application/json", authorization: `Bearer ${token}` };
+                const renewedAt = new Date().toISOString();
+                const body    = {
+                  uid:           initial.uid,
+                  // activeFrom intentionally NOT sent — keep original
+                  activeTo:      newEnd,
+                  paymentMethod: renewPayMethod,
+                  lastRenewedAt: renewedAt,
+                  lastRenewedBy: "admin",
+                };
+                const res  = await fetch("/api/admin/update-user", { method: "POST", headers, body: JSON.stringify(body) });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+                // Only update activeTo in form, keep activeFrom as-is
+                setForm(p => ({ ...p, activeTo: newEnd, paymentMethod: renewPayMethod }));
+                setRenewDone(true);
+
+                // ── Send renewal confirmation email ──────────────────────
+                if (initial.email) {
+                  try {
+                    const emailRes  = await fetch("/api/admin/send-renewal-email", {
+                      method:  "POST",
+                      headers,
+                      body: JSON.stringify({
+                        uid:           initial.uid,
+                        userName:      initial.name || initial.email,
+                        userEmail:     initial.email,
+                        plan:          form.plan,
+                        billingPeriod: form.billingPeriod,
+                        paymentMethod: renewPayMethod,
+                        activeFrom:    currentFrom,
+                        activeTo:      newEnd,
+                        periodStart:   displayNewStart,
+                        renewedAt,
+                      }),
+                    });
+                    const emailData = await emailRes.json();
+                    if (!emailRes.ok) {
+                      onToast?.(`Renewed but email failed: ${emailData.error || emailRes.status}`, "error");
+                    }
+                  } catch (emailErr) {
+                    onToast?.(`Renewed but email error: ${emailErr.message}`, "error");
+                  }
+                }
+
+                setRenewSuccess({ newStart: displayNewStart, newEnd, payMethod: renewPayMethod });
+                onRenewSuccess?.();
+              } catch (err) {
+                onToast?.(err.message || "Renewal failed", "error");
+              } finally {
+                setRenewSaving(false);
+              }
+            }
+
+            return (
+              <div className="rounded-xl overflow-hidden"
+                style={{ border: `1.5px solid ${renewDone ? "rgba(52,211,153,0.5)" : "rgba(52,211,153,0.35)"}`, background: "rgba(52,211,153,0.04)" }}>
+                {/* Header */}
+                <div className="flex items-center gap-2 px-4 py-3"
+                  style={{ borderBottom: "1px solid rgba(52,211,153,0.15)", background: "rgba(52,211,153,0.08)" }}>
+                  <span className="text-base">🔄</span>
+                  <div className="flex-1">
+                    <p className="text-emerald-400 text-xs font-black uppercase tracking-widest">Subscription Renew Karein</p>
+                    <p className="text-gray-500 text-[10px] mt-0.5">
+                      Current end date ke baad se automatically next period shuru hoga
+                    </p>
+                  </div>
+                  {daysRemaining !== null && (
+                    <div className="flex-shrink-0 px-2 py-1 rounded-lg text-center"
+                      style={{
+                        background: daysRemaining <= 0 ? "rgba(248,113,113,0.15)" : daysRemaining <= 7 ? "rgba(251,191,36,0.15)" : "rgba(52,211,153,0.12)",
+                        border: `1px solid ${daysRemaining <= 0 ? "rgba(248,113,113,0.3)" : daysRemaining <= 7 ? "rgba(251,191,36,0.3)" : "rgba(52,211,153,0.25)"}`,
+                      }}>
+                      <p className="text-[9px] uppercase tracking-widest font-bold"
+                        style={{ color: daysRemaining <= 0 ? "#f87171" : daysRemaining <= 7 ? "#fbbf24" : "#34d399" }}>
+                        {daysRemaining <= 0 ? "Expired" : "Baaki"}
+                      </p>
+                      <p className="text-sm font-black leading-tight"
+                        style={{ color: daysRemaining <= 0 ? "#f87171" : daysRemaining <= 7 ? "#fbbf24" : "#34d399" }}>
+                        {Math.abs(daysRemaining)}d
+                      </p>
+                    </div>
+                  )}
+                </div>
+
+                <div className="p-4 flex flex-col gap-3">
+                  {/* New period preview */}
+                  {newEnd && (
+                    <div className="flex flex-col gap-1.5 px-3 py-2.5 rounded-xl"
+                      style={{ background: renewDone ? "rgba(52,211,153,0.1)" : "rgba(37,99,235,0.08)", border: `1px solid ${renewDone ? "rgba(52,211,153,0.3)" : "rgba(37,99,235,0.2)"}` }}>
+                      <span className="text-sm">{renewDone ? "✅" : "📅"}</span>
+                      <div className="flex-1">
+                        <p className="text-gray-500 text-[10px] uppercase tracking-widest font-bold mb-1">
+                          {renewDone ? "Renewed — Updated End Date" : "New End Date (Preview)"}
+                        </p>
+                        {/* Start of new period — display only */}
+                        <div className="flex items-center gap-2 text-xs">
+                          <span className="text-gray-500">New period starts:</span>
+                          <span className="font-semibold" style={{ color: "#93c5fd" }}>
+                            {displayNewStart ? new Date(displayNewStart + "T00:00:00").toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
+                          </span>
+                        </div>
+                        {/* End date extended */}
+                        <div className="flex items-center gap-2 text-xs mt-1">
+                          <span className="text-gray-500">End:</span>
+                          <span className="text-gray-500 line-through text-[11px]">
+                            {new Date(currentEnd + "T00:00:00").toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}
+                          </span>
+                          <span className="text-xs">→</span>
+                          <span className="font-bold" style={{ color: renewDone ? "#34d399" : "#93c5fd" }}>
+                            {new Date(newEnd + "T00:00:00").toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}
+                          </span>
+                        </div>
+                        <p className="text-gray-600 text-[10px] mt-1.5">
+                          +{period === "yearly" ? "1 year" : "1 month"} from current end date
+                        </p>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Payment method for renewal */}
+                  {!renewDone && (
+                    <div>
+                      <p className="text-gray-500 text-[10px] uppercase tracking-widest font-bold mb-2">💳 Renewal Payment Method</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { id: "online", label: "🌐 Online", desc: "Card / Bank" },
+                          { id: "cash",   label: "💵 Cash",   desc: "Naqad" },
+                          { id: "cheque", label: "🧾 Cheque", desc: "Cheque" },
+                        ].map(opt => (
+                          <button key={opt.id} type="button"
+                            onClick={() => setRenewPayMethod(opt.id)}
+                            className="flex flex-col items-start px-3 py-2 rounded-xl text-left transition-all"
+                            style={{
+                              background: renewPayMethod === opt.id ? "rgba(52,211,153,0.18)" : "rgba(255,255,255,0.03)",
+                              border: `1.5px solid ${renewPayMethod === opt.id ? "#10B981" : "rgba(255,255,255,0.08)"}`,
+                            }}>
+                            <span className="text-xs font-bold" style={{ color: renewPayMethod === opt.id ? "#34d399" : "#9ca3af" }}>{opt.label}</span>
+                            <span className="text-[10px]" style={{ color: renewPayMethod === opt.id ? "#d1d5db" : "#4b5563" }}>{opt.desc}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Renew / Renewed button */}
+                  {renewDone ? (
+                    <div className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold"
+                      style={{ background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.3)", color: "#34d399" }}>
+                      ✅ Subscription Successfully Renewed!
+                    </div>
+                  ) : (
+                    <button type="button" disabled={!newEnd}
+                      onClick={() => setRenewConfirm(true)}
+                      className="w-full py-2.5 rounded-xl text-sm font-black transition-all hover:scale-[1.01] active:scale-[0.99]"
+                      style={{
+                        background: "linear-gradient(135deg,#10B981,#059669)",
+                        color: "#fff",
+                        opacity: !newEnd ? 0.5 : 1,
+                        boxShadow: "0 4px 16px rgba(16,185,129,0.3)",
+                      }}>
+                      🔄 Renew Subscription (+{period === "yearly" ? "1 Year" : "1 Month"})
+                    </button>
+                  )}
+                </div>
+              </div>
+            );
+          })()}
+
+          {/* ── Extra Monthly Limits (edit mode only) ── */}
+          {isEdit && (() => {
+            const EXTRA_FIELDS = [
+              { key: "invoicesPerMonth",            label: "Extra Invoices / Month",                icon: "🧾" },
+              { key: "invoicesPerCustomerPerMonth", label: "Extra Invoices per Customer / Month",   icon: "👥" },
+              { key: "customersPerMonth",           label: "Extra Customers / Month",               icon: "👤" },
+              { key: "suppliersPerMonth",           label: "Extra Suppliers / Month",               icon: "🏭" },
+              { key: "ordersPerSupplierPerMonth",   label: "Extra Orders per Supplier / Month",     icon: "🛒" },
+            ];
+
+            const hasAnyExtra = EXTRA_FIELDS.some(f => Number(extraLimits[f.key]) > 0);
+
+            async function handleSaveExtraLimits() {
+              setExtraSaving(true);
+              setExtraDone(false);
+              try {
+                const token   = await getToken();
+                const headers = { "Content-Type": "application/json", authorization: `Bearer ${token}` };
+                const cleaned = {};
+                EXTRA_FIELDS.forEach(f => { cleaned[f.key] = Number(extraLimits[f.key]) || 0; });
+                const res  = await fetch("/api/admin/update-user", { method: "POST", headers, body: JSON.stringify({ uid: initial.uid, extraLimits: cleaned }) });
+                const data = await res.json();
+                if (!res.ok) throw new Error(data.error);
+                setExtraDone(true);
+                onToast?.("Extra limits saved! ✓", "success");
+                setTimeout(() => setExtraDone(false), 3000);
+              } catch (err) {
+                onToast?.(err.message || "Failed to save extra limits", "error");
+              } finally {
+                setExtraSaving(false);
+              }
+            }
+
+            return (
+              <div className="rounded-xl overflow-hidden"
+                style={{ border: "1.5px solid rgba(245,158,11,0.35)", background: "rgba(245,158,11,0.03)" }}>
+                {/* Header */}
+                <div className="flex items-center gap-2 px-4 py-3"
+                  style={{ borderBottom: "1px solid rgba(245,158,11,0.15)", background: "rgba(245,158,11,0.08)" }}>
+                  <span className="text-base">⚡</span>
+                  <div className="flex-1">
+                    <p className="text-amber-400 text-xs font-black uppercase tracking-widest">Extra Monthly Limits</p>
+                    <p className="text-gray-500 text-[10px] mt-0.5">Is mahine ke liye extra quota add karein — plan limit ke upar</p>
+                  </div>
+                  {hasAnyExtra && (
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                      style={{ background: "rgba(245,158,11,0.2)", border: "1px solid rgba(245,158,11,0.4)", color: "#fbbf24" }}>
+                      Active
+                    </span>
+                  )}
+                </div>
+
+                <div className="p-4 flex flex-col gap-3">
+                  {EXTRA_FIELDS.map(f => (
+                    <div key={f.key} className="flex items-center gap-3">
+                      <span className="text-sm w-5 flex-shrink-0">{f.icon}</span>
+                      <span className="text-gray-400 text-xs flex-1 leading-tight">{f.label}</span>
+                      <div className="flex items-center gap-1.5 flex-shrink-0">
+                        <button type="button"
+                          onClick={() => setExtraLimits(p => ({ ...p, [f.key]: String(Math.max(0, Number(p[f.key]) - 1)) }))}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold transition-all hover:scale-110"
+                          style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
+                          −
+                        </button>
+                        <input
+                          type="number" min="0"
+                          value={extraLimits[f.key]}
+                          onChange={e => {
+                            const v = Math.max(0, Number(e.target.value.replace(/[^0-9]/g,"")) || 0);
+                            setExtraLimits(p => ({ ...p, [f.key]: String(v) }));
+                          }}
+                          className="text-center font-bold text-sm outline-none"
+                          style={{
+                            width: 70, background: "rgba(245,158,11,0.08)",
+                            border: `1.5px solid ${Number(extraLimits[f.key]) > 0 ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.08)"}`,
+                            borderRadius: 8, padding: "5px 4px",
+                            color: Number(extraLimits[f.key]) > 0 ? "#fbbf24" : "#6b7280",
+                            MozAppearance: "textfield",
+                          }}
+                        />
+                        <button type="button"
+                          onClick={() => setExtraLimits(p => ({ ...p, [f.key]: String(Number(p[f.key]) + 1) }))}
+                          className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold transition-all hover:scale-110"
+                          style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
+                          +
+                        </button>
+                        {Number(extraLimits[f.key]) > 0 && (
+                          <button type="button"
+                            onClick={() => setExtraLimits(p => ({ ...p, [f.key]: "0" }))}
+                            title="Remove extra"
+                            className="w-6 h-6 rounded-lg flex items-center justify-center text-xs transition-all hover:scale-110"
+                            style={{ background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171" }}>
+                            ✕
+                          </button>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+
+                  {/* Quick package presets */}
+                  <div className="mt-1">
+                    <p className="text-gray-600 text-[10px] uppercase tracking-widest font-bold mb-2">⚡ Quick Packages</p>
+                    <div className="flex flex-wrap gap-2">
+                      {[
+                        { label: "+100 Invoices",    fn: () => setExtraLimits(p => ({ ...p, invoicesPerMonth: String(Number(p.invoicesPerMonth) + 100) })) },
+                        { label: "+500 Invoices",    fn: () => setExtraLimits(p => ({ ...p, invoicesPerMonth: String(Number(p.invoicesPerMonth) + 500) })) },
+                        { label: "+50 Customers",    fn: () => setExtraLimits(p => ({ ...p, customersPerMonth: String(Number(p.customersPerMonth) + 50) })) },
+                        { label: "+20 Suppliers",    fn: () => setExtraLimits(p => ({ ...p, suppliersPerMonth: String(Number(p.suppliersPerMonth) + 20) })) },
+                        { label: "Reset All",        fn: () => setExtraLimits({ invoicesPerMonth: "0", invoicesPerCustomerPerMonth: "0", customersPerMonth: "0", suppliersPerMonth: "0", ordersPerSupplierPerMonth: "0" }), danger: true },
+                      ].map(pkg => (
+                        <button key={pkg.label} type="button" onClick={pkg.fn}
+                          className="px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all hover:scale-[1.03]"
+                          style={{
+                            background: pkg.danger ? "rgba(248,113,113,0.1)" : "rgba(245,158,11,0.1)",
+                            border: `1px solid ${pkg.danger ? "rgba(248,113,113,0.3)" : "rgba(245,158,11,0.3)"}`,
+                            color: pkg.danger ? "#f87171" : "#fbbf24",
+                          }}>
+                          {pkg.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Save extra limits button */}
+                  <button type="button"
+                    onClick={handleSaveExtraLimits}
+                    disabled={extraSaving}
+                    className="w-full py-2.5 rounded-xl text-sm font-black transition-all hover:scale-[1.01] mt-1"
+                    style={{
+                      background: extraDone
+                        ? "rgba(52,211,153,0.15)"
+                        : extraSaving
+                          ? "rgba(245,158,11,0.2)"
+                          : "linear-gradient(135deg,rgba(245,158,11,0.25),rgba(217,119,6,0.3))",
+                      border: `1px solid ${extraDone ? "rgba(52,211,153,0.4)" : "rgba(245,158,11,0.4)"}`,
+                      color: extraDone ? "#34d399" : "#fbbf24",
+                      opacity: extraSaving ? 0.7 : 1,
+                    }}>
+                    {extraDone ? "✅ Extra Limits Saved!" : extraSaving ? "Saving..." : "⚡ Save Extra Limits"}
+                  </button>
+                  <p className="text-gray-600 text-[10px] text-center">
+                    Yeh extra quota sirf is user ke liye hai — plan limits alag rehti hain
+                  </p>
+                </div>
+              </div>
+            );
+          })()}
+
           <button type="submit" disabled={saving}
             className="w-full py-3 rounded-xl text-white font-bold text-sm mt-1 transition-all hover:scale-[1.01]"
             style={{ background: saving ? "rgba(37,99,235,0.4)" : "linear-gradient(135deg,#2563EB,#1d4ed8)", opacity: saving ? 0.7 : 1 }}>
@@ -429,6 +923,167 @@ function UserFormModal({ initial, onClose, onSave, saving }) {
         </form>
       </div>
     </div>
+
+    {/* ── Confirm Renewal Popup ── */}
+    {renewConfirm && isEdit && (() => {
+      const period     = form.billingPeriod || "monthly";
+      const currentEnd = form.activeTo;
+      const currentFrom = form.activeFrom;   // stays unchanged
+      // newEnd = extend current activeTo by 1 month/year (no -1 day)
+      const newEnd = currentEnd ? calcRenewalEndDate(currentEnd, period) : "";
+      // Display start = currentEnd + 1 day (shown in popup, not saved)
+      const displayNewStart = calcRenewalDisplayStart(currentEnd);
+      return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(10px)" }}>
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+            style={{ background: "#0d1117", border: "1.5px solid rgba(16,185,129,0.4)", boxShadow: "0 32px 80px rgba(0,0,0,0.7)" }}>
+            <div className="px-6 pt-6 pb-4 text-center"
+              style={{ background: "linear-gradient(135deg,rgba(16,185,129,0.1),rgba(5,150,105,0.05))" }}>
+              <div className="text-4xl mb-3">🔄</div>
+              <h3 className="text-white font-black text-lg">Confirm Renewal</h3>
+              <p className="text-gray-400 text-sm mt-1">
+                Are you sure you want to renew <span className="text-white font-semibold">{initial?.name}</span>&apos;s subscription?
+              </p>
+            </div>
+            <div className="px-6 py-4 flex flex-col gap-2">
+              {[
+                { label: "New Period Start",   value: displayNewStart ? new Date(displayNewStart+"T00:00:00").toLocaleDateString("en-PK",{day:"2-digit",month:"short",year:"numeric"}) : "—" },
+                { label: "New End Date",        value: newEnd ? new Date(newEnd+"T00:00:00").toLocaleDateString("en-PK",{day:"2-digit",month:"short",year:"numeric"}) : "—" },
+                { label: "Duration Extended",  value: period === "yearly" ? "+1 Year" : "+1 Month" },
+                { label: "Payment Method",     value: renewPayMethod === "online" ? "Online" : renewPayMethod === "cheque" ? "Cheque" : "Cash" },
+                { label: "Confirmation Email", value: `Will be sent to ${initial?.email}` },
+              ].map(r => (
+                <div key={r.label} className="flex items-center justify-between py-2"
+                  style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                  <span className="text-gray-500 text-xs uppercase tracking-widest font-bold">{r.label}</span>
+                  <span className="text-white text-xs font-semibold text-right max-w-[55%]">{r.value}</span>
+                </div>
+              ))}
+            </div>
+            <div className="px-6 pb-6 flex gap-3">
+              <button type="button" onClick={() => setRenewConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/10"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+                Cancel
+              </button>
+              <button type="button"
+                onClick={() => {
+                  // invoke the handleRenew captured in the IIFE scope by re-triggering via a custom event trick
+                  // Instead, we store a pending flag and the IIFE picks it up
+                  setRenewConfirm(false);
+                  setRenewSaving(true);
+                  (async () => {
+                    try {
+                      const token     = await getToken();
+                      const headers   = { "Content-Type": "application/json", authorization: `Bearer ${token}` };
+                      const renewedAt = new Date().toISOString();
+                      const body      = { uid: initial.uid, activeTo: newEnd, paymentMethod: renewPayMethod, lastRenewedAt: renewedAt, lastRenewedBy: "admin" };
+                      const res       = await fetch("/api/admin/update-user", { method: "POST", headers, body: JSON.stringify(body) });
+                      const data      = await res.json();
+                      if (!res.ok) throw new Error(data.error);
+                      // Keep activeFrom unchanged, only update activeTo
+                      setForm(p => ({ ...p, activeTo: newEnd, paymentMethod: renewPayMethod }));
+                      setRenewDone(true);
+                      if (initial.email) {
+                        try {
+                          const emailRes  = await fetch("/api/admin/send-renewal-email", { method: "POST", headers, body: JSON.stringify({ uid: initial.uid, userName: initial.name || initial.email, userEmail: initial.email, plan: form.plan, billingPeriod: form.billingPeriod, paymentMethod: renewPayMethod, activeFrom: currentFrom, activeTo: newEnd, periodStart: displayNewStart, renewedAt }) });
+                          const emailData = await emailRes.json();
+                          if (!emailRes.ok) onToast?.(`Renewed but email failed: ${emailData.error || emailRes.status}`, "error");
+                        } catch (emailErr) {
+                          onToast?.(`Renewed but email error: ${emailErr.message}`, "error");
+                        }
+                      }
+                      setRenewSuccess({ newStart: displayNewStart, newEnd, payMethod: renewPayMethod });
+                      onRenewSuccess?.();
+                    } catch (err) {
+                      onToast?.(err.message || "Renewal failed", "error");
+                    } finally {
+                      setRenewSaving(false);
+                    }
+                  })();
+                }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-black transition-all hover:scale-[1.02]"
+                style={{ background: "linear-gradient(135deg,#10B981,#059669)", color: "#fff", boxShadow: "0 4px 16px rgba(16,185,129,0.35)" }}>
+                Yes, Renew Now
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
+
+    {/* ── Processing Overlay ── */}
+    {renewSaving && (
+      <div className="fixed inset-0 z-[80] flex items-center justify-center"
+        style={{ background: "rgba(0,0,0,0.82)", backdropFilter: "blur(12px)" }}>
+        <div className="flex flex-col items-center gap-5 px-8 py-10 rounded-2xl"
+          style={{ background: "#0d1117", border: "1.5px solid rgba(16,185,129,0.3)", minWidth: 260 }}>
+          <div className="relative w-16 h-16">
+            <div className="absolute inset-0 rounded-full border-4 border-transparent animate-spin"
+              style={{ borderTopColor: "#10B981", borderRightColor: "rgba(16,185,129,0.3)" }} />
+            <div className="absolute inset-2 rounded-full flex items-center justify-center text-2xl">🔄</div>
+          </div>
+          <div className="text-center">
+            <p className="text-white font-black text-base">Processing Renewal...</p>
+            <p className="text-gray-500 text-sm mt-1">Updating subscription &amp; sending email</p>
+          </div>
+          <div className="flex flex-col gap-1.5 w-full">
+            {["Saving new subscription dates", "Updating payment record", "Sending confirmation email"].map((step, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full animate-pulse flex-shrink-0"
+                  style={{ background: "#10B981", animationDelay: `${i * 0.2}s` }} />
+                <span className="text-gray-400 text-xs">{step}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ── Success Popup ── */}
+    {renewSuccess && (
+      <div className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+        style={{ background: "rgba(0,0,0,0.82)", backdropFilter: "blur(12px)" }}>
+        <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+          style={{ background: "#0d1117", border: "1.5px solid rgba(52,211,153,0.5)", boxShadow: "0 32px 80px rgba(0,0,0,0.8)" }}>
+          <div style={{ height: 5, background: "linear-gradient(to right,#10B981,#34d399,#6ee7b7)" }} />
+          <div className="px-6 pt-6 pb-3 text-center">
+            <div className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-4"
+              style={{ background: "rgba(16,185,129,0.15)", border: "2px solid rgba(16,185,129,0.4)" }}>
+              ✅
+            </div>
+            <h3 className="text-white font-black text-xl">Renewed Successfully!</h3>
+            <p className="text-gray-400 text-sm mt-1.5">
+              <span className="text-white font-semibold">{initial?.name}</span>&apos;s subscription has been renewed and a confirmation email has been sent.
+            </p>
+          </div>
+          <div className="px-6 py-3 mx-2 rounded-xl mb-4"
+            style={{ background: "rgba(16,185,129,0.07)", border: "1px solid rgba(16,185,129,0.2)" }}>
+            {[
+              { label: "New Period Starts", value: new Date(renewSuccess.newStart+"T00:00:00").toLocaleDateString("en-PK",{day:"2-digit",month:"long",year:"numeric"}) },
+              { label: "New Period Ends",   value: new Date(renewSuccess.newEnd+"T00:00:00").toLocaleDateString("en-PK",{day:"2-digit",month:"long",year:"numeric"}) },
+              { label: "Payment Method",   value: renewSuccess.payMethod === "online" ? "🌐 Online" : renewSuccess.payMethod === "cheque" ? "🧾 Cheque" : "💵 Cash" },
+              { label: "Email Sent",       value: `✉️ ${initial?.email}` },
+            ].map(r => (
+              <div key={r.label} className="flex items-start justify-between gap-3 py-1.5"
+                style={{ borderBottom: "1px solid rgba(16,185,129,0.1)" }}>
+                <span className="text-gray-500 text-[11px] uppercase tracking-widest font-bold flex-shrink-0">{r.label}</span>
+                <span className="text-emerald-300 text-xs font-semibold text-right">{r.value}</span>
+              </div>
+            ))}
+          </div>
+          <div className="px-6 pb-6">
+            <button type="button" onClick={() => setRenewSuccess(null)}
+              className="w-full py-3 rounded-xl text-sm font-black transition-all hover:scale-[1.01]"
+              style={{ background: "linear-gradient(135deg,#10B981,#059669)", color: "#fff", boxShadow: "0 4px 16px rgba(16,185,129,0.3)" }}>
+              Done ✓
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+  </>
   );
 }
 
@@ -489,6 +1144,8 @@ function UserDetailModal({ detailUser, detailLoading, onClose, fmtDate, daysLeft
                   { label:"Active From", value: fmtDate(detailUser.user.activeFrom) },
                   { label:"Active Until", value: fmtDate(detailUser.user.activeTo) },
                   { label:"Days Left", value: (() => { const d=daysLeft(detailUser.user.activeTo); return d===null?"—":d<0?`Expired ${Math.abs(d)}d ago`:d===0?"Expires today!":`${d} days`; })() },
+                  { label:"Billing Period", value: detailUser.user.billingPeriod === "yearly" ? "📆 Yearly" : detailUser.user.billingPeriod === "monthly" ? "📅 Monthly" : detailUser.user.billingPeriod || "—" },
+                  { label:"Payment Method", value: detailUser.user.paymentMethod === "online" ? "🌐 Online" : detailUser.user.paymentMethod === "cheque" ? "🧾 Cheque" : detailUser.user.paymentMethod === "cash" ? "💵 Cash" : detailUser.user.paymentMethod || "—" },
                 ].map(r => (
                   <div key={r.label} className="rounded-xl px-4 py-3"
                     style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)" }}>
@@ -644,7 +1301,7 @@ export default function AdminPanel() {
       const token   = await getToken();
       const headers = { "Content-Type": "application/json", authorization: `Bearer ${token}` };
       if (editUser) {
-        const body = { uid: editUser.uid, name: form.name, phone: form.phone, address: form.address, activeFrom: form.activeFrom, activeTo: form.activeTo, activeToTime: form.activeToTime, maxDevices: form.maxDevices, plan: form.plan, subscriptionType: form.subscriptionType };
+        const body = { uid: editUser.uid, name: form.name, phone: form.phone, address: form.address, activeFrom: form.activeFrom, activeTo: form.activeTo, activeToTime: form.activeToTime, maxDevices: form.maxDevices, plan: form.plan, subscriptionType: form.subscriptionType, billingPeriod: form.billingPeriod, paymentMethod: form.paymentMethod };
         if (form.password) body.newPassword = form.password;
         const res  = await fetch("/api/admin/update-user", { method:"POST", headers, body: JSON.stringify(body) });
         const data = await res.json();
@@ -783,7 +1440,10 @@ export default function AdminPanel() {
       {(showForm || editUser) && (
         <UserFormModal initial={editUser} saving={saving}
           onClose={() => { setShowForm(false); setEditUser(null); }}
-          onSave={handleSaveUser} />
+          onSave={handleSaveUser}
+          getToken={getToken}
+          onToast={toast}
+          onRenewSuccess={fetchUsers} />
       )}
       <UserDetailModal
         detailUser={detailUser} detailLoading={detailLoading}

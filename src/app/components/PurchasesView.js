@@ -6,6 +6,7 @@ import {
   doc, serverTimestamp, onSnapshot, query, orderBy, writeBatch, where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
+import { getLimits, loadPlansFromFirestore, countThisMonth } from "@/lib/planLimits";
 import SweetAlert from "./SweetAlert";
 import SupplierDetailComponent from "./SupplierDetail";
 import { OrderFormModal } from "./SupplierDetail";
@@ -240,6 +241,10 @@ export default function PurchasesView({ uid, userDoc }) {
   const [selectedSupplier, setSelectedSupplier] = useState(null);
   const [searchQuery, setSearchQuery]     = useState("");
   const [showOrderForm, setShowOrderForm]   = useState(false);
+  const [showOrderFormUpgrade, setShowOrderFormUpgrade] = useState(false);
+  // ── Monthly supplier usage ───────────────────────────────────────────────────
+  const [monthlySupplierCount, setMonthlySupplierCount] = useState(null);
+  const [suppliersLimitVal,    setSuppliersLimitVal]    = useState(null);
   const [alert, setAlert]                 = useState({ show: false, type: "", title: "", message: "" });
 
   // URL helpers — same pattern as CustomersView
@@ -339,7 +344,17 @@ export default function PurchasesView({ uid, userDoc }) {
     return () => unsub();
   }, [uid]);
 
-  // ── Supplier CRUD ─────────────────────────────────────────────────────────
+  // ── Monthly supplier count ────────────────────────────────────────────────
+  useEffect(() => {
+    if (!uid) return;
+    const plan = userDoc?.plan || "starter";
+    loadPlansFromFirestore().then(fsPlans => {
+      const limits = getLimits(plan, fsPlans);
+      setSuppliersLimitVal(limits.suppliersPerMonth ?? null);
+    });
+    countThisMonth(collection(db, "users", uid, "suppliers"), userDoc?.activeFrom)
+      .then(c => setMonthlySupplierCount(c));
+  }, [uid, userDoc?.plan]);
   async function handleSaveSupplier(form) {
     setSavingSupplier(true);
     try {
@@ -458,47 +473,161 @@ export default function PurchasesView({ uid, userDoc }) {
           ))}
         </div>
 
-        {/* ── Order Form Banner ───────────────────────────────────────── */}
-        <div className="relative overflow-hidden rounded-xl" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(245,158,11,0.2)" }}>
-          {/* Gradient glow bg */}
-          <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-purple-600/10" />
-          <div className="absolute top-0 left-0 right-0 h-[2px] bg-gradient-to-r from-amber-400 via-orange-500 to-purple-500" />
-
-          <div className="relative z-10 flex flex-col sm:flex-row items-center justify-between gap-4 p-5">
-            {/* Left — icon + text */}
-            <div className="flex items-center gap-4">
-              <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
-                style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", boxShadow: "0 4px 20px rgba(245,158,11,0.3)" }}>
-                📋
-              </div>
-              <div>
-                <div className="text-white font-bold text-base">Blank Order Form</div>
-                <div className="text-gray-400 text-xs mt-0.5">
-                  Print &amp; fill by hand · Multi-page · Standard &amp; Variant layouts
+        {/* ── Monthly Supplier Usage Bar ──────────────────────────────── */}
+        {(() => {
+          const limit = suppliersLimitVal;
+          if (limit === null || monthlySupplierCount === null) return null;
+          const used   = monthlySupplierCount;
+          const pct    = Math.min(100, Math.round((used / limit) * 100));
+          const left   = limit - used;
+          const isWarn = pct >= 80;
+          const isFull = pct >= 100;
+          return (
+            <div className="rounded-xl px-4 py-3 flex items-center gap-4"
+              style={{
+                background: isFull ? "rgba(239,68,68,0.08)" : isWarn ? "rgba(251,191,36,0.08)" : "rgba(37,99,235,0.06)",
+                border: `1px solid ${isFull ? "rgba(239,68,68,0.3)" : isWarn ? "rgba(251,191,36,0.3)" : "rgba(37,99,235,0.2)"}`,
+              }}>
+              <span className="text-xl flex-shrink-0">{isFull ? "🚫" : isWarn ? "⚠️" : "🏪"}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-semibold" style={{ color: isFull ? "#f87171" : isWarn ? "#fbbf24" : "#93c5fd" }}>
+                    {isFull ? "Monthly supplier limit reached!" : `This month: ${used} / ${limit} suppliers added`}
+                  </p>
+                  <span className="text-xs font-bold" style={{ color: isFull ? "#f87171" : isWarn ? "#fbbf24" : "#60a5fa" }}>
+                    {isFull ? "0 left" : `${left} left`}
+                  </span>
+                </div>
+                <div className="w-full h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
+                  <div className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${pct}%`,
+                      background: isFull ? "#ef4444" : isWarn ? "linear-gradient(90deg,#fbbf24,#f97316)" : "linear-gradient(90deg,#2563eb,#60a5fa)",
+                    }} />
                 </div>
               </div>
             </div>
+          );
+        })()}
 
-            {/* Right — quick page pills + open button */}
-            <div className="flex items-center gap-3 flex-wrap justify-end">
-              <div className="flex items-center gap-1.5">
-                <span className="text-gray-500 text-xs">Quick:</span>
-                {[5, 10, 25].map(pg => (
-                  <button key={pg} onClick={() => setShowOrderForm(true)}
-                    className="px-3 py-1 rounded-lg text-xs font-bold transition-all hover:scale-105"
-                    style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", color: "#f59e0b" }}>
-                    {pg}pg
-                  </button>
-                ))}
+        {/* ── Order Form Banner ───────────────────────────────────────── */}
+        {(() => {
+          const plan = userDoc?.plan || "starter";
+          const allowed = userDoc?.allowedTabs
+            ? userDoc.allowedTabs.includes("order-form")
+            : !["starter"].includes(plan);
+
+          return (
+            <div className="relative overflow-hidden rounded-xl"
+              style={{
+                background: allowed ? "rgba(255,255,255,0.03)" : "rgba(255,255,255,0.02)",
+                border: `1px solid ${allowed ? "rgba(245,158,11,0.2)" : "rgba(255,255,255,0.08)"}`,
+                opacity: allowed ? 1 : 0.75,
+              }}>
+              <div className="absolute inset-0 bg-gradient-to-r from-amber-500/10 via-orange-500/5 to-purple-600/10" />
+              <div className="absolute top-0 left-0 right-0 h-[2px]"
+                style={{ background: allowed ? "linear-gradient(to right,#fbbf24,#f97316,#a855f7)" : "rgba(255,255,255,0.1)" }} />
+
+              {!allowed && (
+                <div className="absolute inset-0 z-10 rounded-xl cursor-pointer"
+                  onClick={() => setShowOrderFormUpgrade(true)} />
+              )}
+
+              <div className="relative z-[5] flex flex-col sm:flex-row items-center justify-between gap-4 p-5">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
+                    style={{
+                      background: allowed ? "linear-gradient(135deg,#f59e0b,#d97706)" : "rgba(255,255,255,0.08)",
+                      boxShadow: allowed ? "0 4px 20px rgba(245,158,11,0.3)" : "none",
+                    }}>
+                    {allowed ? "📋" : "🔒"}
+                  </div>
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-white font-bold text-base">Blank Order Form</span>
+                      {!allowed && (
+                        <span className="px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider"
+                          style={{ background: "rgba(168,85,247,0.15)", border: "1px solid rgba(168,85,247,0.3)", color: "#c084fc" }}>
+                          Business+
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-gray-400 text-xs mt-0.5">
+                      {allowed
+                        ? "Print & fill by hand · Multi-page · Standard & Variant layouts"
+                        : "Not included in your current plan — upgrade to access"}
+                    </div>
+                  </div>
+                </div>
+                <div className="flex items-center gap-3 flex-wrap justify-end">
+                  {allowed ? (
+                    <>
+                      <div className="flex items-center gap-1.5">
+                        <span className="text-gray-500 text-xs">Quick:</span>
+                        {[5, 10, 25].map(pg => (
+                          <button key={pg} onClick={() => setShowOrderForm(true)}
+                            className="px-3 py-1 rounded-lg text-xs font-bold transition-all hover:scale-105"
+                            style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", color: "#f59e0b" }}>
+                            {pg}pg
+                          </button>
+                        ))}
+                      </div>
+                      <button onClick={() => setShowOrderForm(true)}
+                        className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105"
+                        style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#000", boxShadow: "0 4px 16px rgba(245,158,11,0.35)" }}>
+                        📥 Open Form
+                      </button>
+                    </>
+                  ) : (
+                    <button onClick={() => setShowOrderFormUpgrade(true)}
+                      className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105"
+                      style={{ background: "rgba(168,85,247,0.15)", border: "1px solid rgba(168,85,247,0.35)", color: "#c084fc" }}>
+                      🚀 Upgrade to Unlock
+                    </button>
+                  )}
+                </div>
               </div>
-              <button onClick={() => setShowOrderForm(true)}
-                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105"
-                style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#000", boxShadow: "0 4px 16px rgba(245,158,11,0.35)" }}>
-                📥 Open Form
-              </button>
+            </div>
+          );
+        })()}
+
+        {/* Order Form Upgrade Popup */}
+        {showOrderFormUpgrade && (
+          <div className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+            style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(10px)" }}
+            onClick={e => e.target === e.currentTarget && setShowOrderFormUpgrade(false)}>
+            <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+              style={{ background: "#0d1117", border: "1.5px solid rgba(168,85,247,0.4)", boxShadow: "0 32px 80px rgba(0,0,0,0.8)" }}>
+              <div style={{ height: 5, background: "linear-gradient(to right,#7c3aed,#a855f7,#c084fc)" }} />
+              <div className="px-6 pt-6 pb-4 text-center">
+                <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4"
+                  style={{ background: "rgba(168,85,247,0.15)", border: "2px solid rgba(168,85,247,0.35)" }}>
+                  🔒
+                </div>
+                <h3 className="text-white font-black text-lg">Not Available in Your Plan</h3>
+                <p className="text-gray-400 text-sm mt-2 leading-relaxed">
+                  <strong className="text-white">Blank Order Form</strong> is not included in the{" "}
+                  <span className="text-purple-400 font-semibold capitalize">{userDoc?.plan || "starter"}</span> plan.
+                  <br/>
+                  Upgrade to <strong className="text-purple-300">Business</strong> or higher to access this feature.
+                </p>
+              </div>
+              <div className="px-6 pb-5 flex flex-col gap-2">
+                <a href="https://wa.me/923001234567?text=Hello%20Novexa%2C%20I%20want%20to%20upgrade%20my%20plan."
+                  target="_blank" rel="noopener noreferrer"
+                  className="w-full py-2.5 rounded-xl text-sm font-black text-center transition-all hover:scale-[1.01]"
+                  style={{ background: "linear-gradient(135deg,#7c3aed,#a855f7)", color: "#fff", boxShadow: "0 4px 16px rgba(168,85,247,0.3)", display: "block" }}>
+                  🚀 Upgrade Plan
+                </a>
+                <button onClick={() => setShowOrderFormUpgrade(false)}
+                  className="w-full py-2 rounded-xl text-sm font-semibold transition-all hover:bg-white/10"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+                  Close
+                </button>
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
         {/* Search */}
         <div className="relative">

@@ -67,17 +67,19 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
     // Load dynamic limit from Firestore
     loadPlansFromFirestore().then(fsPlans => {
       const limits = getLimits(plan, fsPlans);
-      setPlanLimitVal(limits.invoicesPerMonth ?? null);
+      const base  = limits.invoicesPerMonth ?? null;
+      const extra = Number(userDoc?.extraLimits?.invoicesPerMonth) || 0;
+      setPlanLimitVal(base === null ? null : base + extra);
     });
     import("@/lib/planLimits").then(({ countThisMonth }) => {
       import("firebase/firestore").then(({ collection }) => {
         import("@/lib/firebase").then(({ db: fdb }) => {
-          countThisMonth(collection(fdb, "users", uid, "invoices"))
+          countThisMonth(collection(fdb, "users", uid, "invoices"), userDoc?.activeFrom)
             .then(n => setMonthlyCount(n));
         });
       });
     });
-  }, [uid, invoices, userDoc?.plan]);
+  }, [uid, invoices, userDoc?.plan, userDoc?.extraLimits]);
 
   // ── Scroll to & flash highlighted invoice ──────────────────────────────────
   useEffect(() => {
@@ -165,7 +167,9 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
       if (limits.invoicesPerMonth !== null) {
         const { allowed, current, limit } = await checkMonthlyLimit(
           collection(db, "users", uid, "invoices"),
-          limits.invoicesPerMonth
+          limits.invoicesPerMonth,
+          userDoc?.activeFrom,
+          userDoc?.extraLimits?.invoicesPerMonth
         );
         if (!allowed) {
           setAlert({
@@ -637,10 +641,10 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
             <div className="flex-1 min-w-0">
               <div className="flex items-center justify-between mb-1">
                 <p className="text-xs font-semibold" style={{ color: isFull ? "#f87171" : isWarn ? "#fbbf24" : "#93c5fd" }}>
-                  {isFull ? "Monthly limit full!" : `Is mahine ${used} / ${limit} invoices banayi hain`}
+                  {isFull ? "Monthly invoice limit reached!" : `This month: ${used} / ${limit} invoices created`}
                 </p>
                 <span className="text-xs font-bold" style={{ color: isFull ? "#f87171" : isWarn ? "#fbbf24" : "#60a5fa" }}>
-                  {isFull ? "0 baqi" : `${left} baqi`}
+                  {isFull ? "0 left" : `${left} left`}
                 </span>
               </div>
               <div className="w-full h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>

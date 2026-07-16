@@ -2566,6 +2566,9 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
   const [supplierReceipts, setSupplierReceipts] = useState([]);
   const [supplierReturns, setSupplierReturns]   = useState([]);
   const [alert, setAlert]             = useState({ show: false, type: "", title: "", message: "" });
+  // ── Monthly order usage ───────────────────────────────────────────────────
+  const [monthlyOrderCount,   setMonthlyOrderCount]   = useState(null);
+  const [ordersPerSupLimitVal, setOrdersPerSupLimitVal] = useState(null);
   
   // Email Confirmation Dialog State
   const [emailConfirm, setEmailConfirm] = useState({ show: false, order: null, isUpdate: false });
@@ -2580,6 +2583,24 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
     );
     return () => unsub();
   }, [uid, supplier.id]);
+
+  // ── Monthly orders per supplier count ────────────────────────────────────
+  useEffect(() => {
+    if (!uid || !supplier.id) return;
+    const plan = userDoc?.plan || "starter";
+    loadPlansFromFirestore().then(fsPlans => {
+      const limits = getLimits(plan, fsPlans);
+      setOrdersPerSupLimitVal(limits.ordersPerSupplierPerMonth ?? null);
+    });
+    import("@/lib/planLimits").then(({ countThisMonth }) => {
+      import("firebase/firestore").then(({ collection: col }) => {
+        import("@/lib/firebase").then(({ db: fdb }) => {
+          countThisMonth(col(fdb, "users", uid, "suppliers", supplier.id, "orders"), userDoc?.activeFrom)
+            .then(c => setMonthlyOrderCount(c));
+        });
+      });
+    });
+  }, [uid, supplier.id, userDoc?.plan]);
 
   // real-time supplier payments
   useEffect(() => {
@@ -2715,7 +2736,9 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
         if (limits.ordersPerSupplierPerMonth !== null) {
           const { allowed, current, limit } = await checkMonthlyLimit(
             collection(db, "users", uid, "suppliers", supplier.id, "orders"),
-            limits.ordersPerSupplierPerMonth
+            limits.ordersPerSupplierPerMonth,
+            userDoc?.activeFrom,
+            userDoc?.extraLimits?.ordersPerSupplierPerMonth
           );
           if (!allowed) {
             setAlert({
@@ -3066,6 +3089,43 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
             </div>
           ))}
         </div>
+
+        {/* Monthly Orders Usage Bar */}
+        {(() => {
+          const limit = ordersPerSupLimitVal;
+          if (limit === null || monthlyOrderCount === null) return null;
+          const used   = monthlyOrderCount;
+          const pct    = Math.min(100, Math.round((used / limit) * 100));
+          const left   = limit - used;
+          const isWarn = pct >= 80;
+          const isFull = pct >= 100;
+          return (
+            <div className="rounded-xl px-4 py-3 flex items-center gap-4"
+              style={{
+                background: isFull ? "rgba(239,68,68,0.08)" : isWarn ? "rgba(251,191,36,0.08)" : "rgba(37,99,235,0.06)",
+                border: `1px solid ${isFull ? "rgba(239,68,68,0.3)" : isWarn ? "rgba(251,191,36,0.3)" : "rgba(37,99,235,0.2)"}`,
+              }}>
+              <span className="text-xl flex-shrink-0">{isFull ? "🚫" : isWarn ? "⚠️" : "📦"}</span>
+              <div className="flex-1 min-w-0">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-xs font-semibold" style={{ color: isFull ? "#f87171" : isWarn ? "#fbbf24" : "#93c5fd" }}>
+                    {isFull ? "Monthly order limit reached for this supplier!" : `This month: ${used} / ${limit} orders for this supplier`}
+                  </p>
+                  <span className="text-xs font-bold" style={{ color: isFull ? "#f87171" : isWarn ? "#fbbf24" : "#60a5fa" }}>
+                    {isFull ? "0 left" : `${left} left`}
+                  </span>
+                </div>
+                <div className="w-full h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
+                  <div className="h-full rounded-full transition-all duration-500"
+                    style={{
+                      width: `${pct}%`,
+                      background: isFull ? "#ef4444" : isWarn ? "linear-gradient(90deg,#fbbf24,#f97316)" : "linear-gradient(90deg,#2563eb,#60a5fa)",
+                    }} />
+                </div>
+              </div>
+            </div>
+          );
+        })()}
 
         {/* Balance Banner */}
         {totalBalance > 0 && (

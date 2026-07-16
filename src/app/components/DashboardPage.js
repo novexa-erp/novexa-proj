@@ -139,13 +139,16 @@ function DashboardContent() {
   // ── Plan details modal ────────────────────────────────────────────────────
   const [showPlanModal, setShowPlanModal] = useState(false);
   const [planDetails,   setPlanDetails]   = useState(null);
+  // ── Locked tab upgrade popup ──────────────────────────────────────────────
+  const [lockedTabInfo, setLockedTabInfo] = useState(null); // { label, id }
 
   // ── Nav / UI ────────────────────────────────────────────────────────────────
   // Initialize from URL query param or default to "overview"
   const [activeNav, setActiveNav]   = useState(searchParams.get("view") || "overview");
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [viewLoading, setViewLoading] = useState(false);
-  const [refreshKey, setRefreshKey]   = useState(0); // increment to remount current view
+  const [refreshKey, setRefreshKey]   = useState(0);
+  const [refreshing,  setRefreshing]  = useState(false); // spin the refresh icon briefly
 
   // ── Firestore data ──────────────────────────────────────────────────────────
   const [invoices,         setInvoices]         = useState([]);
@@ -557,7 +560,9 @@ function DashboardContent() {
       const { db: fdb } = await import("@/lib/firebase");
       const { allowed, current, limit } = await checkMonthlyLimit(
         col(fdb, "users", user.uid, "customers"),
-        limits.customersPerMonth
+        limits.customersPerMonth,
+        userDoc?.activeFrom,
+        userDoc?.extraLimits?.customersPerMonth
       );
       if (!allowed) {
         setAlert({ show: true, type: "error", title: "Monthly Limit Reached 🚫",
@@ -698,6 +703,45 @@ function DashboardContent() {
         onClose={() => setAlert({ ...alert, show: false })}
       />
 
+      {/* ── Locked Tab Upgrade Popup ── */}
+      {lockedTabInfo && (
+        <div className="fixed inset-0 z-[9998] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(10px)" }}
+          onClick={e => e.target === e.currentTarget && setLockedTabInfo(null)}>
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+            style={{ background: "#0d1117", border: "1.5px solid rgba(168,85,247,0.4)", boxShadow: "0 32px 80px rgba(0,0,0,0.8)" }}>
+            <div style={{ height: 5, background: "linear-gradient(to right,#7c3aed,#a855f7,#c084fc)" }} />
+            <div className="px-6 pt-6 pb-4 text-center">
+              <div className="w-16 h-16 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4"
+                style={{ background: "rgba(168,85,247,0.12)", border: "2px solid rgba(168,85,247,0.3)" }}>
+                🔒
+              </div>
+              <h3 className="text-white font-black text-lg">Feature Locked</h3>
+              <p className="text-gray-400 text-sm mt-2 leading-relaxed">
+                <strong className="text-white">{lockedTabInfo.label}</strong> is not included in your current{" "}
+                <span className="capitalize font-semibold" style={{ color: "#c084fc" }}>{userDoc?.plan || "starter"}</span> plan.
+                <br className="my-1"/>
+                Upgrade to <strong className="text-purple-300">Business</strong> or higher to unlock this feature.
+              </p>
+            </div>
+            <div className="px-6 pb-6 flex flex-col gap-2">
+              <a href="https://wa.me/923001234567?text=Hello%20Novexa%2C%20I%20want%20to%20upgrade%20my%20plan."
+                target="_blank" rel="noopener noreferrer"
+                onClick={() => setLockedTabInfo(null)}
+                className="w-full py-2.5 rounded-xl text-sm font-black text-center transition-all hover:scale-[1.01]"
+                style={{ background: "linear-gradient(135deg,#7c3aed,#a855f7)", color: "#fff", boxShadow: "0 4px 16px rgba(168,85,247,0.3)", display: "block" }}>
+                🚀 Upgrade Plan
+              </a>
+              <button onClick={() => setLockedTabInfo(null)}
+                className="w-full py-2 rounded-xl text-sm font-semibold transition-all hover:bg-white/10"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* ── Subscription Expiry Popup ── */}
       {showExpiryPopup && expiryDaysLeft !== null && (
         <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
@@ -780,16 +824,16 @@ function DashboardContent() {
             const isLocked  = !allowed && ALWAYS_SHOW_TABS.has(item.id);
 
             if (isLocked) {
-              // Show tab greyed out with lock tooltip — clicking shows upgrade notice
+              // Show tab greyed out with lock icon — clicking shows upgrade popup
               return (
-                <div key={item.id}
-                  title={`Upgrade to unlock ${item.label}`}
-                  className="relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full cursor-not-allowed select-none"
-                  style={{ color: "#374151", borderLeft: "2px solid transparent", opacity: 0.55 }}>
+                <button key={item.id}
+                  onClick={() => setLockedTabInfo({ label: item.label, id: item.id })}
+                  className="relative flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full text-left transition-all duration-200 hover:opacity-80"
+                  style={{ color: "#4b5563", borderLeft: "2px solid transparent", opacity: 0.6 }}>
                   <span className="text-base grayscale">{item.icon}</span>
                   {item.label}
-                  <span className="ml-auto text-[10px]" style={{ color: "#374151" }}>🔒</span>
-                </div>
+                  <span className="ml-auto text-[11px]">🔒</span>
+                </button>
               );
             }
 
@@ -999,6 +1043,75 @@ function DashboardContent() {
                 ))}
               </div>
 
+              {/* Billing + Payment details */}
+              {(() => {
+                const activeTo      = userDoc?.activeTo;
+                const activeFrom    = userDoc?.activeFrom;
+                const billingPeriod = userDoc?.billingPeriod || null;
+                const paymentMethod = userDoc?.paymentMethod || null;
+                const dLeft = activeTo
+                  ? Math.ceil((new Date(activeTo + "T23:59:59") - new Date()) / 86400000)
+                  : null;
+
+                const rows = [];
+
+                if (activeFrom && activeTo) {
+                  rows.push({
+                    icon: "🗓️", label: "Subscription Period",
+                    value: `${new Date(activeFrom + "T00:00:00").toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })} → ${new Date(activeTo + "T00:00:00").toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}`,
+                    color: "#60a5fa",
+                  });
+                }
+                if (dLeft !== null) {
+                  rows.push({
+                    icon: dLeft < 0 ? "❌" : dLeft <= 7 ? "⚠️" : "✅",
+                    label: "Time Remaining",
+                    value: dLeft < 0
+                      ? `Expired ${Math.abs(dLeft)} din pehle`
+                      : dLeft === 0 ? "Aaj expire ho rahi hai!"
+                      : `${dLeft} din baaki`,
+                    color: dLeft < 0 ? "#f87171" : dLeft <= 7 ? "#fbbf24" : "#34d399",
+                  });
+                }
+                if (billingPeriod) {
+                  rows.push({
+                    icon: billingPeriod === "yearly" ? "📆" : "📅",
+                    label: "Billing Period",
+                    value: billingPeriod === "yearly" ? "Yearly (Saalana)" : "Monthly (Maahana)",
+                    color: billingPeriod === "yearly" ? "#a78bfa" : "#60a5fa",
+                  });
+                }
+                if (paymentMethod) {
+                  const pm = paymentMethod === "online"
+                    ? { emoji: "🌐", text: "Online (Card / Bank Transfer)" }
+                    : paymentMethod === "cheque"
+                    ? { emoji: "🧾", text: "Cheque" }
+                    : { emoji: "💵", text: "Cash (Naqad)" };
+                  rows.push({
+                    icon: pm.emoji, label: "Payment Method",
+                    value: pm.text, color: "#fbbf24",
+                  });
+                }
+                if (rows.length === 0) return null;
+                return (
+                  <div className="flex flex-col gap-2">
+                    <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600">💳 Subscription Details</p>
+                    {rows.map(r => (
+                      <div key={r.label}
+                        className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                        style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}
+                      >
+                        <span className="text-base flex-shrink-0">{r.icon}</span>
+                        <div className="flex-1 min-w-0">
+                          <p className="text-gray-500 text-[10px] uppercase tracking-widest font-bold">{r.label}</p>
+                          <p className="text-sm font-semibold mt-0.5" style={{ color: r.color }}>{r.value}</p>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                );
+              })()}
+
               {/* Monthly Limits */}
               {planDetails?.limits && (
                 <div>
@@ -1103,11 +1216,19 @@ function DashboardContent() {
 
             {/* Refresh current view button */}
             <button
-              onClick={() => setRefreshKey(k => k + 1)}
+              onClick={() => {
+                if (refreshing) return;
+                setRefreshing(true);
+                setRefreshKey(k => k + 1);
+                setTimeout(() => setRefreshing(false), 700);
+              }}
               title="Refresh current view"
               className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:bg-white/8 hover:scale-105 active:scale-95"
               style={{ border: "1px solid rgba(255,255,255,0.07)" }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#9ca3af" strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+                stroke={refreshing ? "#60a5fa" : "#9ca3af"}
+                strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
+                style={{ transition: "stroke 0.2s", animation: refreshing ? "spin 0.7s linear" : "none" }}>
                 <path d="M3 12a9 9 0 0 1 9-9 9.75 9.75 0 0 1 6.74 2.74L21 8"/>
                 <path d="M21 3v5h-5"/>
                 <path d="M21 12a9 9 0 0 1-9 9 9.75 9.75 0 0 1-6.74-2.74L3 16"/>

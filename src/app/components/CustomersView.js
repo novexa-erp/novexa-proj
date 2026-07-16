@@ -213,10 +213,13 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
   const [custInvoices, setCustInvoices] = useState([]);
   const [invLoading,   setInvLoading]   = useState(true);
   const [showInvModal, setShowInvModal] = useState(false);
-  const [editInv,      setEditInv]      = useState(null); // {id, form}
+  const [editInv,      setEditInv]      = useState(null);
   const [savingInv,    setSavingInv]    = useState(false);
   const [deleteInvId,  setDeleteInvId]  = useState(null);
   const [pdfInv,       setPdfInv]       = useState(null);
+  // ── Monthly invoice-per-customer usage ──────────────────────────────────────
+  const [monthlyInvCount,   setMonthlyInvCount]   = useState(null);
+  const [invPerCustLimitVal, setInvPerCustLimitVal] = useState(null);
   
   // ★ Customer payments history
   const [customerPayments, setCustomerPayments] = useState([]);
@@ -242,7 +245,23 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
     return () => unsub();
   }, [uid, customer.id]);
 
-  // ★ Load customer's payment history — filtered strictly by customerId
+  // ── Monthly invoice-per-customer count ──────────────────────────────────────
+  useEffect(() => {
+    if (!uid || !customer.id) return;
+    const plan = userDoc?.plan || "starter";
+    loadPlansFromFirestore().then(fsPlans => {
+      const limits = getLimits(plan, fsPlans);
+      setInvPerCustLimitVal(limits.invoicesPerCustomerPerMonth ?? null);
+    });
+    import("@/lib/planLimits").then(({ countThisMonth }) => {
+      import("firebase/firestore").then(({ collection: col }) => {
+        import("@/lib/firebase").then(({ db: fdb }) => {
+          countThisMonth(col(fdb, "users", uid, "customers", customer.id, "invoices"), userDoc?.activeFrom)
+            .then(c => setMonthlyInvCount(c));
+        });
+      });
+    });
+  }, [uid, customer.id, userDoc?.plan]);
   useEffect(() => {
     if (!uid || !customer.id) return;
     const unsub = onSnapshot(
@@ -835,7 +854,9 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         if (limits.invoicesPerCustomerPerMonth !== null) {
           const { allowed, current, limit } = await checkMonthlyLimit(
             collection(db, "users", uid, "customers", customer.id, "invoices"),
-            limits.invoicesPerCustomerPerMonth
+            limits.invoicesPerCustomerPerMonth,
+            userDoc?.activeFrom,
+            userDoc?.extraLimits?.invoicesPerCustomerPerMonth
           );
           if (!allowed) {
             setAlert({
@@ -1205,6 +1226,43 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
           </button>
         </div>
       )}
+
+      {/* Monthly invoice-per-customer usage bar */}
+      {(() => {
+        const limit = invPerCustLimitVal;
+        if (limit === null || monthlyInvCount === null) return null;
+        const used   = monthlyInvCount;
+        const pct    = Math.min(100, Math.round((used / limit) * 100));
+        const left   = limit - used;
+        const isWarn = pct >= 80;
+        const isFull = pct >= 100;
+        return (
+          <div className="rounded-xl px-4 py-3 flex items-center gap-4"
+            style={{
+              background: isFull ? "rgba(239,68,68,0.08)" : isWarn ? "rgba(251,191,36,0.08)" : "rgba(37,99,235,0.06)",
+              border: `1px solid ${isFull ? "rgba(239,68,68,0.3)" : isWarn ? "rgba(251,191,36,0.3)" : "rgba(37,99,235,0.2)"}`,
+            }}>
+            <span className="text-xl flex-shrink-0">{isFull ? "🚫" : isWarn ? "⚠️" : "🧾"}</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold" style={{ color: isFull ? "#f87171" : isWarn ? "#fbbf24" : "#93c5fd" }}>
+                  {isFull ? "Monthly invoice limit reached for this customer!" : `This month: ${used} / ${limit} invoices for this customer`}
+                </p>
+                <span className="text-xs font-bold" style={{ color: isFull ? "#f87171" : isWarn ? "#fbbf24" : "#60a5fa" }}>
+                  {isFull ? "0 left" : `${left} left`}
+                </span>
+              </div>
+              <div className="w-full h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
+                <div className="h-full rounded-full transition-all duration-500"
+                  style={{
+                    width: `${pct}%`,
+                    background: isFull ? "#ef4444" : isWarn ? "linear-gradient(90deg,#fbbf24,#f97316)" : "linear-gradient(90deg,#2563eb,#60a5fa)",
+                  }} />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* invoice history */}
       <div className="rounded-2xl overflow-hidden" style={cardS}>
@@ -1974,6 +2032,9 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
   const [statusFilter, setStatusFilter] = useState("All");
   // map: customerId → { balance, invoiceCount } — from subcollection (same as CustomerDetail)
   const [customerBalances, setCustomerBalances] = useState({});
+  // ── Monthly usage tracking ──────────────────────────────────────────────────
+  const [monthlyCustomerCount, setMonthlyCustomerCount] = useState(null);
+  const [customersLimitVal,    setCustomersLimitVal]    = useState(null);
   
   // Sweet Alert State
   const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
@@ -2027,6 +2088,24 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
 
     return () => unsubs.forEach(u => u());
   }, [uid, customers]);
+
+  // ── Monthly customer usage ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (!uid) return;
+    const plan = userDoc?.plan || "starter";
+    loadPlansFromFirestore().then(fsPlans => {
+      const limits = getLimits(plan, fsPlans);
+      setCustomersLimitVal(limits.customersPerMonth ?? null);
+    });
+    import("@/lib/planLimits").then(({ countThisMonth }) => {
+      import("firebase/firestore").then(({ collection: col }) => {
+        import("@/lib/firebase").then(({ db: fdb }) => {
+          countThisMonth(col(fdb, "users", uid, "customers"), userDoc?.activeFrom)
+            .then(c => setMonthlyCustomerCount(c));
+        });
+      });
+    });
+  }, [uid, userDoc?.plan]);
 
   // ── Restore detailCust from URL on load / refresh ──────────────────────────
   useEffect(() => {
@@ -2087,7 +2166,9 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
         if (limits.customersPerMonth !== null) {
           const { allowed, current, limit } = await checkMonthlyLimit(
             collection(db, "users", uid, "customers"),
-            limits.customersPerMonth
+            limits.customersPerMonth,
+            userDoc?.activeFrom,
+            userDoc?.extraLimits?.customersPerMonth
           );
           if (!allowed) {
             setAlert({
@@ -2370,6 +2451,43 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
             </div>
           ))}
         </div>
+
+      {/* Monthly Customers Usage Bar */}
+      {(() => {
+        const limit = customersLimitVal;
+        if (limit === null || monthlyCustomerCount === null) return null;
+        const used   = monthlyCustomerCount;
+        const pct    = Math.min(100, Math.round((used / limit) * 100));
+        const left   = limit - used;
+        const isWarn = pct >= 80;
+        const isFull = pct >= 100;
+        return (
+          <div className="rounded-xl px-4 py-3 flex items-center gap-4"
+            style={{
+              background: isFull ? "rgba(239,68,68,0.08)" : isWarn ? "rgba(251,191,36,0.08)" : "rgba(37,99,235,0.06)",
+              border: `1px solid ${isFull ? "rgba(239,68,68,0.3)" : isWarn ? "rgba(251,191,36,0.3)" : "rgba(37,99,235,0.2)"}`,
+            }}>
+            <span className="text-xl flex-shrink-0">{isFull ? "🚫" : isWarn ? "⚠️" : "👥"}</span>
+            <div className="flex-1 min-w-0">
+              <div className="flex items-center justify-between mb-1">
+                <p className="text-xs font-semibold" style={{ color: isFull ? "#f87171" : isWarn ? "#fbbf24" : "#93c5fd" }}>
+                  {isFull ? "Monthly customer limit reached!" : `This month: ${used} / ${limit} customers added`}
+                </p>
+                <span className="text-xs font-bold" style={{ color: isFull ? "#f87171" : isWarn ? "#fbbf24" : "#60a5fa" }}>
+                  {isFull ? "0 left" : `${left} left`}
+                </span>
+              </div>
+              <div className="w-full h-1.5 rounded-full" style={{ background: "rgba(255,255,255,0.06)" }}>
+                <div className="h-full rounded-full transition-all duration-500"
+                  style={{
+                    width: `${pct}%`,
+                    background: isFull ? "#ef4444" : isWarn ? "linear-gradient(90deg,#fbbf24,#f97316)" : "linear-gradient(90deg,#2563eb,#60a5fa)",
+                  }} />
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {/* Search & Filter */}
       <div className="flex flex-col lg:flex-row gap-3">

@@ -153,6 +153,10 @@ function ProfileTab({ data }) {
             highlight={dl!==null&&dl<=7?"#fbbf24":dl!==null&&dl<0?"#f87171":undefined} />
           <InfoCell label="Device Limit" value={`${user.maxDevices||1} device${(user.maxDevices||1)>1?"s":""}`} />
           <InfoCell label="Freeze Time"  value={user.activeToTime||"11:59 PM (default)"} />
+          <InfoCell label="Billing Period"
+            value={user.billingPeriod === "yearly" ? "📆 Yearly" : user.billingPeriod === "monthly" ? "📅 Monthly" : user.billingPeriod || "—"} />
+          <InfoCell label="Payment Method"
+            value={user.paymentMethod === "online" ? "🌐 Online" : user.paymentMethod === "cheque" ? "🧾 Cheque" : user.paymentMethod === "cash" ? "💵 Cash" : user.paymentMethod || "—"} />
           <InfoCell label="Last Login"   value={fmtDT(user.lastLogin||authRecord?.lastSignInTime)} />
           <InfoCell label="Last Active"  value={fmtDT(user.lastActiveAt)} />
         </div>
@@ -165,6 +169,49 @@ function ProfileTab({ data }) {
           <InfoCell label="Device"   value={user.lastDevice} />
         </div>
       </div>
+
+      {/* ── Extra Monthly Limits ── */}
+      {(() => {
+        const extras = user.extraLimits;
+        const EXTRA_FIELDS = [
+          { key: "invoicesPerMonth",            label: "Invoices / Month",               icon: "🧾" },
+          { key: "invoicesPerCustomerPerMonth", label: "Invoices per Customer / Month",  icon: "👥" },
+          { key: "customersPerMonth",           label: "Customers / Month",              icon: "👤" },
+          { key: "suppliersPerMonth",           label: "Suppliers / Month",              icon: "🏭" },
+          { key: "ordersPerSupplierPerMonth",   label: "Orders per Supplier / Month",    icon: "🛒" },
+        ];
+        const hasAny = extras && EXTRA_FIELDS.some(f => Number(extras[f.key]) > 0);
+        return (
+          <div>
+            <div className="flex items-center gap-2 mb-3">
+              <span>⚡</span>
+              <span className="text-white font-bold text-sm">Extra Monthly Limits</span>
+              {hasAny
+                ? <span className="ml-auto px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background:"rgba(245,158,11,0.15)", border:"1px solid rgba(245,158,11,0.35)", color:"#fbbf24" }}>Active</span>
+                : <span className="ml-auto px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background:"rgba(255,255,255,0.05)", color:"#4b5563" }}>None</span>
+              }
+            </div>
+            {hasAny ? (
+              <div className="rounded-xl overflow-hidden" style={{ border:"1px solid rgba(245,158,11,0.2)", background:"rgba(245,158,11,0.03)" }}>
+                <div className="grid px-4 py-2 text-[10px] font-bold uppercase tracking-widest"
+                  style={{ color:"#4b5563", borderBottom:"1px solid rgba(255,255,255,0.05)", gridTemplateColumns:"2fr 1fr" }}>
+                  <span>Limit Type</span><span className="text-right">Extra Quota</span>
+                </div>
+                {EXTRA_FIELDS.filter(f => Number(extras?.[f.key]) > 0).map((f, i, arr) => (
+                  <div key={f.key} className="flex items-center gap-3 px-4 py-2.5"
+                    style={{ borderBottom: i < arr.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
+                    <span className="text-sm">{f.icon}</span>
+                    <span className="text-gray-400 text-xs flex-1">{f.label}</span>
+                    <span className="font-black text-sm" style={{ color:"#fbbf24" }}>+{Number(extras[f.key]).toLocaleString()}</span>
+                  </div>
+                ))}
+              </div>
+            ) : (
+              <p className="text-gray-600 text-xs px-1">Koi extra limits nahi hain is user ke liye.</p>
+            )}
+          </div>
+        );
+      })()}
 
       {/* ── Gmail App Password Section ── */}
       <div>
