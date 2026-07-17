@@ -6,7 +6,7 @@ import {
   getDocs, writeBatch, where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { getLimits, checkMonthlyLimit, loadPlansFromFirestore } from "@/lib/planLimits";
+import { getLimits, checkMonthlyLimit, loadPlansFromFirestore, getEffectiveLimit } from "@/lib/planLimits";
 import SweetAlert from "./SweetAlert";
 import EmailConfirmationDialog from "./EmailConfirmationDialog";
 import { autoEmailSupplierOrder } from "@/lib/emailUtils";
@@ -2590,7 +2590,13 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
     const plan = userDoc?.plan || "starter";
     loadPlansFromFirestore().then(fsPlans => {
       const limits = getLimits(plan, fsPlans);
-      setOrdersPerSupLimitVal(limits.ordersPerSupplierPerMonth ?? null);
+      const effective = getEffectiveLimit(
+        limits.ordersPerSupplierPerMonth ?? null,
+        "ordersPerSupplierPerMonth",
+        userDoc?.extraLimits,
+        userDoc?.extraLimitsExpiresAt
+      );
+      setOrdersPerSupLimitVal(effective);
     });
     import("@/lib/planLimits").then(({ countThisMonth }) => {
       import("firebase/firestore").then(({ collection: col }) => {
@@ -2600,7 +2606,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
         });
       });
     });
-  }, [uid, supplier.id, userDoc?.plan]);
+  }, [uid, supplier.id, userDoc?.plan, userDoc?.extraLimits, userDoc?.extraLimitsExpiresAt]);
 
   // real-time supplier payments
   useEffect(() => {
@@ -2738,7 +2744,8 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
             collection(db, "users", uid, "suppliers", supplier.id, "orders"),
             limits.ordersPerSupplierPerMonth,
             userDoc?.activeFrom,
-            userDoc?.extraLimits?.ordersPerSupplierPerMonth
+            userDoc?.extraLimits?.ordersPerSupplierPerMonth,
+            userDoc?.extraLimitsExpiresAt
           );
           if (!allowed) {
             setAlert({

@@ -4,7 +4,7 @@ import {
   collection, addDoc, doc, updateDoc, serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { getLimits, checkMonthlyLimit, loadPlansFromFirestore } from "@/lib/planLimits";
+import { getLimits, checkMonthlyLimit, loadPlansFromFirestore, getEffectiveLimit } from "@/lib/planLimits";
 import InvoiceModal, { formatRs } from "./InvoiceModal";
 import InvoicePDFModal, { InvoiceTemplateForEmail } from "./InvoicePDF";
 import SweetAlert from "./SweetAlert";
@@ -67,9 +67,9 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
     // Load dynamic limit from Firestore
     loadPlansFromFirestore().then(fsPlans => {
       const limits = getLimits(plan, fsPlans);
-      const base  = limits.invoicesPerMonth ?? null;
-      const extra = Number(userDoc?.extraLimits?.invoicesPerMonth) || 0;
-      setPlanLimitVal(base === null ? null : base + extra);
+      const base   = limits.invoicesPerMonth ?? null;
+      const effective = getEffectiveLimit(base, "invoicesPerMonth", userDoc?.extraLimits, userDoc?.extraLimitsExpiresAt);
+      setPlanLimitVal(effective);
     });
     import("@/lib/planLimits").then(({ countThisMonth }) => {
       import("firebase/firestore").then(({ collection }) => {
@@ -79,7 +79,7 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
         });
       });
     });
-  }, [uid, invoices, userDoc?.plan, userDoc?.extraLimits]);
+  }, [uid, invoices, userDoc?.plan, userDoc?.extraLimits, userDoc?.extraLimitsExpiresAt]);
 
   // ── Scroll to & flash highlighted invoice ──────────────────────────────────
   useEffect(() => {
@@ -169,7 +169,8 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
           collection(db, "users", uid, "invoices"),
           limits.invoicesPerMonth,
           userDoc?.activeFrom,
-          userDoc?.extraLimits?.invoicesPerMonth
+          userDoc?.extraLimits?.invoicesPerMonth,
+          userDoc?.extraLimitsExpiresAt
         );
         if (!allowed) {
           setAlert({

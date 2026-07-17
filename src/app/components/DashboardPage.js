@@ -22,6 +22,7 @@ import { OrderFormView } from "./SupplierDetail";
 import ContactView from "./ContactView";
 import MyTicketsView from "./MyTicketsView";
 import TrashView from "./TrashView";
+import ComingSoonView from "./ComingSoonView";
 
 // ── Sidebar nav items ────────────────────────────────────────────────────────
 const navItems = [
@@ -33,6 +34,8 @@ const navItems = [
   { icon: "🛒", label: "Purchases",   id: "purchases"   },
   { icon: "📋", label: "Order Form",  id: "order-form"  },
   { icon: "📈", label: "Analytics",   id: "analytics"   },
+  { icon: "👔", label: "HR",          id: "hr"          },
+  { icon: "🏢", label: "Branches",    id: "branches"    },
   { icon: "⚙️", label: "Settings",   id: "settings"    },
   { icon: "📞", label: "Contact Us",  id: "contact"     },
   { icon: "🎫", label: "My Tickets",  id: "my-tickets"  },
@@ -54,11 +57,13 @@ const PLAN_PERMISSIONS = {
   professional: new Set([
     "overview", "invoices", "customers", "inventory",
     "payments", "purchases", "order-form", "analytics",
+    "hr", "branches",
     "settings", "contact", "my-tickets", "trash",
   ]),
   enterprise: new Set([
     "overview", "invoices", "customers", "inventory",
     "payments", "purchases", "order-form", "analytics",
+    "hr", "branches",
     "settings", "contact", "my-tickets", "trash",
   ]),
 };
@@ -67,6 +72,7 @@ const PLAN_PERMISSIONS = {
 const ALWAYS_SHOW_TABS = new Set([
   "overview", "invoices", "customers", "inventory",
   "payments", "purchases", "order-form", "analytics",
+  "hr", "branches",
   "settings", "contact", "my-tickets",
 ]);
 
@@ -562,7 +568,8 @@ function DashboardContent() {
         col(fdb, "users", user.uid, "customers"),
         limits.customersPerMonth,
         userDoc?.activeFrom,
-        userDoc?.extraLimits?.customersPerMonth
+        userDoc?.extraLimits?.customersPerMonth,
+        userDoc?.extraLimitsExpiresAt
       );
       if (!allowed) {
         setAlert({ show: true, type: "error", title: "Monthly Limit Reached 🚫",
@@ -1139,6 +1146,105 @@ function DashboardContent() {
                 </div>
               )}
 
+              {/* Extra Add-on Quota */}
+              {(() => {
+                const extras  = userDoc?.extraLimits;
+                const purchAt = userDoc?.extraLimitsPurchasedAt;
+                const expAt   = userDoc?.extraLimitsExpiresAt;
+                const payMeth = userDoc?.extraLimitsPaymentMethod;
+
+                const EXTRA_ROWS = [
+                  { key: "invoicesPerMonth",            label: "Extra Invoices / Month",               icon: "🧾" },
+                  { key: "invoicesPerCustomerPerMonth", label: "Extra Inv. per Customer / Month",      icon: "👥" },
+                  { key: "customersPerMonth",           label: "Extra Customers",                       icon: "👤" },
+                  { key: "suppliersPerMonth",           label: "Extra Suppliers",                       icon: "🏭" },
+                  { key: "ordersPerSupplierPerMonth",   label: "Extra Orders per Supplier / Month",    icon: "🛒" },
+                ];
+                const activeRows = EXTRA_ROWS.filter(r => Number(extras?.[r.key]) > 0);
+                if (!extras || activeRows.length === 0) return null;
+
+                const now     = new Date();
+                const expDate = expAt ? new Date(expAt) : null;
+                const expired = expDate ? expDate < now : false;
+                const daysLeft = expDate
+                  ? Math.ceil((expDate - now) / 86400000)
+                  : null;
+
+                const fmtDt = (iso) => {
+                  if (!iso) return "—";
+                  try { return new Date(iso).toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" }); }
+                  catch { return "—"; }
+                };
+                const payLabel = payMeth === "online" ? "🌐 Online" : payMeth === "cheque" ? "🧾 Cheque" : "💵 Cash";
+
+                return (
+                  <div>
+                    <div className="flex items-center gap-2 mb-2">
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600">⚡ Active Add-on Quota</p>
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold flex-shrink-0"
+                        style={{
+                          background: expired ? "rgba(248,113,113,0.15)" : "rgba(245,158,11,0.15)",
+                          border: `1px solid ${expired ? "rgba(248,113,113,0.35)" : "rgba(245,158,11,0.35)"}`,
+                          color: expired ? "#f87171" : "#fbbf24",
+                        }}>
+                        {expired ? "Expired" : `${daysLeft}d left`}
+                      </span>
+                    </div>
+
+                    {/* Purchased / Expiry info */}
+                    <div className="grid grid-cols-2 gap-2 mb-2">
+                      <div className="px-3 py-2.5 rounded-xl"
+                        style={{ background: "rgba(245,158,11,0.04)", border: "1px solid rgba(245,158,11,0.15)" }}>
+                        <p className="text-gray-600 text-[9px] uppercase tracking-widest font-bold mb-1">Purchased On</p>
+                        <p className="text-amber-300 text-xs font-semibold">{fmtDt(purchAt)}</p>
+                        <p className="text-gray-600 text-[9px] mt-0.5">{payLabel}</p>
+                      </div>
+                      <div className="px-3 py-2.5 rounded-xl"
+                        style={{
+                          background: expired ? "rgba(248,113,113,0.04)" : "rgba(245,158,11,0.04)",
+                          border: `1px solid ${expired ? "rgba(248,113,113,0.2)" : "rgba(245,158,11,0.15)"}`,
+                        }}>
+                        <p className="text-gray-600 text-[9px] uppercase tracking-widest font-bold mb-1">
+                          {expired ? "Expired On" : "Expires On"}
+                        </p>
+                        <p className="text-xs font-semibold" style={{ color: expired ? "#f87171" : "#fbbf24" }}>
+                          {fmtDt(expAt)}
+                        </p>
+                        <p className="text-gray-600 text-[9px] mt-0.5">
+                          {expired ? "Add-on khatam ho gaya" : `${daysLeft} din baaki`}
+                        </p>
+                      </div>
+                    </div>
+
+                    {/* Extra quota rows */}
+                    <div className="flex flex-col gap-1.5">
+                      {activeRows.map(r => (
+                        <div key={r.key}
+                          className="flex items-center gap-3 px-3 py-2 rounded-xl"
+                          style={{
+                            background: expired ? "rgba(248,113,113,0.03)" : "rgba(245,158,11,0.04)",
+                            border: `1px solid ${expired ? "rgba(248,113,113,0.12)" : "rgba(245,158,11,0.12)"}`,
+                            opacity: expired ? 0.6 : 1,
+                          }}>
+                          <span className="text-sm flex-shrink-0">{r.icon}</span>
+                          <span className="text-gray-400 text-xs flex-1">{r.label}</span>
+                          <span className="text-xs font-black flex-shrink-0"
+                            style={{ color: expired ? "#f87171" : "#fbbf24" }}>
+                            +{Number(extras[r.key]).toLocaleString()}
+                          </span>
+                        </div>
+                      ))}
+                    </div>
+
+                    {expired && (
+                      <p className="text-[10px] text-red-400 mt-2 text-center font-medium">
+                        ⏰ Add-on expire ho gaya — naya add-on admin se request karein
+                      </p>
+                    )}
+                  </div>
+                );
+              })()}
+
               {/* Dashboard Access */}
               {planDetails?.allowedTabs && (
                 <div>
@@ -1149,6 +1255,7 @@ function DashboardContent() {
                       { id: "customers",  icon: "👥" }, { id: "inventory",  icon: "📦" },
                       { id: "payments",   icon: "💳" }, { id: "purchases",  icon: "🛒" },
                       { id: "order-form", icon: "📋" }, { id: "analytics",  icon: "📈" },
+                      { id: "hr",         icon: "👔" }, { id: "branches",   icon: "🏢" },
                       { id: "settings",   icon: "⚙️" }, { id: "contact",    icon: "📞" },
                       { id: "my-tickets", icon: "🎫" },
                     ].map(tab => {
@@ -1335,6 +1442,24 @@ function DashboardContent() {
             <OrderFormView key={`orderform-${refreshKey}`} userDoc={userDoc} />
           ) : activeNav === "analytics" ? (
             <AnalyticsView key={`analytics-${refreshKey}`} uid={user?.uid} />
+          ) : activeNav === "hr" ? (
+            <ComingSoonView
+              key={`hr-${refreshKey}`}
+              feature="HR"
+              icon="👔"
+              description="Human Resource management — employees, attendance, payroll, and much more. Launching soon!"
+              color="from-emerald-500 to-teal-600"
+              accentColor="#10b981"
+            />
+          ) : activeNav === "branches" ? (
+            <ComingSoonView
+              key={`branches-${refreshKey}`}
+              feature="Branches"
+              icon="🏢"
+              description="Multi-branch management — manage all your locations and their data from one place. Launching soon!"
+              color="from-blue-500 to-cyan-600"
+              accentColor="#3b82f6"
+            />
           ) : activeNav === "settings" ? (
             <SettingsView key={`settings-${refreshKey}`} uid={user?.uid} user={user} userDoc={userDoc} loading={viewLoading}
               onSettingsSaved={(updated) => setUserDoc(prev => ({ ...prev, ...updated }))} />

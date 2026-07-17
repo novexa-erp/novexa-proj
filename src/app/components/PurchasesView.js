@@ -6,7 +6,7 @@ import {
   doc, serverTimestamp, onSnapshot, query, orderBy, writeBatch, where,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { getLimits, loadPlansFromFirestore, countThisMonth } from "@/lib/planLimits";
+import { getLimits, loadPlansFromFirestore, countThisMonth, getEffectiveLimit } from "@/lib/planLimits";
 import SweetAlert from "./SweetAlert";
 import SupplierDetailComponent from "./SupplierDetail";
 import { OrderFormModal } from "./SupplierDetail";
@@ -349,12 +349,18 @@ export default function PurchasesView({ uid, userDoc }) {
     if (!uid) return;
     const plan = userDoc?.plan || "starter";
     loadPlansFromFirestore().then(fsPlans => {
-      const limits = getLimits(plan, fsPlans);
-      setSuppliersLimitVal(limits.suppliersPerMonth ?? null);
+      const limits    = getLimits(plan, fsPlans);
+      const effective = getEffectiveLimit(
+        limits.suppliersPerMonth ?? null,
+        "suppliersPerMonth",
+        userDoc?.extraLimits,
+        userDoc?.extraLimitsExpiresAt
+      );
+      setSuppliersLimitVal(effective);
     });
     countThisMonth(collection(db, "users", uid, "suppliers"), userDoc?.activeFrom)
       .then(c => setMonthlySupplierCount(c));
-  }, [uid, userDoc?.plan]);
+  }, [uid, userDoc?.plan, userDoc?.extraLimits, userDoc?.extraLimitsExpiresAt]);
   async function handleSaveSupplier(form) {
     setSavingSupplier(true);
     try {

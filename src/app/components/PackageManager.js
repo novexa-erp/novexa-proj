@@ -14,6 +14,8 @@ const ALL_TABS = [
   { id: "purchases",   label: "Purchases",   icon: "🛒" },
   { id: "order-form",  label: "Order Form",  icon: "📋" },
   { id: "analytics",   label: "Analytics",   icon: "📈" },
+  { id: "hr",          label: "HR",          icon: "👔" },
+  { id: "branches",    label: "Branches",    icon: "🏢" },
   { id: "settings",    label: "Settings",    icon: "⚙️" },
   { id: "contact",     label: "Contact Us",  icon: "📞" },
   { id: "my-tickets",  label: "My Tickets",  icon: "🎫" },
@@ -79,7 +81,7 @@ const DEFAULT_PLANS = [
       suppliersPerMonth: 500,
       ordersPerSupplierPerMonth: 2000,
     },
-    allowedTabs: ["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","settings","contact","my-tickets"],
+    allowedTabs: ["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","hr","branches","settings","contact","my-tickets"],
   },
   {
     id: "enterprise",
@@ -99,7 +101,7 @@ const DEFAULT_PLANS = [
       suppliersPerMonth: null,
       ordersPerSupplierPerMonth: null,
     },
-    allowedTabs: ["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","settings","contact","my-tickets"],
+    allowedTabs: ["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","hr","branches","settings","contact","my-tickets"],
   },
 ];
 
@@ -111,6 +113,100 @@ const LIMIT_FIELDS = [
   { key: "ordersPerSupplierPerMonth",    label: "Orders per Supplier / Month",        icon: "🛒" },
 ];
 
+// ── Add-on fields with tiered pricing ────────────────────────────────────────
+// Each category: per-unit price + packages (qty → price)
+// Price rules:
+//   < smallest package qty → per-unit rate × qty
+//   >= a package qty       → that package's flat price
+const ADDON_CATEGORIES = [
+  {
+    limitKey: "invoicesPerMonth",
+    label: "Extra Invoices / Month",
+    icon: "🧾",
+    perUnitKey: "invoicesPerMonth_per",
+    perUnitLabel: "Per Invoice",
+    defaultPerUnit: 10,
+    packages: [
+      { key: "invoicesPerMonth_50",   qty: 50,   defaultPrice: 500  },
+      { key: "invoicesPerMonth_100",  qty: 100,  defaultPrice: 900  },
+      { key: "invoicesPerMonth_250",  qty: 250,  defaultPrice: 2000 },
+      { key: "invoicesPerMonth_500",  qty: 500,  defaultPrice: 3500 },
+      { key: "invoicesPerMonth_1000", qty: 1000, defaultPrice: 6000 },
+    ],
+  },
+  {
+    limitKey: "invoicesPerCustomerPerMonth",
+    label: "Extra Invoices per Customer / Month",
+    icon: "👥",
+    perUnitKey: "invoicesPerCustomerPerMonth_per",
+    perUnitLabel: "Per Invoice",
+    defaultPerUnit: 10,
+    packages: [
+      { key: "invoicesPerCustomerPerMonth_50",   qty: 50,   defaultPrice: 500  },
+      { key: "invoicesPerCustomerPerMonth_100",  qty: 100,  defaultPrice: 900  },
+      { key: "invoicesPerCustomerPerMonth_250",  qty: 250,  defaultPrice: 2000 },
+      { key: "invoicesPerCustomerPerMonth_500",  qty: 500,  defaultPrice: 3500 },
+      { key: "invoicesPerCustomerPerMonth_1000", qty: 1000, defaultPrice: 6000 },
+    ],
+  },
+  {
+    limitKey: "customersPerMonth",
+    label: "Extra Customers",
+    icon: "👤",
+    perUnitKey: "customersPerMonth_per",
+    perUnitLabel: "Per Customer",
+    defaultPerUnit: 30,
+    packages: [
+      { key: "customersPerMonth_50",   qty: 50,   defaultPrice: 1200 },
+      { key: "customersPerMonth_100",  qty: 100,  defaultPrice: 2200 },
+      { key: "customersPerMonth_250",  qty: 250,  defaultPrice: 5000 },
+      { key: "customersPerMonth_500",  qty: 500,  defaultPrice: 9000 },
+      { key: "customersPerMonth_1000", qty: 1000, defaultPrice: 16000 },
+    ],
+  },
+  {
+    limitKey: "suppliersPerMonth",
+    label: "Extra Suppliers",
+    icon: "🏭",
+    perUnitKey: "suppliersPerMonth_per",
+    perUnitLabel: "Per Supplier",
+    defaultPerUnit: 30,
+    packages: [
+      { key: "suppliersPerMonth_20",   qty: 20,   defaultPrice: 500  },
+      { key: "suppliersPerMonth_50",   qty: 50,   defaultPrice: 1200 },
+      { key: "suppliersPerMonth_100",  qty: 100,  defaultPrice: 2200 },
+      { key: "suppliersPerMonth_250",  qty: 250,  defaultPrice: 5000 },
+      { key: "suppliersPerMonth_500",  qty: 500,  defaultPrice: 9000 },
+      { key: "suppliersPerMonth_1000", qty: 1000, defaultPrice: 16000 },
+    ],
+  },
+  {
+    limitKey: "ordersPerSupplierPerMonth",
+    label: "Extra Orders per Supplier / Month",
+    icon: "🛒",
+    perUnitKey: "ordersPerSupplierPerMonth_per",
+    perUnitLabel: "Per Order",
+    defaultPerUnit: 10,
+    packages: [
+      { key: "ordersPerSupplierPerMonth_50",   qty: 50,   defaultPrice: 500  },
+      { key: "ordersPerSupplierPerMonth_100",  qty: 100,  defaultPrice: 900  },
+      { key: "ordersPerSupplierPerMonth_250",  qty: 250,  defaultPrice: 2000 },
+      { key: "ordersPerSupplierPerMonth_500",  qty: 500,  defaultPrice: 3500 },
+      { key: "ordersPerSupplierPerMonth_1000", qty: 1000, defaultPrice: 6000 },
+    ],
+  },
+];
+
+// Flat list of all price keys for Firestore storage
+const DEFAULT_ADDON_PRICES = (() => {
+  const out = {};
+  ADDON_CATEGORIES.forEach(cat => {
+    out[cat.perUnitKey] = cat.defaultPerUnit;
+    cat.packages.forEach(pkg => { out[pkg.key] = pkg.defaultPrice; });
+  });
+  return out;
+})();
+
 const inputSt = {
   outline: "none", background: "rgba(255,255,255,0.04)",
   border: "1.5px solid rgba(255,255,255,0.09)", borderRadius: 10,
@@ -118,21 +214,26 @@ const inputSt = {
 };
 
 export default function PackageManager({ getToken, onToast }) {
-  const [plans,    setPlans]    = useState(null); // null = loading
-  const [saving,   setSaving]   = useState(false);
-  const [activeId, setActiveId] = useState("starter");
+  const [plans,       setPlans]       = useState(null); // null = loading
+  const [addonPrices, setAddonPrices] = useState(null); // null = loading
+  const [saving,      setSaving]      = useState(false);
+  const [activeId,    setActiveId]    = useState("starter");
 
   // ── Load from Firestore ───────────────────────────────────────────────────
   const load = useCallback(async () => {
     try {
       const snap = await getDoc(doc(db, "adminConfig", "plans"));
       if (snap.exists()) {
-        setPlans(snap.data().list || DEFAULT_PLANS);
+        const data = snap.data();
+        setPlans(data.list || DEFAULT_PLANS);
+        setAddonPrices(data.addonPrices || DEFAULT_ADDON_PRICES);
       } else {
         setPlans(DEFAULT_PLANS);
+        setAddonPrices(DEFAULT_ADDON_PRICES);
       }
     } catch {
       setPlans(DEFAULT_PLANS);
+      setAddonPrices(DEFAULT_ADDON_PRICES);
     }
   }, []);
 
@@ -142,7 +243,11 @@ export default function PackageManager({ getToken, onToast }) {
   async function handleSave() {
     setSaving(true);
     try {
-      await setDoc(doc(db, "adminConfig", "plans"), { list: plans, updatedAt: new Date().toISOString() });
+      await setDoc(doc(db, "adminConfig", "plans"), {
+        list: plans,
+        addonPrices: addonPrices || DEFAULT_ADDON_PRICES,
+        updatedAt: new Date().toISOString(),
+      });
       onToast("Plans saved successfully! ✓", "success");
     } catch (err) {
       onToast("Save failed: " + err.message, "error");
@@ -167,7 +272,7 @@ export default function PackageManager({ getToken, onToast }) {
     }));
   }
 
-  if (!plans) {
+  if (!plans || !addonPrices) {
     return (
       <div className="flex items-center justify-center h-64">
         <div className="w-8 h-8 rounded-full border-2 border-t-amber-500 border-transparent animate-spin" />
@@ -415,6 +520,64 @@ export default function PackageManager({ getToken, onToast }) {
           </div>
         </div>
       )}
+
+      {/* ── Add-on Prices ───────────────────────────────────────────────── */}
+      <div className="rounded-2xl p-5" style={{ background: "rgba(245,158,11,0.04)", border: "1.5px solid rgba(245,158,11,0.25)" }}>
+        <div className="flex items-center gap-2 mb-1">
+          <span className="text-lg">⚡</span>
+          <p className="text-amber-400 text-sm font-black uppercase tracking-widest">Add-on Prices (PKR)</p>
+        </div>
+        <p className="text-gray-600 text-[10px] mb-5">
+          Har add-on 1 mahine ke liye valid. Smallest package se kam qty → per-unit rate × qty.
+        </p>
+        <div className="flex flex-col gap-6">
+          {ADDON_CATEGORIES.map(cat => (
+            <div key={cat.limitKey}>
+              {/* Category header */}
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-base">{cat.icon}</span>
+                <p className="text-gray-300 text-xs font-bold">{cat.label}</p>
+              </div>
+              {/* Per-unit price */}
+              <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl mb-2"
+                style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(245,158,11,0.2)" }}>
+                <div className="flex-1">
+                  <p className="text-gray-400 text-xs font-semibold">{cat.perUnitLabel} (custom qty &lt; {cat.packages[0].qty})</p>
+                  <p className="text-gray-600 text-[10px]">Jab qty {cat.packages[0].qty} se kam ho — per unit charge</p>
+                </div>
+                <div className="flex items-center gap-1 flex-shrink-0">
+                  <span className="text-gray-500 text-xs">Rs.</span>
+                  <input type="number" min="0"
+                    value={addonPrices[cat.perUnitKey] ?? cat.defaultPerUnit}
+                    onChange={e => setAddonPrices(prev => ({ ...prev, [cat.perUnitKey]: e.target.value === "" ? 0 : Number(e.target.value) }))}
+                    style={{ ...inputSt, width: 80, textAlign: "center", color: "#60a5fa", fontWeight: 700 }}
+                  />
+                </div>
+              </div>
+              {/* Package tiers */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                {cat.packages.map(pkg => (
+                  <div key={pkg.key} className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                    style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(245,158,11,0.1)" }}>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-gray-300 text-xs font-semibold">+{pkg.qty.toLocaleString()} {cat.label.includes("Invoice") ? "Invoices" : cat.label.includes("Customer") ? "Customers" : cat.label.includes("Supplier") && !cat.label.includes("Order") ? "Suppliers" : "Orders"}</p>
+                      <p className="text-gray-600 text-[10px]">Package · 1 month validity</p>
+                    </div>
+                    <div className="flex items-center gap-1 flex-shrink-0">
+                      <span className="text-gray-500 text-xs">Rs.</span>
+                      <input type="number" min="0"
+                        value={addonPrices[pkg.key] ?? pkg.defaultPrice}
+                        onChange={e => setAddonPrices(prev => ({ ...prev, [pkg.key]: e.target.value === "" ? 0 : Number(e.target.value) }))}
+                        style={{ ...inputSt, width: 80, textAlign: "center", color: "#fbbf24", fontWeight: 700 }}
+                      />
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          ))}
+        </div>
+      </div>
 
       {/* Save reminder */}
       <div className="flex items-center justify-between px-5 py-3 rounded-xl"

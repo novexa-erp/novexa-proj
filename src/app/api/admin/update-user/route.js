@@ -25,7 +25,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const { uid, name, phone, address, activeFrom, activeTo, activeToTime, status, newPassword, maxDevices, emailFeatureEnabled, plan, subscriptionType, billingPeriod, paymentMethod, extraLimits } = body;
+    const { uid, name, phone, address, activeFrom, activeTo, activeToTime, status, newPassword, maxDevices, emailFeatureEnabled, plan, subscriptionType, billingPeriod, paymentMethod, extraLimits, extraLimitsExpiresAt, extraLimitsPurchasedAt, extraLimitsPaymentMethod } = body;
     if (!uid) return NextResponse.json({ error: "Missing uid" }, { status: 400 });
 
     const { adminAuth, adminDb } = await getAdminModules();
@@ -66,6 +66,11 @@ export async function POST(request) {
     const { lastRenewedAt, lastRenewedBy } = body;
     if (lastRenewedAt) update.lastRenewedAt = lastRenewedAt;
     if (lastRenewedBy) update.lastRenewedBy = lastRenewedBy;
+
+    // Add-on expiry / purchase tracking
+    if (extraLimitsExpiresAt    !== undefined) update.extraLimitsExpiresAt    = extraLimitsExpiresAt;
+    if (extraLimitsPurchasedAt  !== undefined) update.extraLimitsPurchasedAt  = extraLimitsPurchasedAt;
+    if (extraLimitsPaymentMethod !== undefined) update.extraLimitsPaymentMethod = extraLimitsPaymentMethod;
 
     // If unfreezing, clear the frozenAt / frozenReason
     if (status === "active") {

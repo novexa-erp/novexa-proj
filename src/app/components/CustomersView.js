@@ -6,7 +6,7 @@ import {
   serverTimestamp, onSnapshot, query, orderBy, where, getDocs,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { getLimits, checkMonthlyLimit, loadPlansFromFirestore } from "@/lib/planLimits";
+import { getLimits, checkMonthlyLimit, loadPlansFromFirestore, getEffectiveLimit } from "@/lib/planLimits";
 import InvoiceModal, { EMPTY_FORM, calcTotals } from "./InvoiceModal";
 import InvoicePDFModal from "./InvoicePDF";
 import CustomerHistoryPDFModal from "./CustomerHistoryPDF";
@@ -251,7 +251,13 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
     const plan = userDoc?.plan || "starter";
     loadPlansFromFirestore().then(fsPlans => {
       const limits = getLimits(plan, fsPlans);
-      setInvPerCustLimitVal(limits.invoicesPerCustomerPerMonth ?? null);
+      const effective = getEffectiveLimit(
+        limits.invoicesPerCustomerPerMonth ?? null,
+        "invoicesPerCustomerPerMonth",
+        userDoc?.extraLimits,
+        userDoc?.extraLimitsExpiresAt
+      );
+      setInvPerCustLimitVal(effective);
     });
     import("@/lib/planLimits").then(({ countThisMonth }) => {
       import("firebase/firestore").then(({ collection: col }) => {
@@ -261,7 +267,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         });
       });
     });
-  }, [uid, customer.id, userDoc?.plan]);
+  }, [uid, customer.id, userDoc?.plan, userDoc?.extraLimits, userDoc?.extraLimitsExpiresAt]);
   useEffect(() => {
     if (!uid || !customer.id) return;
     const unsub = onSnapshot(
@@ -856,7 +862,8 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             collection(db, "users", uid, "customers", customer.id, "invoices"),
             limits.invoicesPerCustomerPerMonth,
             userDoc?.activeFrom,
-            userDoc?.extraLimits?.invoicesPerCustomerPerMonth
+            userDoc?.extraLimits?.invoicesPerCustomerPerMonth,
+            userDoc?.extraLimitsExpiresAt
           );
           if (!allowed) {
             setAlert({
@@ -2095,7 +2102,13 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
     const plan = userDoc?.plan || "starter";
     loadPlansFromFirestore().then(fsPlans => {
       const limits = getLimits(plan, fsPlans);
-      setCustomersLimitVal(limits.customersPerMonth ?? null);
+      const effective = getEffectiveLimit(
+        limits.customersPerMonth ?? null,
+        "customersPerMonth",
+        userDoc?.extraLimits,
+        userDoc?.extraLimitsExpiresAt
+      );
+      setCustomersLimitVal(effective);
     });
     import("@/lib/planLimits").then(({ countThisMonth }) => {
       import("firebase/firestore").then(({ collection: col }) => {
@@ -2105,7 +2118,7 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
         });
       });
     });
-  }, [uid, userDoc?.plan]);
+  }, [uid, userDoc?.plan, userDoc?.extraLimits, userDoc?.extraLimitsExpiresAt]);
 
   // ── Restore detailCust from URL on load / refresh ──────────────────────────
   useEffect(() => {
@@ -2168,7 +2181,8 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
             collection(db, "users", uid, "customers"),
             limits.customersPerMonth,
             userDoc?.activeFrom,
-            userDoc?.extraLimits?.customersPerMonth
+            userDoc?.extraLimits?.customersPerMonth,
+            userDoc?.extraLimitsExpiresAt
           );
           if (!allowed) {
             setAlert({

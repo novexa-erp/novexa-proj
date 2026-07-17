@@ -215,19 +215,195 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
   const isEdit = !!initial;
 
   // ── Extra limits state (edit mode only) ──────────────────────────────────
-  const [extraLimits, setExtraLimits] = useState(
-    initial?.extraLimits
-      ? {
-          invoicesPerMonth:            String(initial.extraLimits.invoicesPerMonth            || 0),
-          invoicesPerCustomerPerMonth: String(initial.extraLimits.invoicesPerCustomerPerMonth || 0),
-          customersPerMonth:           String(initial.extraLimits.customersPerMonth           || 0),
-          suppliersPerMonth:           String(initial.extraLimits.suppliersPerMonth           || 0),
-          ordersPerSupplierPerMonth:   String(initial.extraLimits.ordersPerSupplierPerMonth   || 0),
-        }
-      : { invoicesPerMonth: "0", invoicesPerCustomerPerMonth: "0", customersPerMonth: "0", suppliersPerMonth: "0", ordersPerSupplierPerMonth: "0" }
+  const EXTRA_FIELDS_LIST = [
+    { key: "invoicesPerMonth",            label: "Extra Invoices / Month",               icon: "🧾" },
+    { key: "invoicesPerCustomerPerMonth", label: "Extra Invoices per Customer / Month",  icon: "👥" },
+    { key: "customersPerMonth",           label: "Extra Customers / Month",               icon: "👤" },
+    { key: "suppliersPerMonth",           label: "Extra Suppliers / Month",               icon: "🏭" },
+    { key: "ordersPerSupplierPerMonth",   label: "Extra Orders per Supplier / Month",    icon: "🛒" },
+  ];
+
+  // existingLimits = what is already saved on the user
+  // stored in state so it updates after each save (without closing modal)
+  const [existingLimits, setExistingLimits] = useState({
+    invoicesPerMonth:            Number(initial?.extraLimits?.invoicesPerMonth            || 0),
+    invoicesPerCustomerPerMonth: Number(initial?.extraLimits?.invoicesPerCustomerPerMonth || 0),
+    customersPerMonth:           Number(initial?.extraLimits?.customersPerMonth           || 0),
+    suppliersPerMonth:           Number(initial?.extraLimits?.suppliersPerMonth           || 0),
+    ordersPerSupplierPerMonth:   Number(initial?.extraLimits?.ordersPerSupplierPerMonth   || 0),
+  });
+
+  // On mount, re-fetch fresh extraLimits from Firestore (initial prop may be stale)
+  useEffect(() => {
+    if (!isEdit || !initial?.uid) return;
+    import("firebase/firestore").then(({ getDoc, doc: fsDoc }) => {
+      import("@/lib/firebase").then(({ db: fdb }) => {
+        getDoc(fsDoc(fdb, "users", initial.uid)).then(snap => {
+          if (snap.exists()) {
+            const lim = snap.data().extraLimits || {};
+            setExistingLimits({
+              invoicesPerMonth:            Number(lim.invoicesPerMonth            || 0),
+              invoicesPerCustomerPerMonth: Number(lim.invoicesPerCustomerPerMonth || 0),
+              customersPerMonth:           Number(lim.customersPerMonth           || 0),
+              suppliersPerMonth:           Number(lim.suppliersPerMonth           || 0),
+              ordersPerSupplierPerMonth:   Number(lim.ordersPerSupplierPerMonth   || 0),
+            });
+          }
+        }).catch(() => {});
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit, initial?.uid]);
+
+  // addLimits = how much NEW quota admin wants to add on top of existing
+  // (starts at 0, user types how much more to add)
+  const [addLimits, setAddLimits] = useState(
+    { invoicesPerMonth: "0", invoicesPerCustomerPerMonth: "0", customersPerMonth: "0", suppliersPerMonth: "0", ordersPerSupplierPerMonth: "0" }
   );
-  const [extraSaving, setExtraSaving] = useState(false);
-  const [extraDone,   setExtraDone]   = useState(false);
+
+  // extraLimits = TOTAL = existing + new additions (what gets saved)
+  const extraLimits = Object.fromEntries(
+    EXTRA_FIELDS_LIST.map(f => [f.key, String(existingLimits[f.key] + (Number(addLimits[f.key]) || 0))])
+  );
+
+  const [extraSaving,    setExtraSaving]    = useState(false);
+  const [extraDone,      setExtraDone]      = useState(false);
+  const [addonConfirm,   setAddonConfirm]   = useState(false);
+  const [addonSuccess,   setAddonSuccess]   = useState(null);
+  const [addonPayMethod, setAddonPayMethod] = useState(initial?.paymentMethod || "cash");
+  const [addonPrices,    setAddonPrices]    = useState(null);
+
+  // Default add-on prices (fallback if Firestore not loaded yet)
+  const DEFAULT_ADDON_P = {
+    invoicesPerMonth_per: 10,
+    invoicesPerMonth_50: 500, invoicesPerMonth_100: 900, invoicesPerMonth_250: 2000, invoicesPerMonth_500: 3500, invoicesPerMonth_1000: 6000,
+    invoicesPerCustomerPerMonth_per: 10,
+    invoicesPerCustomerPerMonth_50: 500, invoicesPerCustomerPerMonth_100: 900, invoicesPerCustomerPerMonth_250: 2000, invoicesPerCustomerPerMonth_500: 3500, invoicesPerCustomerPerMonth_1000: 6000,
+    customersPerMonth_per: 30,
+    customersPerMonth_50: 1200, customersPerMonth_100: 2200, customersPerMonth_250: 5000, customersPerMonth_500: 9000, customersPerMonth_1000: 16000,
+    suppliersPerMonth_per: 30,
+    suppliersPerMonth_20: 500, suppliersPerMonth_50: 1200, suppliersPerMonth_100: 2200, suppliersPerMonth_250: 5000, suppliersPerMonth_500: 9000, suppliersPerMonth_1000: 16000,
+    ordersPerSupplierPerMonth_per: 10,
+    ordersPerSupplierPerMonth_50: 500, ordersPerSupplierPerMonth_100: 900, ordersPerSupplierPerMonth_250: 2000, ordersPerSupplierPerMonth_500: 3500, ordersPerSupplierPerMonth_1000: 6000,
+  };
+
+  // ── Load addon prices from Firestore ─────────────────────────────────────
+  useEffect(() => {
+    if (!isEdit) return;
+    import("firebase/firestore").then(({ getDoc, doc: fsDoc }) => {
+      import("@/lib/firebase").then(({ db: fdb }) => {
+        getDoc(fsDoc(fdb, "adminConfig", "plans")).then(snap => {
+          setAddonPrices(snap.exists() && snap.data().addonPrices ? snap.data().addonPrices : DEFAULT_ADDON_P);
+        }).catch(() => setAddonPrices(DEFAULT_ADDON_P));
+      });
+    });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isEdit]);
+
+  // Tiered pricing: fills packages largest→smallest, remainder per-unit
+  function calcTieredPrice(qty, perUnitPrice, packages) {
+    if (qty <= 0) return { total: 0 };
+    const sorted = [...packages].sort((a, b) => b.qty - a.qty);
+    let remaining = qty;
+    let total = 0;
+    for (const pkg of sorted) {
+      if (remaining >= pkg.qty) {
+        const count = Math.floor(remaining / pkg.qty);
+        total     += count * pkg.price;
+        remaining -= count * pkg.qty;
+      }
+    }
+    if (remaining > 0) total += remaining * perUnitPrice;
+    return { total };
+  }
+
+  // calcAddonLineItems — prices only the NEW additions (delta), not existing quota
+  function calcAddonLineItems(newAdditions, prices) {
+    const p = prices || DEFAULT_ADDON_P;
+    const items = [];
+
+    function pushItem(qty, limitKey, icon, label) {
+      if (qty <= 0) return;
+      const CATS = {
+        invoicesPerMonth:            { perKey: "invoicesPerMonth_per",            pkgQtys: [50,100,250,500,1000] },
+        invoicesPerCustomerPerMonth: { perKey: "invoicesPerCustomerPerMonth_per", pkgQtys: [50,100,250,500,1000] },
+        customersPerMonth:           { perKey: "customersPerMonth_per",           pkgQtys: [50,100,250,500,1000] },
+        suppliersPerMonth:           { perKey: "suppliersPerMonth_per",           pkgQtys: [20,50,100,250,500,1000] },
+        ordersPerSupplierPerMonth:   { perKey: "ordersPerSupplierPerMonth_per",   pkgQtys: [50,100,250,500,1000] },
+      };
+      const cat = CATS[limitKey]; if (!cat) return;
+      const perUnit  = p[cat.perKey] ?? DEFAULT_ADDON_P[cat.perKey] ?? 10;
+      const packages = cat.pkgQtys.map(q => ({ qty: q, price: p[`${limitKey}_${q}`] ?? DEFAULT_ADDON_P[`${limitKey}_${q}`] ?? (perUnit * q) }));
+      const { total } = calcTieredPrice(qty, perUnit, packages);
+      if (total > 0) items.push({ key: limitKey, icon, label: `${label}`, qty, unitPrice: Math.round(total / qty * 10) / 10, total });
+    }
+
+    pushItem(Number(newAdditions.invoicesPerMonth) || 0,            "invoicesPerMonth",            "🧾", "Extra Invoices / Month");
+    pushItem(Number(newAdditions.invoicesPerCustomerPerMonth) || 0, "invoicesPerCustomerPerMonth", "👥", "Extra Inv. per Customer / Month");
+    pushItem(Number(newAdditions.customersPerMonth) || 0,           "customersPerMonth",           "👤", "Extra Customers");
+    pushItem(Number(newAdditions.suppliersPerMonth) || 0,           "suppliersPerMonth",           "🏭", "Extra Suppliers");
+    pushItem(Number(newAdditions.ordersPerSupplierPerMonth) || 0,   "ordersPerSupplierPerMonth",   "🛒", "Extra Orders per Supplier / Month");
+
+    return { items, grandTotal: items.reduce((s, i) => s + i.total, 0) };
+  }
+
+  // doSaveExtraLimits — saves TOTAL (existing + new) to Firestore
+  async function doSaveExtraLimits() {
+    setExtraSaving(true);
+    setExtraDone(false);
+    try {
+      const token   = await getToken();
+      const headers = { "Content-Type": "application/json", authorization: `Bearer ${token}` };
+      // Save total = existing + new
+      const cleaned = {};
+      EXTRA_FIELDS_LIST.forEach(f => { cleaned[f.key] = existingLimits[f.key] + (Number(addLimits[f.key]) || 0); });
+      const purchasedAt   = new Date().toISOString();
+      const expiresAtDate = new Date(); expiresAtDate.setMonth(expiresAtDate.getMonth() + 1);
+      const expiresAt     = expiresAtDate.toISOString();
+      const res  = await fetch("/api/admin/update-user", { method: "POST", headers, body: JSON.stringify({ uid: initial.uid, extraLimits: cleaned, extraLimitsExpiresAt: expiresAt, extraLimitsPurchasedAt: purchasedAt, extraLimitsPaymentMethod: addonPayMethod }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setExtraDone(true);
+
+      // ── Re-fetch from Firestore to get confirmed saved values ──────────
+      try {
+        const { getDoc, doc: fsDoc } = await import("firebase/firestore");
+        const { db: fdb }            = await import("@/lib/firebase");
+        const freshSnap = await getDoc(fsDoc(fdb, "users", initial.uid));
+        if (freshSnap.exists()) {
+          const freshLimits = freshSnap.data().extraLimits || {};
+          setExistingLimits({
+            invoicesPerMonth:            Number(freshLimits.invoicesPerMonth            || 0),
+            invoicesPerCustomerPerMonth: Number(freshLimits.invoicesPerCustomerPerMonth || 0),
+            customersPerMonth:           Number(freshLimits.customersPerMonth           || 0),
+            suppliersPerMonth:           Number(freshLimits.suppliersPerMonth           || 0),
+            ordersPerSupplierPerMonth:   Number(freshLimits.ordersPerSupplierPerMonth   || 0),
+          });
+        } else {
+          setExistingLimits({ ...cleaned });
+        }
+      } catch {
+        // fallback: use what we just saved
+        setExistingLimits({ ...cleaned });
+      }
+
+      // Invoice only for new additions
+      const { items: lineItems, grandTotal } = calcAddonLineItems(addLimits, addonPrices);
+      if (initial.email && lineItems.length > 0) {
+        fetch("/api/admin/send-addon-invoice", { method: "POST", headers, body: JSON.stringify({ uid: initial.uid, userName: initial.name || initial.email, userEmail: initial.email, lineItems, grandTotal, paymentMethod: addonPayMethod, purchasedAt, expiresAt }) }).catch(() => {});
+      }
+      const expSucc = new Date(); expSucc.setMonth(expSucc.getMonth() + 1);
+      setAddonSuccess({ items: lineItems, grandTotal, payMethod: addonPayMethod, expiresAt: expSucc.toISOString(), totalLimits: cleaned });
+      // Reset additions to 0 after save
+      setAddLimits({ invoicesPerMonth: "0", invoicesPerCustomerPerMonth: "0", customersPerMonth: "0", suppliersPerMonth: "0", ordersPerSupplierPerMonth: "0" });
+      onToast?.("Extra limits saved! Invoice sent. ✓", "success");
+      setTimeout(() => setExtraDone(false), 3000);
+    } catch (err) {
+      onToast?.(err.message || "Failed to save extra limits", "error");
+    } finally {
+      setExtraSaving(false);
+    }
+  }
 
   // ── Renewal state (edit mode only) ───────────────────────────────────────
   const [renewPayMethod,  setRenewPayMethod]  = useState(initial?.paymentMethod || "cash");
@@ -767,150 +943,31 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
             );
           })()}
 
-          {/* ── Extra Monthly Limits (edit mode only) ── */}
+          {/* ── Extra Monthly Limits — moved to User Detail → Add-ons tab ── */}
           {isEdit && (() => {
-            const EXTRA_FIELDS = [
-              { key: "invoicesPerMonth",            label: "Extra Invoices / Month",                icon: "🧾" },
-              { key: "invoicesPerCustomerPerMonth", label: "Extra Invoices per Customer / Month",   icon: "👥" },
-              { key: "customersPerMonth",           label: "Extra Customers / Month",               icon: "👤" },
-              { key: "suppliersPerMonth",           label: "Extra Suppliers / Month",               icon: "🏭" },
-              { key: "ordersPerSupplierPerMonth",   label: "Extra Orders per Supplier / Month",     icon: "🛒" },
-            ];
-
-            const hasAnyExtra = EXTRA_FIELDS.some(f => Number(extraLimits[f.key]) > 0);
-
-            async function handleSaveExtraLimits() {
-              setExtraSaving(true);
-              setExtraDone(false);
-              try {
-                const token   = await getToken();
-                const headers = { "Content-Type": "application/json", authorization: `Bearer ${token}` };
-                const cleaned = {};
-                EXTRA_FIELDS.forEach(f => { cleaned[f.key] = Number(extraLimits[f.key]) || 0; });
-                const res  = await fetch("/api/admin/update-user", { method: "POST", headers, body: JSON.stringify({ uid: initial.uid, extraLimits: cleaned }) });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error);
-                setExtraDone(true);
-                onToast?.("Extra limits saved! ✓", "success");
-                setTimeout(() => setExtraDone(false), 3000);
-              } catch (err) {
-                onToast?.(err.message || "Failed to save extra limits", "error");
-              } finally {
-                setExtraSaving(false);
-              }
-            }
-
+            const hasAnyExtra = EXTRA_FIELDS_LIST.some(f => (existingLimits[f.key] || 0) > 0);
+            const exp   = initial?.extraLimitsExpiresAt ? new Date(initial.extraLimitsExpiresAt) : null;
+            const dLeft = exp ? Math.ceil((exp - new Date()) / 86400000) : null;
             return (
-              <div className="rounded-xl overflow-hidden"
-                style={{ border: "1.5px solid rgba(245,158,11,0.35)", background: "rgba(245,158,11,0.03)" }}>
-                {/* Header */}
-                <div className="flex items-center gap-2 px-4 py-3"
-                  style={{ borderBottom: "1px solid rgba(245,158,11,0.15)", background: "rgba(245,158,11,0.08)" }}>
-                  <span className="text-base">⚡</span>
-                  <div className="flex-1">
-                    <p className="text-amber-400 text-xs font-black uppercase tracking-widest">Extra Monthly Limits</p>
-                    <p className="text-gray-500 text-[10px] mt-0.5">Is mahine ke liye extra quota add karein — plan limit ke upar</p>
-                  </div>
-                  {hasAnyExtra && (
-                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
-                      style={{ background: "rgba(245,158,11,0.2)", border: "1px solid rgba(245,158,11,0.4)", color: "#fbbf24" }}>
-                      Active
-                    </span>
-                  )}
-                </div>
-
-                <div className="p-4 flex flex-col gap-3">
-                  {EXTRA_FIELDS.map(f => (
-                    <div key={f.key} className="flex items-center gap-3">
-                      <span className="text-sm w-5 flex-shrink-0">{f.icon}</span>
-                      <span className="text-gray-400 text-xs flex-1 leading-tight">{f.label}</span>
-                      <div className="flex items-center gap-1.5 flex-shrink-0">
-                        <button type="button"
-                          onClick={() => setExtraLimits(p => ({ ...p, [f.key]: String(Math.max(0, Number(p[f.key]) - 1)) }))}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold transition-all hover:scale-110"
-                          style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
-                          −
-                        </button>
-                        <input
-                          type="number" min="0"
-                          value={extraLimits[f.key]}
-                          onChange={e => {
-                            const v = Math.max(0, Number(e.target.value.replace(/[^0-9]/g,"")) || 0);
-                            setExtraLimits(p => ({ ...p, [f.key]: String(v) }));
-                          }}
-                          className="text-center font-bold text-sm outline-none"
-                          style={{
-                            width: 70, background: "rgba(245,158,11,0.08)",
-                            border: `1.5px solid ${Number(extraLimits[f.key]) > 0 ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.08)"}`,
-                            borderRadius: 8, padding: "5px 4px",
-                            color: Number(extraLimits[f.key]) > 0 ? "#fbbf24" : "#6b7280",
-                            MozAppearance: "textfield",
-                          }}
-                        />
-                        <button type="button"
-                          onClick={() => setExtraLimits(p => ({ ...p, [f.key]: String(Number(p[f.key]) + 1) }))}
-                          className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold transition-all hover:scale-110"
-                          style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
-                          +
-                        </button>
-                        {Number(extraLimits[f.key]) > 0 && (
-                          <button type="button"
-                            onClick={() => setExtraLimits(p => ({ ...p, [f.key]: "0" }))}
-                            title="Remove extra"
-                            className="w-6 h-6 rounded-lg flex items-center justify-center text-xs transition-all hover:scale-110"
-                            style={{ background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171" }}>
-                            ✕
-                          </button>
-                        )}
-                      </div>
-                    </div>
-                  ))}
-
-                  {/* Quick package presets */}
-                  <div className="mt-1">
-                    <p className="text-gray-600 text-[10px] uppercase tracking-widest font-bold mb-2">⚡ Quick Packages</p>
-                    <div className="flex flex-wrap gap-2">
-                      {[
-                        { label: "+100 Invoices",    fn: () => setExtraLimits(p => ({ ...p, invoicesPerMonth: String(Number(p.invoicesPerMonth) + 100) })) },
-                        { label: "+500 Invoices",    fn: () => setExtraLimits(p => ({ ...p, invoicesPerMonth: String(Number(p.invoicesPerMonth) + 500) })) },
-                        { label: "+50 Customers",    fn: () => setExtraLimits(p => ({ ...p, customersPerMonth: String(Number(p.customersPerMonth) + 50) })) },
-                        { label: "+20 Suppliers",    fn: () => setExtraLimits(p => ({ ...p, suppliersPerMonth: String(Number(p.suppliersPerMonth) + 20) })) },
-                        { label: "Reset All",        fn: () => setExtraLimits({ invoicesPerMonth: "0", invoicesPerCustomerPerMonth: "0", customersPerMonth: "0", suppliersPerMonth: "0", ordersPerSupplierPerMonth: "0" }), danger: true },
-                      ].map(pkg => (
-                        <button key={pkg.label} type="button" onClick={pkg.fn}
-                          className="px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all hover:scale-[1.03]"
-                          style={{
-                            background: pkg.danger ? "rgba(248,113,113,0.1)" : "rgba(245,158,11,0.1)",
-                            border: `1px solid ${pkg.danger ? "rgba(248,113,113,0.3)" : "rgba(245,158,11,0.3)"}`,
-                            color: pkg.danger ? "#f87171" : "#fbbf24",
-                          }}>
-                          {pkg.label}
-                        </button>
-                      ))}
-                    </div>
-                  </div>
-
-                  {/* Save extra limits button */}
-                  <button type="button"
-                    onClick={handleSaveExtraLimits}
-                    disabled={extraSaving}
-                    className="w-full py-2.5 rounded-xl text-sm font-black transition-all hover:scale-[1.01] mt-1"
-                    style={{
-                      background: extraDone
-                        ? "rgba(52,211,153,0.15)"
-                        : extraSaving
-                          ? "rgba(245,158,11,0.2)"
-                          : "linear-gradient(135deg,rgba(245,158,11,0.25),rgba(217,119,6,0.3))",
-                      border: `1px solid ${extraDone ? "rgba(52,211,153,0.4)" : "rgba(245,158,11,0.4)"}`,
-                      color: extraDone ? "#34d399" : "#fbbf24",
-                      opacity: extraSaving ? 0.7 : 1,
-                    }}>
-                    {extraDone ? "✅ Extra Limits Saved!" : extraSaving ? "Saving..." : "⚡ Save Extra Limits"}
-                  </button>
-                  <p className="text-gray-600 text-[10px] text-center">
-                    Yeh extra quota sirf is user ke liye hai — plan limits alag rehti hain
+              <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
+                style={{ background: "rgba(245,158,11,0.05)", border: "1px solid rgba(245,158,11,0.2)" }}>
+                <span className="text-xl flex-shrink-0">⚡</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-amber-400 text-xs font-bold">Extra Add-on Quota</p>
+                  <p className="text-gray-500 text-[10px] mt-0.5">
+                    {hasAnyExtra
+                      ? `Active — ${dLeft !== null && dLeft > 0 ? `${dLeft}d left` : dLeft !== null && dLeft <= 0 ? "Expired" : "Set"}`
+                      : "No active add-ons"}
+                    {" · "}
+                    <span className="text-amber-500">User Detail → Add-ons tab</span> mein manage karein
                   </p>
                 </div>
+                {hasAnyExtra && (
+                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold flex-shrink-0"
+                    style={{ background: dLeft !== null && dLeft <= 0 ? "rgba(248,113,113,0.15)" : "rgba(245,158,11,0.15)", border: `1px solid ${dLeft !== null && dLeft <= 0 ? "rgba(248,113,113,0.35)" : "rgba(245,158,11,0.35)"}`, color: dLeft !== null && dLeft <= 0 ? "#f87171" : "#fbbf24" }}>
+                    {dLeft !== null && dLeft <= 0 ? "Expired" : `${dLeft}d`}
+                  </span>
+                )}
               </div>
             );
           })()}
@@ -1077,6 +1134,152 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
             <button type="button" onClick={() => setRenewSuccess(null)}
               className="w-full py-3 rounded-xl text-sm font-black transition-all hover:scale-[1.01]"
               style={{ background: "linear-gradient(135deg,#10B981,#059669)", color: "#fff", boxShadow: "0 4px 16px rgba(16,185,129,0.3)" }}>
+              Done ✓
+            </button>
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ── Addon Confirm Popup ─────────────────────────────────────────────── */}
+    {addonConfirm && isEdit && (() => {
+      const { items: cItems, grandTotal: cTotal } = calcAddonLineItems(addLimits, addonPrices);
+      const now       = new Date();
+      const expDate   = new Date(now); expDate.setMonth(expDate.getMonth() + 1);
+      const purchStr  = now.toLocaleDateString("en-PK",    { day: "2-digit", month: "short", year: "numeric" });
+      const expiryStr = expDate.toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" });
+      return (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.82)", backdropFilter: "blur(10px)" }}>
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+            style={{ background: "#0d1117", border: "1.5px solid rgba(245,158,11,0.45)", boxShadow: "0 32px 80px rgba(0,0,0,0.8)" }}>
+            <div className="px-6 pt-6 pb-4 text-center"
+              style={{ background: "linear-gradient(135deg,rgba(245,158,11,0.1),rgba(217,119,6,0.05))" }}>
+              <div className="text-4xl mb-3">⚡</div>
+              <h3 className="text-white font-black text-lg">Confirm Add-on Purchase</h3>
+              <p className="text-gray-400 text-sm mt-1">
+                <span className="text-white font-semibold">{initial?.name}</span> ke liye extra quota activate karein?
+              </p>
+            </div>
+            <div className="px-6 py-4 flex flex-col gap-1">
+              {cItems.map(item => (
+                <div key={item.key} className="flex items-center gap-2 py-1.5"
+                  style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                  <span className="text-sm">{item.icon}</span>
+                  <span className="text-gray-300 text-xs flex-1">{item.label}</span>
+                  <span className="text-gray-500 text-xs mr-1">×{item.qty}</span>
+                  <span className="text-amber-300 text-xs font-bold">Rs. {item.total.toLocaleString()}</span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between pt-2 pb-1">
+                <span className="text-gray-400 text-xs font-bold uppercase tracking-widest">Total</span>
+                <span className="text-amber-300 font-black text-base">Rs. {cTotal.toLocaleString()}</span>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg mt-1"
+                style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.2)" }}>
+                <span className="text-amber-400 text-xs">⏰</span>
+                <p className="text-amber-400 text-[11px] font-medium">Valid: {purchStr} → {expiryStr} (1 month)</p>
+              </div>
+              <div className="flex items-center gap-2 py-1.5 mt-1" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                <span className="text-gray-500 text-xs uppercase tracking-widest font-bold">Payment</span>
+                <span className="text-white text-xs font-semibold ml-auto">{addonPayMethod === "online" ? "🌐 Online" : addonPayMethod === "cheque" ? "🧾 Cheque" : "💵 Cash"}</span>
+              </div>
+              {initial?.email && (
+                <div className="flex items-center gap-2 py-1.5">
+                  <span className="text-gray-500 text-xs uppercase tracking-widest font-bold">Invoice Email</span>
+                  <span className="text-blue-400 text-xs font-semibold ml-auto truncate max-w-[55%]">✉️ {initial.email}</span>
+                </div>
+              )}
+            </div>
+            <div className="px-6 pb-6 flex gap-3">
+              <button type="button" onClick={() => setAddonConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/10"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+                Cancel
+              </button>
+              <button type="button"
+                onClick={() => { setAddonConfirm(false); doSaveExtraLimits(); }}
+                className="flex-1 py-2.5 rounded-xl text-sm font-black transition-all hover:scale-[1.02]"
+                style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", color: "#000", boxShadow: "0 4px 16px rgba(245,158,11,0.35)" }}>
+                ✓ Confirm &amp; Activate
+              </button>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
+
+    {/* ── Addon Processing Overlay ────────────────────────────────────────── */}
+    {extraSaving && (
+      <div className="fixed inset-0 z-[80] flex items-center justify-center"
+        style={{ background: "rgba(0,0,0,0.82)", backdropFilter: "blur(12px)" }}>
+        <div className="flex flex-col items-center gap-5 px-8 py-10 rounded-2xl"
+          style={{ background: "#0d1117", border: "1.5px solid rgba(245,158,11,0.3)", minWidth: 260 }}>
+          <div className="relative w-16 h-16">
+            <div className="absolute inset-0 rounded-full border-4 border-transparent animate-spin"
+              style={{ borderTopColor: "#F59E0B", borderRightColor: "rgba(245,158,11,0.3)" }} />
+            <div className="absolute inset-2 rounded-full flex items-center justify-center text-2xl">⚡</div>
+          </div>
+          <div className="text-center">
+            <p className="text-white font-black text-base">Activating Add-on...</p>
+            <p className="text-gray-500 text-sm mt-1">Saving limits &amp; sending invoice email</p>
+          </div>
+          <div className="flex flex-col gap-1.5 w-full">
+            {["Saving extra quota", "Setting 1-month expiry", "Sending invoice email"].map((step, i) => (
+              <div key={i} className="flex items-center gap-2">
+                <div className="w-1.5 h-1.5 rounded-full animate-pulse flex-shrink-0"
+                  style={{ background: "#F59E0B", animationDelay: `${i * 0.2}s` }} />
+                <span className="text-gray-400 text-xs">{step}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    )}
+
+    {/* ── Addon Success Popup ─────────────────────────────────────────────── */}
+    {addonSuccess && (
+      <div className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+        style={{ background: "rgba(0,0,0,0.82)", backdropFilter: "blur(12px)" }}>
+        <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+          style={{ background: "#0d1117", border: "1.5px solid rgba(245,158,11,0.5)", boxShadow: "0 32px 80px rgba(0,0,0,0.8)" }}>
+          <div style={{ height: 5, background: "linear-gradient(to right,#F59E0B,#fbbf24,#FCD34D)" }} />
+          <div className="px-6 pt-6 pb-3 text-center">
+            <div className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-4"
+              style={{ background: "rgba(245,158,11,0.15)", border: "2px solid rgba(245,158,11,0.4)" }}>✅</div>
+            <h3 className="text-white font-black text-xl">Add-on Activated!</h3>
+            <p className="text-gray-400 text-sm mt-1.5">
+              <span className="text-white font-semibold">{initial?.name}</span>&apos;s extra quota is now active and an invoice has been sent.
+            </p>
+          </div>
+          <div className="px-6 py-3 mx-2 rounded-xl mb-4"
+            style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.2)" }}>
+            {addonSuccess.items?.map(item => (
+              <div key={item.key} className="flex items-center justify-between py-1.5"
+                style={{ borderBottom: "1px solid rgba(245,158,11,0.1)" }}>
+                <span className="text-gray-400 text-[11px]">{item.icon} {item.label} ×{item.qty}</span>
+                <span className="text-amber-300 text-xs font-semibold">Rs. {item.total.toLocaleString()}</span>
+              </div>
+            ))}
+            <div className="flex items-center justify-between py-1.5" style={{ borderBottom: "1px solid rgba(245,158,11,0.1)" }}>
+              <span className="text-gray-500 text-[11px] uppercase tracking-widest font-bold">Total Paid</span>
+              <span className="text-amber-300 font-black">Rs. {addonSuccess.grandTotal?.toLocaleString()}</span>
+            </div>
+            {addonSuccess.expiresAt && (
+              <div className="flex items-center justify-between py-1.5" style={{ borderBottom: "1px solid rgba(245,158,11,0.1)" }}>
+                <span className="text-gray-500 text-[11px] uppercase tracking-widest font-bold">Expires On</span>
+                <span className="text-amber-300 text-xs font-semibold">⏰ {new Date(addonSuccess.expiresAt).toLocaleDateString("en-PK", { day: "2-digit", month: "long", year: "numeric" })}</span>
+              </div>
+            )}
+            <div className="flex items-center justify-between py-1.5">
+              <span className="text-gray-500 text-[11px] uppercase tracking-widest font-bold">Invoice Sent</span>
+              <span className="text-blue-400 text-xs font-semibold">✉️ {initial?.email}</span>
+            </div>
+          </div>
+          <div className="px-6 pb-6">
+            <button type="button" onClick={() => setAddonSuccess(null)}
+              className="w-full py-3 rounded-xl text-sm font-black transition-all hover:scale-[1.01]"
+              style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", color: "#000", boxShadow: "0 4px 16px rgba(245,158,11,0.3)" }}>
               Done ✓
             </button>
           </div>

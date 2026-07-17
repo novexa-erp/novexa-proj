@@ -103,8 +103,8 @@ export function getPlanPermissions(plan) {
   const map = {
     starter:      new Set(["overview","invoices","customers","inventory","payments","purchases","settings","contact","my-tickets","trash"]),
     business:     new Set(["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","settings","contact","my-tickets","trash"]),
-    professional: new Set(["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","settings","contact","my-tickets","trash"]),
-    enterprise:   new Set(["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","settings","contact","my-tickets","trash"]),
+    professional: new Set(["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","hr","branches","settings","contact","my-tickets","trash"]),
+    enterprise:   new Set(["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","hr","branches","settings","contact","my-tickets","trash"]),
   };
   return map[plan] || map.starter;
 }
@@ -184,22 +184,38 @@ export async function countThisMonth(collRef, activeFrom) {
  * Checks if creating one more record would exceed the monthly limit.
  * Pass activeFrom from userDoc for subscription-cycle-based counting.
  * Pass extraAmount to add on top of the plan limit (admin-granted extras).
+ * Pass extraLimitsExpiresAt to auto-ignore extras after expiry.
  */
-export async function checkMonthlyLimit(collRef, limitValue, activeFrom, extraAmount = 0) {
+export async function checkMonthlyLimit(collRef, limitValue, activeFrom, extraAmount = 0, extraLimitsExpiresAt = null) {
   // If base limit is null (unlimited), still unlimited even without extras
   if (limitValue === null || limitValue === undefined) return { allowed: true, current: 0, limit: null };
-  const effectiveLimit = limitValue + (Number(extraAmount) || 0);
+
+  // Ignore extras if expired
+  let effectiveExtra = Number(extraAmount) || 0;
+  if (extraLimitsExpiresAt && new Date(extraLimitsExpiresAt) < new Date()) {
+    effectiveExtra = 0;
+  }
+
+  const effectiveLimit = limitValue + effectiveExtra;
   const current = await countThisMonth(collRef, activeFrom);
-  return { allowed: current < effectiveLimit, current, limit: effectiveLimit, baseLimit: limitValue, extra: Number(extraAmount) || 0 };
+  return { allowed: current < effectiveLimit, current, limit: effectiveLimit, baseLimit: limitValue, extra: effectiveExtra };
 }
 
 /**
  * Returns the effective limit for a given limit key,
  * combining the plan's base limit with admin-granted extras for this month.
- * extraLimits = userDoc.extraLimits object, e.g. { invoicesPerMonth: 50, customersPerMonth: 20 }
+ * extraLimits        = userDoc.extraLimits object, e.g. { invoicesPerMonth: 50, customersPerMonth: 20 }
+ * extraLimitsExpiresAt = userDoc.extraLimitsExpiresAt ISO string — if expired, extras are ignored.
  */
-export function getEffectiveLimit(baseLimitValue, limitKey, extraLimits) {
+export function getEffectiveLimit(baseLimitValue, limitKey, extraLimits, extraLimitsExpiresAt) {
   if (baseLimitValue === null || baseLimitValue === undefined) return null; // unlimited stays unlimited
+
+  // If an expiry is set and has passed, treat extras as 0
+  if (extraLimitsExpiresAt) {
+    const expired = new Date(extraLimitsExpiresAt) < new Date();
+    if (expired) return baseLimitValue;
+  }
+
   const extra = extraLimits?.[limitKey];
   return baseLimitValue + (Number(extra) || 0);
 }

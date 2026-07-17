@@ -1750,6 +1750,370 @@ function TicketsTab({ uid, getToken, onToast }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+   ADD-ONS TAB
+══════════════════════════════════════════════════════════════════════ */
+const ADDON_CATS = [
+  {
+    limitKey: "invoicesPerMonth", label: "Extra Invoices / Month", icon: "🧾", perUnitKey: "invoicesPerMonth_per", defaultPerUnit: 10,
+    packages: [{qty:50,key:"invoicesPerMonth_50",def:500},{qty:100,key:"invoicesPerMonth_100",def:900},{qty:250,key:"invoicesPerMonth_250",def:2000},{qty:500,key:"invoicesPerMonth_500",def:3500},{qty:1000,key:"invoicesPerMonth_1000",def:6000}],
+  },
+  {
+    limitKey: "invoicesPerCustomerPerMonth", label: "Extra Invoices per Customer / Month", icon: "👥", perUnitKey: "invoicesPerCustomerPerMonth_per", defaultPerUnit: 10,
+    packages: [{qty:50,key:"invoicesPerCustomerPerMonth_50",def:500},{qty:100,key:"invoicesPerCustomerPerMonth_100",def:900},{qty:250,key:"invoicesPerCustomerPerMonth_250",def:2000},{qty:500,key:"invoicesPerCustomerPerMonth_500",def:3500},{qty:1000,key:"invoicesPerCustomerPerMonth_1000",def:6000}],
+  },
+  {
+    limitKey: "customersPerMonth", label: "Extra Customers", icon: "👤", perUnitKey: "customersPerMonth_per", defaultPerUnit: 30,
+    packages: [{qty:50,key:"customersPerMonth_50",def:1200},{qty:100,key:"customersPerMonth_100",def:2200},{qty:250,key:"customersPerMonth_250",def:5000},{qty:500,key:"customersPerMonth_500",def:9000},{qty:1000,key:"customersPerMonth_1000",def:16000}],
+  },
+  {
+    limitKey: "suppliersPerMonth", label: "Extra Suppliers", icon: "🏭", perUnitKey: "suppliersPerMonth_per", defaultPerUnit: 30,
+    packages: [{qty:20,key:"suppliersPerMonth_20",def:500},{qty:50,key:"suppliersPerMonth_50",def:1200},{qty:100,key:"suppliersPerMonth_100",def:2200},{qty:250,key:"suppliersPerMonth_250",def:5000},{qty:500,key:"suppliersPerMonth_500",def:9000},{qty:1000,key:"suppliersPerMonth_1000",def:16000}],
+  },
+  {
+    limitKey: "ordersPerSupplierPerMonth", label: "Extra Orders per Supplier / Month", icon: "🛒", perUnitKey: "ordersPerSupplierPerMonth_per", defaultPerUnit: 10,
+    packages: [{qty:50,key:"ordersPerSupplierPerMonth_50",def:500},{qty:100,key:"ordersPerSupplierPerMonth_100",def:900},{qty:250,key:"ordersPerSupplierPerMonth_250",def:2000},{qty:500,key:"ordersPerSupplierPerMonth_500",def:3500},{qty:1000,key:"ordersPerSupplierPerMonth_1000",def:6000}],
+  },
+];
+
+function calcTieredAddon(qty, perUnit, packages, prices) {
+  if (qty <= 0) return 0;
+  const sorted = [...packages].sort((a,b) => b.qty - a.qty);
+  let rem = qty, total = 0;
+  for (const pkg of sorted) {
+    if (rem >= pkg.qty) {
+      const c = Math.floor(rem / pkg.qty);
+      total += c * (prices[pkg.key] ?? pkg.def);
+      rem   -= c * pkg.qty;
+    }
+  }
+  if (rem > 0) total += rem * (prices[perUnit] ?? perUnit);
+  return total;
+}
+
+function AddonsTab({ uid, user, getToken, onToast }) {
+  const [addonPrices,  setAddonPrices]  = useState(null);
+  const [existingLims, setExistingLims] = useState({});
+  const [userMeta,     setUserMeta]     = useState(null); // fresh from Firestore: expiry, purchasedAt etc
+  const [addQtys,      setAddQtys]      = useState({ invoicesPerMonth:"0", invoicesPerCustomerPerMonth:"0", customersPerMonth:"0", suppliersPerMonth:"0", ordersPerSupplierPerMonth:"0" });
+  const [payMethod,    setPayMethod]    = useState("cash");
+  const [saving,       setSaving]       = useState(false);
+  const [done,         setDone]         = useState(false);
+  const [confirm,      setConfirm]      = useState(false);
+  const [success,      setSuccess]      = useState(null);
+
+  // Load prices + existing limits fresh from Firestore
+  useEffect(() => {
+    if (!uid) return;
+    import("firebase/firestore").then(({ getDoc, doc: fsDoc }) => {
+      import("@/lib/firebase").then(({ db: fdb }) => {
+        // Load addon prices
+        getDoc(fsDoc(fdb, "adminConfig", "plans")).then(snap => {
+          setAddonPrices(snap.exists() && snap.data().addonPrices ? snap.data().addonPrices : {});
+        }).catch(() => setAddonPrices({}));
+        // Load existing user limits + meta fresh from Firestore
+        getDoc(fsDoc(fdb, "users", uid)).then(snap => {
+          if (snap.exists()) {
+            const d   = snap.data();
+            const lim = d.extraLimits || {};
+            setExistingLims({
+              invoicesPerMonth:            Number(lim.invoicesPerMonth            || 0),
+              invoicesPerCustomerPerMonth: Number(lim.invoicesPerCustomerPerMonth || 0),
+              customersPerMonth:           Number(lim.customersPerMonth           || 0),
+              suppliersPerMonth:           Number(lim.suppliersPerMonth           || 0),
+              ordersPerSupplierPerMonth:   Number(lim.ordersPerSupplierPerMonth   || 0),
+            });
+            setUserMeta({
+              extraLimitsExpiresAt:    d.extraLimitsExpiresAt    || null,
+              extraLimitsPurchasedAt:  d.extraLimitsPurchasedAt  || null,
+              extraLimitsPaymentMethod:d.extraLimitsPaymentMethod|| null,
+            });
+          }
+        }).catch(() => {});
+      });
+    });
+  }, [uid]);
+
+  const p = addonPrices || {};
+
+  // Price for any qty in a category
+  function priceForQty(cat, qty) {
+    return calcTieredAddon(qty, cat.defaultPerUnit, cat.packages, p);
+  }
+
+  // Build invoice lines from addQtys
+  const lines = ADDON_CATS.map(cat => {
+    const adding = Number(addQtys[cat.limitKey]) || 0;
+    if (adding <= 0) return null;
+    const total = priceForQty(cat, adding);
+    return { cat, adding, total };
+  }).filter(Boolean);
+  const grandTotal = lines.reduce((s,l) => s + l.total, 0);
+
+  async function doSave() {
+    setSaving(true);
+    try {
+      const token   = await getToken();
+      const headers = { "Content-Type":"application/json", authorization:`Bearer ${token}` };
+      const cleaned = {};
+      ADDON_CATS.forEach(cat => {
+        cleaned[cat.limitKey] = (existingLims[cat.limitKey] || 0) + (Number(addQtys[cat.limitKey]) || 0);
+      });
+      const purchasedAt   = new Date().toISOString();
+      const expiresAtDate = new Date(); expiresAtDate.setMonth(expiresAtDate.getMonth() + 1);
+      const expiresAt     = expiresAtDate.toISOString();
+      const res  = await fetch("/api/admin/update-user", { method:"POST", headers, body: JSON.stringify({ uid, extraLimits: cleaned, extraLimitsExpiresAt: expiresAt, extraLimitsPurchasedAt: purchasedAt, extraLimitsPaymentMethod: payMethod }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setDone(true);
+      // Re-read fresh from Firestore
+      const { getDoc, doc: fsDoc } = await import("firebase/firestore");
+      const { db: fdb } = await import("@/lib/firebase");
+      const freshSnap = await getDoc(fsDoc(fdb, "users", uid));
+      if (freshSnap.exists()) {
+        const fd  = freshSnap.data();
+        const lim = fd.extraLimits || {};
+        setExistingLims({ invoicesPerMonth: Number(lim.invoicesPerMonth||0), invoicesPerCustomerPerMonth: Number(lim.invoicesPerCustomerPerMonth||0), customersPerMonth: Number(lim.customersPerMonth||0), suppliersPerMonth: Number(lim.suppliersPerMonth||0), ordersPerSupplierPerMonth: Number(lim.ordersPerSupplierPerMonth||0) });
+        setUserMeta({ extraLimitsExpiresAt: fd.extraLimitsExpiresAt||null, extraLimitsPurchasedAt: fd.extraLimitsPurchasedAt||null, extraLimitsPaymentMethod: fd.extraLimitsPaymentMethod||null });
+      }
+      // Send invoice email
+      if (user?.email && lines.length > 0) {
+        const invoiceLines = lines.map(l => ({ key: l.cat.limitKey, icon: l.cat.icon, label: l.cat.label, qty: l.adding, unitPrice: Math.round(l.total/l.adding*10)/10, total: l.total }));
+        fetch("/api/admin/send-addon-invoice", { method:"POST", headers, body: JSON.stringify({ uid, userName: user.name||user.email, userEmail: user.email, lineItems: invoiceLines, grandTotal, paymentMethod: payMethod, purchasedAt, expiresAt }) }).catch(()=>{});
+      }
+      setSuccess({ lines, grandTotal, payMethod, expiresAt });
+      setAddQtys({ invoicesPerMonth:"0", invoicesPerCustomerPerMonth:"0", customersPerMonth:"0", suppliersPerMonth:"0", ordersPerSupplierPerMonth:"0" });
+      onToast?.("Add-ons activated! Invoice sent. ✓", "success");
+      setTimeout(() => setDone(false), 3000);
+    } catch (err) { onToast?.(err.message || "Save failed", "error"); }
+    setSaving(false);
+    setConfirm(false);
+  }
+
+  if (!addonPrices) {
+    return <div className="flex items-center justify-center h-32"><div className="w-7 h-7 rounded-full border-2 border-t-amber-500 border-transparent animate-spin" /></div>;
+  }
+
+  return (
+    <div className="flex flex-col gap-6 w-full">
+      <div>
+        <h2 className="text-white font-black text-lg flex items-center gap-2">⚡ Add-on Quota</h2>
+        <p className="text-gray-500 text-xs mt-1">User ke existing plan limits ke upar extra quota add karein. 1 mahine ke liye valid.</p>
+      </div>
+
+      {/* Current active add-ons */}
+      {(() => {
+        const any = ADDON_CATS.some(cat => (existingLims[cat.limitKey] || 0) > 0);
+        if (!any) return null;
+        const exp     = userMeta?.extraLimitsExpiresAt ? new Date(userMeta.extraLimitsExpiresAt) : null;
+        const expired = exp ? exp < new Date() : false;
+        const dLeft   = exp ? Math.ceil((exp - new Date()) / 86400000) : null;
+        const purchAt = userMeta?.extraLimitsPurchasedAt;
+        const pymeth  = userMeta?.extraLimitsPaymentMethod;
+        const fmtD    = iso => iso ? new Date(iso).toLocaleDateString("en-PK",{day:"2-digit",month:"short",year:"numeric"}) : "—";
+        return (
+          <div className="rounded-2xl p-4" style={{ background: expired ? "rgba(248,113,113,0.05)" : "rgba(245,158,11,0.05)", border: `1.5px solid ${expired ? "rgba(248,113,113,0.3)" : "rgba(245,158,11,0.3)"}` }}>
+            <div className="flex items-center gap-2 mb-3 flex-wrap">
+              <span className="text-base">{expired ? "⏰" : "✅"}</span>
+              <p className="text-sm font-black" style={{ color: expired ? "#f87171" : "#fbbf24" }}>
+                {expired ? "Add-on Expired" : `Active Add-on — ${dLeft}d left`}
+              </p>
+              <div className="ml-auto flex gap-3 text-xs text-gray-500 flex-wrap">
+                {purchAt && <span>Purchased: <span className="text-gray-300 font-medium">{fmtD(purchAt)}</span>{pymeth ? ` · ${pymeth === "online" ? "🌐 Online" : pymeth === "cheque" ? "🧾 Cheque" : "💵 Cash"}` : ""}</span>}
+                {exp     && <span>Expires: <span className="font-medium" style={{ color: expired ? "#f87171" : "#fbbf24" }}>{fmtD(userMeta.extraLimitsExpiresAt)}</span></span>}
+              </div>
+            </div>
+            <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-2">
+              {ADDON_CATS.filter(cat => (existingLims[cat.limitKey] || 0) > 0).map(cat => (
+                <div key={cat.limitKey} className="flex items-center gap-2 px-3 py-2 rounded-xl"
+                  style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", opacity: expired ? 0.55 : 1 }}>
+                  <span className="text-sm">{cat.icon}</span>
+                  <div className="min-w-0">
+                    <p className="text-gray-400 text-[10px] truncate">{cat.label}</p>
+                    <p className="font-black text-sm" style={{ color: expired ? "#f87171" : "#fbbf24" }}>+{(existingLims[cat.limitKey]||0).toLocaleString()}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })()}
+
+      {/* Add new quota — per category — 2 column grid */}
+      <div className="flex flex-col gap-4">
+        <p className="text-gray-500 text-[11px] uppercase tracking-widest font-bold">⚡ Add New Quota</p>
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
+        {ADDON_CATS.map(cat => {
+          const adding = Number(addQtys[cat.limitKey]) || 0;
+          const cost   = adding > 0 ? priceForQty(cat, adding) : 0;
+          return (
+            <div key={cat.limitKey} className="rounded-2xl p-4"
+              style={{ background: adding > 0 ? "rgba(245,158,11,0.05)" : "rgba(255,255,255,0.02)", border: `1px solid ${adding > 0 ? "rgba(245,158,11,0.25)" : "rgba(255,255,255,0.07)"}` }}>
+              {/* Header */}
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">{cat.icon}</span>
+                <p className="text-gray-200 text-sm font-bold flex-1">{cat.label}</p>
+                {cost > 0 && <span className="text-amber-300 font-black text-sm">Rs. {cost.toLocaleString()}</span>}
+              </div>
+
+              {/* Package buttons */}
+              <div className="flex flex-wrap gap-2 mb-3">
+                {/* Per-unit info */}
+                <div className="px-2.5 py-1.5 rounded-lg text-[10px]"
+                  style={{ background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.08)", color:"#6b7280" }}>
+                  Per unit: Rs.{p[cat.perUnitKey] ?? cat.defaultPerUnit}
+                </div>
+                {cat.packages.map(pkg => {
+                  const pkgPrice = p[pkg.key] ?? pkg.def;
+                  const isSelected = adding === pkg.qty;
+                  return (
+                    <button key={pkg.key} type="button"
+                      onClick={() => setAddQtys(prev => ({ ...prev, [cat.limitKey]: String(adding === pkg.qty ? 0 : pkg.qty) }))}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:scale-[1.03]"
+                      style={{ background: isSelected ? "rgba(245,158,11,0.2)" : "rgba(255,255,255,0.04)", border: `1px solid ${isSelected ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.08)"}`, color: isSelected ? "#fbbf24" : "#9ca3af" }}>
+                      +{pkg.qty.toLocaleString()}
+                      <span className="ml-1 text-[10px] opacity-70">Rs.{pkgPrice.toLocaleString()}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Custom qty input */}
+              <div className="flex items-center gap-3">
+                <span className="text-gray-500 text-xs w-24 flex-shrink-0">Custom qty:</span>
+                <button type="button" onClick={() => setAddQtys(prev => ({ ...prev, [cat.limitKey]: String(Math.max(0, adding - 1)) }))}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold"
+                  style={{ background:"rgba(245,158,11,0.12)", border:"1px solid rgba(245,158,11,0.25)", color:"#fbbf24" }}>−</button>
+                <input type="number" min="0" value={addQtys[cat.limitKey]}
+                  onChange={e => setAddQtys(prev => ({ ...prev, [cat.limitKey]: String(Math.max(0, Number(e.target.value.replace(/[^0-9]/g,""))||0)) }))}
+                  className="flex-1 text-center font-bold text-sm outline-none"
+                  style={{ background:"rgba(245,158,11,0.06)", border:`1.5px solid ${adding>0?"rgba(245,158,11,0.4)":"rgba(255,255,255,0.08)"}`, borderRadius:8, padding:"6px", color: adding>0?"#fbbf24":"#6b7280", MozAppearance:"textfield" }} />
+                <button type="button" onClick={() => setAddQtys(prev => ({ ...prev, [cat.limitKey]: String(adding + 1) }))}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold"
+                  style={{ background:"rgba(245,158,11,0.12)", border:"1px solid rgba(245,158,11,0.25)", color:"#fbbf24" }}>+</button>
+                {adding > 0 && (
+                  <button type="button" onClick={() => setAddQtys(prev => ({ ...prev, [cat.limitKey]: "0" }))}
+                    className="w-6 h-6 rounded-lg flex items-center justify-center text-xs"
+                    style={{ background:"rgba(248,113,113,0.12)", border:"1px solid rgba(248,113,113,0.25)", color:"#f87171" }}>✕</button>
+                )}
+                <div className="text-gray-600 text-[10px] flex-shrink-0">
+                  Existing: <span className="text-gray-300 font-bold">{existingLims[cat.limitKey]||0}</span>
+                  {adding > 0 && <> → Total: <span className="text-emerald-400 font-bold">{(existingLims[cat.limitKey]||0)+adding}</span></>}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+        </div>{/* end grid */}
+      </div>{/* end flex-col gap-4 */}
+
+      {/* Grand total + payment */}
+      {grandTotal > 0 && (
+        <div className="rounded-2xl p-4" style={{ background:"rgba(245,158,11,0.07)", border:"1.5px solid rgba(245,158,11,0.3)" }}>
+          <div className="flex items-center justify-between mb-4">
+            <div>
+              <p className="text-amber-400 text-xs font-bold uppercase tracking-widest">Total Amount</p>
+              <p className="text-amber-300 text-[11px] mt-0.5">{lines.length} category · 1 month validity</p>
+            </div>
+            <p className="text-amber-300 font-black text-2xl">Rs. {grandTotal.toLocaleString()}</p>
+          </div>
+          <p className="text-gray-500 text-[10px] uppercase tracking-widest font-bold mb-2">💳 Payment Method</p>
+          <div className="grid grid-cols-3 gap-2 mb-4">
+            {[{id:"online",label:"🌐 Online",desc:"Card / Bank"},{id:"cash",label:"💵 Cash",desc:"Naqad"},{id:"cheque",label:"🧾 Cheque",desc:"Cheque"}].map(opt => (
+              <button key={opt.id} type="button" onClick={() => setPayMethod(opt.id)}
+                className="flex flex-col items-start px-3 py-2 rounded-xl text-left transition-all"
+                style={{ background: payMethod===opt.id?"rgba(245,158,11,0.18)":"rgba(255,255,255,0.03)", border:`1.5px solid ${payMethod===opt.id?"#F59E0B":"rgba(255,255,255,0.08)"}` }}>
+                <span className="text-xs font-bold" style={{ color:payMethod===opt.id?"#fbbf24":"#9ca3af" }}>{opt.label}</span>
+                <span className="text-[10px]" style={{ color:payMethod===opt.id?"#d1d5db":"#4b5563" }}>{opt.desc}</span>
+              </button>
+            ))}
+          </div>
+          <button type="button" onClick={() => setConfirm(true)} disabled={saving}
+            className="w-full py-3 rounded-xl text-sm font-black transition-all hover:scale-[1.01]"
+            style={{ background:"linear-gradient(135deg,#F59E0B,#D97706)", color:"#000", boxShadow:"0 4px 16px rgba(245,158,11,0.35)", opacity:saving?0.7:1 }}>
+            {done ? "✅ Saved!" : saving ? "Saving..." : "⚡ Activate Add-on & Send Invoice"}
+          </button>
+        </div>
+      )}
+
+      {/* Confirm popup */}
+      {confirm && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" style={{ background:"rgba(0,0,0,0.85)", backdropFilter:"blur(10px)" }}>
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden" style={{ background:"#0d1117", border:"1.5px solid rgba(245,158,11,0.45)", boxShadow:"0 32px 80px rgba(0,0,0,0.8)" }}>
+            <div className="px-6 pt-6 pb-4 text-center" style={{ background:"linear-gradient(135deg,rgba(245,158,11,0.1),transparent)" }}>
+              <div className="text-4xl mb-3">⚡</div>
+              <h3 className="text-white font-black text-lg">Confirm Add-on</h3>
+              <p className="text-gray-400 text-sm mt-1">{user?.name} ke liye activate karein?</p>
+            </div>
+            <div className="px-6 py-4 flex flex-col gap-1.5">
+              {lines.map(l => (
+                <div key={l.cat.limitKey} className="flex items-center gap-2 py-1.5" style={{ borderBottom:"1px solid rgba(255,255,255,0.05)" }}>
+                  <span className="text-sm">{l.cat.icon}</span>
+                  <span className="text-gray-300 text-xs flex-1">{l.cat.label}</span>
+                  <span className="text-gray-500 text-xs">+{l.adding}</span>
+                  <span className="text-amber-300 text-xs font-bold">Rs. {l.total.toLocaleString()}</span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between pt-2">
+                <span className="text-gray-400 text-xs font-bold uppercase tracking-widest">Total</span>
+                <span className="text-amber-300 font-black text-base">Rs. {grandTotal.toLocaleString()}</span>
+              </div>
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg mt-1" style={{ background:"rgba(245,158,11,0.07)", border:"1px solid rgba(245,158,11,0.2)" }}>
+                <span className="text-amber-400 text-xs">⏰</span>
+                <p className="text-amber-400 text-[11px]">1 month validity — {payMethod === "online" ? "🌐 Online" : payMethod === "cheque" ? "🧾 Cheque" : "💵 Cash"}</p>
+              </div>
+              {user?.email && <p className="text-blue-400 text-[11px] text-center">✉️ Invoice will be sent to {user.email}</p>}
+            </div>
+            <div className="px-6 pb-6 flex gap-3">
+              <button type="button" onClick={() => setConfirm(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"#9ca3af" }}>Cancel</button>
+              <button type="button" onClick={doSave}
+                className="flex-1 py-2.5 rounded-xl text-sm font-black transition-all hover:scale-[1.02]"
+                style={{ background:"linear-gradient(135deg,#F59E0B,#D97706)", color:"#000" }}>✓ Confirm</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Success popup */}
+      {success && (
+        <div className="fixed inset-0 z-[90] flex items-center justify-center p-4" style={{ background:"rgba(0,0,0,0.85)", backdropFilter:"blur(12px)" }}>
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden" style={{ background:"#0d1117", border:"1.5px solid rgba(245,158,11,0.5)", boxShadow:"0 32px 80px rgba(0,0,0,0.8)" }}>
+            <div style={{ height:5, background:"linear-gradient(to right,#F59E0B,#fbbf24)" }} />
+            <div className="px-6 pt-6 pb-3 text-center">
+              <div className="w-14 h-14 rounded-full flex items-center justify-center text-3xl mx-auto mb-3" style={{ background:"rgba(245,158,11,0.15)", border:"2px solid rgba(245,158,11,0.4)" }}>✅</div>
+              <h3 className="text-white font-black text-xl">Add-on Activated!</h3>
+              <p className="text-gray-400 text-sm mt-1">{user?.name}&apos;s extra quota is now active.</p>
+            </div>
+            <div className="px-6 py-3 mx-2 rounded-xl mb-4" style={{ background:"rgba(245,158,11,0.07)", border:"1px solid rgba(245,158,11,0.2)" }}>
+              {success.lines.map(l => (
+                <div key={l.cat.limitKey} className="flex items-center justify-between py-1.5" style={{ borderBottom:"1px solid rgba(245,158,11,0.1)" }}>
+                  <span className="text-gray-400 text-[11px]">{l.cat.icon} +{l.adding} {l.cat.label}</span>
+                  <span className="text-amber-300 text-xs font-bold">Rs. {l.total.toLocaleString()}</span>
+                </div>
+              ))}
+              <div className="flex items-center justify-between py-1.5" style={{ borderBottom:"1px solid rgba(245,158,11,0.1)" }}>
+                <span className="text-gray-500 text-[11px] uppercase font-bold">Total Paid</span>
+                <span className="text-amber-300 font-black">Rs. {success.grandTotal.toLocaleString()}</span>
+              </div>
+              <div className="flex items-center justify-between py-1.5">
+                <span className="text-gray-500 text-[11px] uppercase font-bold">Expires On</span>
+                <span className="text-amber-300 text-xs font-semibold">⏰ {new Date(success.expiresAt).toLocaleDateString("en-PK",{day:"2-digit",month:"long",year:"numeric"})}</span>
+              </div>
+            </div>
+            <div className="px-6 pb-6">
+              <button type="button" onClick={() => setSuccess(null)}
+                className="w-full py-3 rounded-xl text-sm font-black"
+                style={{ background:"linear-gradient(135deg,#F59E0B,#D97706)", color:"#000" }}>Done ✓</button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
    SIDEBAR TABS config  (no "Orders" tab — orders live inside Suppliers)
 ══════════════════════════════════════════════════════════════════════ */
 const TABS = [
@@ -1759,9 +2123,10 @@ const TABS = [
   { id:"products",  icon:"📦", label:"Products"   },
   { id:"payments",  icon:"💳", label:"Payments"   },
   { id:"suppliers", icon:"🏭", label:"Suppliers"  },
+  { id:"addons",    icon:"⚡", label:"Add-ons"    },
   { id:"tickets",   icon:"🎫", label:"Tickets"    },
   { id:"trash",     icon:"🗑️", label:"Trash"      },
-  { id:"activity",  icon:"⚡", label:"Activity"   },
+  { id:"activity",  icon:"📋", label:"Activity"   },
 ];
 
 /* ══════════════════════════════════════════════════════════════════════
@@ -1894,6 +2259,7 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
                 {activeTab==="products"  && <ProductsTab products={data.products} />}
                 {activeTab==="payments"  && <PaymentsTab payments={data.payments} />}
                 {activeTab==="suppliers" && <SuppliersTab suppliers={data.suppliers} orders={data.orders} receipts={data.receipts||[]} supplierReturns={data.supplierReturns||[]} />}
+                {activeTab==="addons"    && <AddonsTab uid={uid} user={data.user} getToken={getToken} onToast={onToast} />}
                 {activeTab==="tickets"   && <TicketsTab uid={uid} getToken={getToken} onToast={onToast} />}
                 {activeTab==="trash"     && <TrashTab uid={uid} data={data} getToken={getToken} onToast={onToast} onRefresh={loadData} />}
                 {activeTab==="activity"  && <ActivityTab activityLogs={data.activityLogs} />}
