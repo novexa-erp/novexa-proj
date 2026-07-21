@@ -23,6 +23,7 @@ import ContactView from "./ContactView";
 import MyTicketsView from "./MyTicketsView";
 import TrashView from "./TrashView";
 import ComingSoonView from "./ComingSoonView";
+import AddonsView from "./AddonsView";
 
 // ── Sidebar nav items ────────────────────────────────────────────────────────
 const navItems = [
@@ -39,6 +40,7 @@ const navItems = [
   { icon: "⚙️", label: "Settings",   id: "settings"    },
   { icon: "📞", label: "Contact Us",  id: "contact"     },
   { icon: "🎫", label: "My Tickets",  id: "my-tickets"  },
+  { icon: "⚡", label: "Add-ons",     id: "addons"      },
 ];
 
 // ── Plan → allowed tab IDs ────────────────────────────────────────────────────
@@ -47,24 +49,24 @@ const navItems = [
 const PLAN_PERMISSIONS = {
   starter: new Set([
     "overview", "invoices", "customers", "inventory",
-    "payments", "purchases", "settings", "contact", "my-tickets", "trash",
+    "payments", "purchases", "settings", "contact", "my-tickets", "trash", "addons",
   ]),
   business: new Set([
     "overview", "invoices", "customers", "inventory",
     "payments", "purchases", "order-form", "analytics",
-    "settings", "contact", "my-tickets", "trash",
+    "settings", "contact", "my-tickets", "trash", "addons",
   ]),
   professional: new Set([
     "overview", "invoices", "customers", "inventory",
     "payments", "purchases", "order-form", "analytics",
     "hr", "branches",
-    "settings", "contact", "my-tickets", "trash",
+    "settings", "contact", "my-tickets", "trash", "addons",
   ]),
   enterprise: new Set([
     "overview", "invoices", "customers", "inventory",
     "payments", "purchases", "order-form", "analytics",
     "hr", "branches",
-    "settings", "contact", "my-tickets", "trash",
+    "settings", "contact", "my-tickets", "trash", "addons",
   ]),
 };
 
@@ -73,7 +75,7 @@ const ALWAYS_SHOW_TABS = new Set([
   "overview", "invoices", "customers", "inventory",
   "payments", "purchases", "order-form", "analytics",
   "hr", "branches",
-  "settings", "contact", "my-tickets",
+  "settings", "contact", "my-tickets", "addons",
 ]);
 
 function getPlanPermissions(plan) {
@@ -271,7 +273,7 @@ function DashboardContent() {
             if (planData) {
               setPlanDetails(planData);
               if (planData?.allowedTabs) {
-                setAllowedTabsSet(new Set([...planData.allowedTabs, "trash"]));
+                setAllowedTabsSet(new Set([...planData.allowedTabs, "trash", "addons"]));
                 return;
               }
             }
@@ -1309,7 +1311,7 @@ function DashboardContent() {
             </button>
             <div>
               <h1 className="text-white font-bold text-lg leading-none">
-                {navItems.find(n => n.id === activeNav)?.label ?? "Overview"}
+                {activeNav === "addons" ? "⚡ Add-ons" : navItems.find(n => n.id === activeNav)?.label ?? "Overview"}
               </h1>
               <p className="text-gray-500 text-xs mt-0.5">{todayStr()}</p>
             </div>
@@ -1470,6 +1472,8 @@ function DashboardContent() {
               onNewTicket={() => setActiveNav("contact")} />
           ) : activeNav === "trash" ? (
             <TrashView key={`trash-${refreshKey}`} uid={user?.uid} />
+          ) : activeNav === "addons" ? (
+            <AddonsView key={`addons-${refreshKey}`} uid={user?.uid} userDoc={userDoc} user={user} />
           ) : (
           <>
           {/* Overview Section with Professional Loader */}

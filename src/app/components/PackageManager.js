@@ -197,6 +197,9 @@ const ADDON_CATEGORIES = [
   },
 ];
 
+// ── Extra User Seat pricing (simple per-user flat rate, no tiers) ─────────────
+const DEFAULT_USER_SEAT_PRICE = 1000; // Rs. per extra user / month
+
 // Flat list of all price keys for Firestore storage
 const DEFAULT_ADDON_PRICES = (() => {
   const out = {};
@@ -204,6 +207,7 @@ const DEFAULT_ADDON_PRICES = (() => {
     out[cat.perUnitKey] = cat.defaultPerUnit;
     cat.packages.forEach(pkg => { out[pkg.key] = pkg.defaultPrice; });
   });
+  out["extraUser_monthly"] = DEFAULT_USER_SEAT_PRICE;
   return out;
 })();
 
@@ -576,6 +580,43 @@ export default function PackageManager({ getToken, onToast }) {
               </div>
             </div>
           ))}
+        </div>
+
+        {/* ── Extra User Seats ─────────────────────────────────────────── */}
+        <div className="mt-6 pt-6" style={{ borderTop: "1px solid rgba(245,158,11,0.15)" }}>
+          <div className="flex items-center gap-2 mb-3">
+            <span className="text-base">👤</span>
+            <p className="text-gray-300 text-xs font-bold">Extra User Seats / Month</p>
+            <span className="ml-2 px-2 py-0.5 rounded-full text-[10px] font-black"
+              style={{ background: "rgba(99,102,241,0.2)", color: "#818cf8", border: "1px solid rgba(99,102,241,0.35)" }}>
+              Per User
+            </span>
+          </div>
+          <div className="flex items-center gap-3 px-4 py-4 rounded-xl"
+            style={{ background: "rgba(99,102,241,0.07)", border: "1.5px solid rgba(99,102,241,0.25)" }}>
+            <div className="flex-1 min-w-0">
+              <p className="text-white text-sm font-bold">Price per Extra User / Month</p>
+              <p className="text-gray-500 text-xs mt-0.5">
+                Flat rate — user jitne extra users chahein select karein, itna × per-user price lagega. 1 month validity.
+              </p>
+            </div>
+            <div className="flex items-center gap-2 flex-shrink-0">
+              <span className="text-gray-400 text-sm font-semibold">Rs.</span>
+              <input
+                type="number" min="0"
+                value={addonPrices["extraUser_monthly"] ?? DEFAULT_USER_SEAT_PRICE}
+                onChange={e => setAddonPrices(prev => ({
+                  ...prev,
+                  extraUser_monthly: e.target.value === "" ? 0 : Number(e.target.value),
+                }))}
+                style={{ ...inputSt, width: 90, textAlign: "center", color: "#a5b4fc", fontWeight: 800, fontSize: 15 }}
+              />
+              <span className="text-gray-600 text-xs">/user</span>
+            </div>
+          </div>
+          <p className="text-gray-700 text-[10px] mt-2">
+            Example: Rs. {(addonPrices["extraUser_monthly"] ?? DEFAULT_USER_SEAT_PRICE).toLocaleString()} × 3 users = Rs. {((addonPrices["extraUser_monthly"] ?? DEFAULT_USER_SEAT_PRICE) * 3).toLocaleString()}/month
+          </p>
         </div>
       </div>
 

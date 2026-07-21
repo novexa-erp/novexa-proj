@@ -116,6 +116,15 @@ service cloud.firestore {
         allow update: if false;
         allow delete: if false;
       }
+      match /addonRequests/{requestId} {
+        allow read: if isSignedIn() && isOwner(userId);
+        allow create: if isSignedIn() && isOwner(userId)
+          && request.resource.data.uid == request.auth.uid
+          && request.resource.data.grandTotal is number
+          && request.resource.data.lineItems is list;
+        allow update: if false;
+        allow delete: if false;
+      }
     }
 
     // ── Businesses ────────────────────────────────────────────────────────────
@@ -147,6 +156,14 @@ service cloud.firestore {
         allow read:  if isSignedIn();
         allow write: if isAdmin();
       }
+    }
+
+    // ── Global addon requests (admin reads only — written by server SDK) ─────
+    match /addonRequests/{requestId} {
+      allow read:   if isAdmin();
+      allow create: if false;
+      allow update: if false;
+      allow delete: if false;
     }
 
     // ── Deny everything else ─────────────────────────────────────────────────

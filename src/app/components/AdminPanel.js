@@ -4,10 +4,12 @@ import { useState, useEffect, useCallback } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
 import { onAuthStateChanged, signOut } from "firebase/auth";
-import { auth } from "@/lib/firebase";
+import { auth, db } from "@/lib/firebase";
+import { collection, query, where, onSnapshot } from "firebase/firestore";
 import AdminUserDetail from "./AdminUserDetail";
 import SupportInbox from "./SupportInbox";
 import PackageManager from "./PackageManager";
+import AdminAddonRequests from "./AdminAddonRequests";
 
 const ADMIN_UID = process.env.NEXT_PUBLIC_ADMIN_UID;
 
@@ -1405,11 +1407,12 @@ function UserDetailModal({ detailUser, detailLoading, onClose, fmtDate, daysLeft
 
 /* ── Sidebar nav items ────────────────────────────────────────────────────── */
 const NAV_ITEMS = [
-  { id: "users",     icon: "👥", label: "Users",     badge: null },
-  { id: "packages",  icon: "📦", label: "Packages",  badge: null },
-  { id: "inbox",     icon: "📬", label: "Support",   badge: null },
-  { id: "analytics", icon: "📊", label: "Analytics", badge: null },
-  { id: "debug",     icon: "🔍", label: "Debug",     badge: null },
+  { id: "users",     icon: "👥", label: "Users",        badge: null },
+  { id: "addons",    icon: "⚡", label: "Add-on Req.",  badge: null },
+  { id: "packages",  icon: "📦", label: "Packages",     badge: null },
+  { id: "inbox",     icon: "📬", label: "Support",      badge: null },
+  { id: "analytics", icon: "📊", label: "Analytics",    badge: null },
+  { id: "debug",     icon: "🔍", label: "Debug",        badge: null },
 ];
 
 /* ── Stat Card ────────────────────────────────────────────────────────────── */
@@ -1451,6 +1454,7 @@ export default function AdminPanel() {
   const [detailUser,    setDetailUser]    = useState(null);
   const [detailLoading, setDetailLoading] = useState(false);
   const [selectedUid,   setSelectedUid]   = useState(null); // user detail screen
+  const [pendingAddonCount, setPendingAddonCount] = useState(0); // live badge for add-on requests
 
   /* ── auth guard ── */
   useEffect(() => {
@@ -1461,6 +1465,14 @@ export default function AdminPanel() {
     });
     return () => unsub();
   }, [router]);
+
+  /* ── live pending add-on requests badge ── */
+  useEffect(() => {
+    if (!user) return;
+    const q = query(collection(db, "addonRequests"), where("status", "==", "pending"));
+    const unsub = onSnapshot(q, snap => setPendingAddonCount(snap.size), () => {});
+    return () => unsub();
+  }, [user]);
 
   /* ── toast ── */
   const toast = useCallback((message, type = "success") => {
@@ -1728,12 +1740,23 @@ export default function AdminPanel() {
                 )}
                 <span className="text-base flex-shrink-0 transition-transform group-hover:scale-110">{item.icon}</span>
                 {sidebarOpen && (
-                  <span className="text-sm font-semibold whitespace-nowrap">{item.label}</span>
+                  <span className="text-sm font-semibold whitespace-nowrap flex-1">{item.label}</span>
+                )}
+                {/* Pending badge for add-ons */}
+                {item.id === "addons" && pendingAddonCount > 0 && sidebarOpen && (
+                  <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-black flex-shrink-0"
+                    style={{ background: "rgba(251,191,36,0.2)", color: "#fbbf24", border: "1px solid rgba(251,191,36,0.4)", minWidth: 18, textAlign: "center" }}>
+                    {pendingAddonCount}
+                  </span>
+                )}
+                {item.id === "addons" && pendingAddonCount > 0 && !sidebarOpen && (
+                  <span className="absolute top-1 right-1 w-2 h-2 rounded-full"
+                    style={{ background: "#fbbf24" }} />
                 )}
                 {!sidebarOpen && (
                   <span className="absolute left-full ml-3 px-2.5 py-1 rounded-lg text-xs font-semibold whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-50"
                     style={{ background:"rgba(13,17,23,0.95)", border:"1px solid rgba(255,255,255,0.1)", color:"#fff" }}>
-                    {item.label}
+                    {item.label}{item.id === "addons" && pendingAddonCount > 0 ? ` (${pendingAddonCount})` : ""}
                   </span>
                 )}
               </button>
@@ -1762,7 +1785,7 @@ export default function AdminPanel() {
             <div>
               <h1 className="text-white font-black text-base leading-tight">
                 {NAV_ITEMS.find(n=>n.id===activeTab)?.icon} {" "}
-                {activeTab==="users"?"User Management":activeTab==="packages"?"Package Manager":activeTab==="inbox"?"Support Inbox":activeTab==="analytics"?"Analytics Overview":"Debug Console"}
+                {activeTab==="users"?"User Management":activeTab==="addons"?"Add-on Requests":activeTab==="packages"?"Package Manager":activeTab==="inbox"?"Support Inbox":activeTab==="analytics"?"Analytics Overview":"Debug Console"}
               </h1>
               <p className="text-gray-600 text-[10px] font-semibold tracking-widest uppercase">{todayStr()}</p>
             </div>
@@ -2041,6 +2064,11 @@ export default function AdminPanel() {
                 )}
               </div>
             </div>
+          )}
+
+          {/* ──────────── ADD-ON REQUESTS TAB ──────────── */}
+          {activeTab==="addons" && (
+            <AdminAddonRequests getToken={getToken} onToast={toast} />
           )}
 
           {/* ──────────── SUPPORT INBOX TAB ──────────── */}
