@@ -179,6 +179,7 @@ function ProfileTab({ data }) {
           { key: "customersPerMonth",           label: "Customers / Month",              icon: "👤" },
           { key: "suppliersPerMonth",           label: "Suppliers / Month",              icon: "🏭" },
           { key: "ordersPerSupplierPerMonth",   label: "Orders per Supplier / Month",    icon: "🛒" },
+          { key: "extraUsers",                  label: "Extra User Seats",               icon: "👤" },
         ];
         const hasAny = extras && EXTRA_FIELDS.some(f => Number(extras[f.key]) > 0);
         return (
@@ -1794,7 +1795,7 @@ function AddonsTab({ uid, user, getToken, onToast }) {
   const [addonPrices,  setAddonPrices]  = useState(null);
   const [existingLims, setExistingLims] = useState({});
   const [userMeta,     setUserMeta]     = useState(null); // fresh from Firestore: expiry, purchasedAt etc
-  const [addQtys,      setAddQtys]      = useState({ invoicesPerMonth:"0", invoicesPerCustomerPerMonth:"0", customersPerMonth:"0", suppliersPerMonth:"0", ordersPerSupplierPerMonth:"0" });
+  const [addQtys,      setAddQtys]      = useState({ invoicesPerMonth:"0", invoicesPerCustomerPerMonth:"0", customersPerMonth:"0", suppliersPerMonth:"0", ordersPerSupplierPerMonth:"0", extraUsers:"0" });
   const [payMethod,    setPayMethod]    = useState("cash");
   const [saving,       setSaving]       = useState(false);
   const [done,         setDone]         = useState(false);
@@ -1821,6 +1822,7 @@ function AddonsTab({ uid, user, getToken, onToast }) {
               customersPerMonth:           Number(lim.customersPerMonth           || 0),
               suppliersPerMonth:           Number(lim.suppliersPerMonth           || 0),
               ordersPerSupplierPerMonth:   Number(lim.ordersPerSupplierPerMonth   || 0),
+              extraUsers:                  Number(lim.extraUsers                  || 0),
             });
             setUserMeta({
               extraLimitsExpiresAt:    d.extraLimitsExpiresAt    || null,
@@ -1847,6 +1849,12 @@ function AddonsTab({ uid, user, getToken, onToast }) {
     const total = priceForQty(cat, adding);
     return { cat, adding, total };
   }).filter(Boolean);
+  // Extra user seats — flat rate
+  const extraUsersAdding = Number(addQtys["extraUsers"]) || 0;
+  const extraUserPrice   = p["extraUser_monthly"] ?? 1000;
+  if (extraUsersAdding > 0) {
+    lines.push({ cat: { limitKey:"extraUsers", label:"Extra User Seats", icon:"🧑‍💼" }, adding: extraUsersAdding, total: extraUsersAdding * extraUserPrice });
+  }
   const grandTotal = lines.reduce((s,l) => s + l.total, 0);
 
   async function doSave() {
@@ -1854,25 +1862,39 @@ function AddonsTab({ uid, user, getToken, onToast }) {
     try {
       const token   = await getToken();
       const headers = { "Content-Type":"application/json", authorization:`Bearer ${token}` };
-      const cleaned = {};
-      ADDON_CATS.forEach(cat => {
-        cleaned[cat.limitKey] = (existingLims[cat.limitKey] || 0) + (Number(addQtys[cat.limitKey]) || 0);
-      });
-      const purchasedAt   = new Date().toISOString();
-      const expiresAtDate = new Date(); expiresAtDate.setMonth(expiresAtDate.getMonth() + 1);
-      const expiresAt     = expiresAtDate.toISOString();
-      const res  = await fetch("/api/admin/update-user", { method:"POST", headers, body: JSON.stringify({ uid, extraLimits: cleaned, extraLimitsExpiresAt: expiresAt, extraLimitsPurchasedAt: purchasedAt, extraLimitsPaymentMethod: payMethod }) });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error);
-      setDone(true);
-      // Re-read fresh from Firestore
+
+      // ── Fresh read from Firestore before calculating totals ──────────────
+      // This prevents stale state from causing overwrite issues
       const { getDoc, doc: fsDoc } = await import("firebase/firestore");
       const { db: fdb } = await import("@/lib/firebase");
       const freshSnap = await getDoc(fsDoc(fdb, "users", uid));
-      if (freshSnap.exists()) {
-        const fd  = freshSnap.data();
+      const freshLims = freshSnap.exists() ? (freshSnap.data().extraLimits || {}) : {};
+
+      const cleaned = {};
+      ADDON_CATS.forEach(cat => {
+        cleaned[cat.limitKey] = (Number(freshLims[cat.limitKey]) || 0) + (Number(addQtys[cat.limitKey]) || 0);
+      });
+      // Extra user seats
+      cleaned["extraUsers"] = (Number(freshLims["extraUsers"]) || 0) + extraUsersAdding;
+      const purchasedAt   = new Date().toISOString();
+      const expiresAtDate = new Date(); expiresAtDate.setMonth(expiresAtDate.getMonth() + 1);
+      const expiresAt     = expiresAtDate.toISOString();
+      // If adding extra user seats, also bump maxDevices on the user doc
+      const extraUsersUpdate = {};
+      if (extraUsersAdding > 0) {
+        const currentMaxDevices = Number(user?.maxDevices) || 1;
+        extraUsersUpdate.maxDevices = currentMaxDevices + extraUsersAdding;
+      }
+      const res  = await fetch("/api/admin/update-user", { method:"POST", headers, body: JSON.stringify({ uid, extraLimits: cleaned, extraLimitsExpiresAt: expiresAt, extraLimitsPurchasedAt: purchasedAt, extraLimitsPaymentMethod: payMethod, ...extraUsersUpdate }) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      setDone(true);
+      // Re-read fresh from Firestore (reuse same imports from above)
+      const afterSnap = await getDoc(fsDoc(fdb, "users", uid));
+      if (afterSnap.exists()) {
+        const fd  = afterSnap.data();
         const lim = fd.extraLimits || {};
-        setExistingLims({ invoicesPerMonth: Number(lim.invoicesPerMonth||0), invoicesPerCustomerPerMonth: Number(lim.invoicesPerCustomerPerMonth||0), customersPerMonth: Number(lim.customersPerMonth||0), suppliersPerMonth: Number(lim.suppliersPerMonth||0), ordersPerSupplierPerMonth: Number(lim.ordersPerSupplierPerMonth||0) });
+        setExistingLims({ invoicesPerMonth: Number(lim.invoicesPerMonth||0), invoicesPerCustomerPerMonth: Number(lim.invoicesPerCustomerPerMonth||0), customersPerMonth: Number(lim.customersPerMonth||0), suppliersPerMonth: Number(lim.suppliersPerMonth||0), ordersPerSupplierPerMonth: Number(lim.ordersPerSupplierPerMonth||0), extraUsers: Number(lim.extraUsers||0) });
         setUserMeta({ extraLimitsExpiresAt: fd.extraLimitsExpiresAt||null, extraLimitsPurchasedAt: fd.extraLimitsPurchasedAt||null, extraLimitsPaymentMethod: fd.extraLimitsPaymentMethod||null });
       }
       // Send invoice email
@@ -1880,8 +1902,27 @@ function AddonsTab({ uid, user, getToken, onToast }) {
         const invoiceLines = lines.map(l => ({ key: l.cat.limitKey, icon: l.cat.icon, label: l.cat.label, qty: l.adding, unitPrice: Math.round(l.total/l.adding*10)/10, total: l.total }));
         fetch("/api/admin/send-addon-invoice", { method:"POST", headers, body: JSON.stringify({ uid, userName: user.name||user.email, userEmail: user.email, lineItems: invoiceLines, grandTotal, paymentMethod: payMethod, purchasedAt, expiresAt }) }).catch(()=>{});
       }
+
+      // Record admin grant in history — so user sees it in Purchase History
+      if (lines.length > 0) {
+        const invoiceLines = lines.map(l => ({ limitKey: l.cat.limitKey, icon: l.cat.icon, label: l.cat.label, qty: l.adding, total: l.total }));
+        fetch("/api/admin/record-addon-grant", {
+          method:  "POST",
+          headers,
+          body: JSON.stringify({
+            uid,
+            userName:      user?.name || user?.email || "",
+            userEmail:     user?.email || "",
+            lineItems:     invoiceLines,
+            grandTotal,
+            paymentMethod: payMethod,
+            purchasedAt,
+            expiresAt,
+          }),
+        }).catch(() => {});
+      }
       setSuccess({ lines, grandTotal, payMethod, expiresAt });
-      setAddQtys({ invoicesPerMonth:"0", invoicesPerCustomerPerMonth:"0", customersPerMonth:"0", suppliersPerMonth:"0", ordersPerSupplierPerMonth:"0" });
+      setAddQtys({ invoicesPerMonth:"0", invoicesPerCustomerPerMonth:"0", customersPerMonth:"0", suppliersPerMonth:"0", ordersPerSupplierPerMonth:"0", extraUsers:"0" });
       onToast?.("Add-ons activated! Invoice sent. ✓", "success");
       setTimeout(() => setDone(false), 3000);
     } catch (err) { onToast?.(err.message || "Save failed", "error"); }
@@ -1895,14 +1936,42 @@ function AddonsTab({ uid, user, getToken, onToast }) {
 
   return (
     <div className="flex flex-col gap-6 w-full">
-      <div>
-        <h2 className="text-white font-black text-lg flex items-center gap-2">⚡ Add-on Quota</h2>
-        <p className="text-gray-500 text-xs mt-1">User ke existing plan limits ke upar extra quota add karein. 1 mahine ke liye valid.</p>
+      <div className="flex items-start justify-between gap-3">
+        <div>
+          <h2 className="text-white font-black text-lg flex items-center gap-2">⚡ Add-on Quota</h2>
+          <p className="text-gray-500 text-xs mt-1">User ke existing plan limits ke upar extra quota add karein. 1 mahine ke liye valid.</p>
+        </div>
+        {/* Recalculate button — fixes any data inconsistency */}
+        <button
+          type="button"
+          onClick={async () => {
+            try {
+              const token   = await getToken();
+              const headers = { "Content-Type":"application/json", authorization:`Bearer ${token}` };
+              const res  = await fetch("/api/admin/recalculate-addon-limits", { method:"POST", headers, body: JSON.stringify({ uid }) });
+              const data = await res.json();
+              if (!res.ok) throw new Error(data.error);
+              // Re-read fresh limits
+              const { getDoc, doc: fsDoc } = await import("firebase/firestore");
+              const { db: fdb } = await import("@/lib/firebase");
+              const freshSnap = await getDoc(fsDoc(fdb, "users", uid));
+              if (freshSnap.exists()) {
+                const fd  = freshSnap.data();
+                const lim = fd.extraLimits || {};
+                setExistingLims({ invoicesPerMonth: Number(lim.invoicesPerMonth||0), invoicesPerCustomerPerMonth: Number(lim.invoicesPerCustomerPerMonth||0), customersPerMonth: Number(lim.customersPerMonth||0), suppliersPerMonth: Number(lim.suppliersPerMonth||0), ordersPerSupplierPerMonth: Number(lim.ordersPerSupplierPerMonth||0), extraUsers: Number(lim.extraUsers||0) });
+              }
+              onToast?.(`Recalculated! ${data.approvedRequestsCount} approved requests summed. ✓`, "success");
+            } catch (err) { onToast?.(err.message || "Recalculate failed", "error"); }
+          }}
+          className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold flex-shrink-0 transition-all hover:scale-105"
+          style={{ background:"rgba(99,102,241,0.1)", border:"1px solid rgba(99,102,241,0.3)", color:"#a5b4fc" }}>
+          🔄 Recalculate
+        </button>
       </div>
 
       {/* Current active add-ons */}
       {(() => {
-        const any = ADDON_CATS.some(cat => (existingLims[cat.limitKey] || 0) > 0);
+        const any = ADDON_CATS.some(cat => (existingLims[cat.limitKey] || 0) > 0) || (existingLims["extraUsers"] || 0) > 0;
         if (!any) return null;
         const exp     = userMeta?.extraLimitsExpiresAt ? new Date(userMeta.extraLimitsExpiresAt) : null;
         const expired = exp ? exp < new Date() : false;
@@ -1933,6 +2002,16 @@ function AddonsTab({ uid, user, getToken, onToast }) {
                   </div>
                 </div>
               ))}
+              {(existingLims["extraUsers"] || 0) > 0 && (
+                <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
+                  style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", opacity: expired ? 0.55 : 1 }}>
+                  <span className="text-sm">🧑‍💼</span>
+                  <div className="min-w-0">
+                    <p className="text-gray-400 text-[10px] truncate">Extra User Seats</p>
+                    <p className="font-black text-sm" style={{ color: expired ? "#f87171" : "#6366f1" }}>+{(existingLims["extraUsers"]||0).toLocaleString()}</p>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         );
@@ -2004,6 +2083,66 @@ function AddonsTab({ uid, user, getToken, onToast }) {
           );
         })}
         </div>{/* end grid */}
+
+        {/* ── Extra User Seats card ── */}
+        {(() => {
+          const adding    = Number(addQtys["extraUsers"]) || 0;
+          const perPrice  = p["extraUser_monthly"] ?? 1000;
+          const cost      = adding * perPrice;
+          const presets   = [1, 2, 3, 5, 10];
+          return (
+            <div className="rounded-2xl p-4"
+              style={{ background: adding > 0 ? "rgba(99,102,241,0.07)" : "rgba(255,255,255,0.02)", border: `1px solid ${adding > 0 ? "rgba(99,102,241,0.35)" : "rgba(255,255,255,0.07)"}` }}>
+              {/* Header */}
+              <div className="flex items-center gap-2 mb-3">
+                <span className="text-lg">🧑‍💼</span>
+                <p className="text-gray-200 text-sm font-bold flex-1">Extra User Seats</p>
+                {cost > 0 && <span className="text-indigo-300 font-black text-sm">Rs. {cost.toLocaleString()}</span>}
+              </div>
+              <p className="text-gray-600 text-[10px] mb-3">Flat rate: Rs.{perPrice.toLocaleString()} / user / month. User ka maxDevices bhi automatically update hoga.</p>
+
+              {/* Preset buttons */}
+              <div className="flex flex-wrap gap-2 mb-3">
+                {presets.map(n => {
+                  const isSel = adding === n;
+                  return (
+                    <button key={n} type="button"
+                      onClick={() => setAddQtys(prev => ({ ...prev, extraUsers: String(adding === n ? 0 : n) }))}
+                      className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:scale-[1.03]"
+                      style={{ background: isSel ? "rgba(99,102,241,0.2)" : "rgba(255,255,255,0.04)", border: `1px solid ${isSel ? "rgba(99,102,241,0.5)" : "rgba(255,255,255,0.08)"}`, color: isSel ? "#a5b4fc" : "#9ca3af" }}>
+                      +{n} {n === 1 ? "user" : "users"}
+                      <span className="ml-1 text-[10px] opacity-70">Rs.{(n * perPrice).toLocaleString()}</span>
+                    </button>
+                  );
+                })}
+              </div>
+
+              {/* Custom qty input */}
+              <div className="flex items-center gap-3">
+                <span className="text-gray-500 text-xs w-24 flex-shrink-0">Custom qty:</span>
+                <button type="button" onClick={() => setAddQtys(prev => ({ ...prev, extraUsers: String(Math.max(0, adding - 1)) }))}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold"
+                  style={{ background:"rgba(99,102,241,0.12)", border:"1px solid rgba(99,102,241,0.25)", color:"#a5b4fc" }}>−</button>
+                <input type="number" min="0" value={addQtys["extraUsers"]}
+                  onChange={e => setAddQtys(prev => ({ ...prev, extraUsers: String(Math.max(0, Number(e.target.value.replace(/[^0-9]/g,""))||0)) }))}
+                  className="flex-1 text-center font-bold text-sm outline-none"
+                  style={{ background:"rgba(99,102,241,0.06)", border:`1.5px solid ${adding>0?"rgba(99,102,241,0.4)":"rgba(255,255,255,0.08)"}`, borderRadius:8, padding:"6px", color: adding>0?"#a5b4fc":"#6b7280", MozAppearance:"textfield" }} />
+                <button type="button" onClick={() => setAddQtys(prev => ({ ...prev, extraUsers: String(adding + 1) }))}
+                  className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold"
+                  style={{ background:"rgba(99,102,241,0.12)", border:"1px solid rgba(99,102,241,0.25)", color:"#a5b4fc" }}>+</button>
+                {adding > 0 && (
+                  <button type="button" onClick={() => setAddQtys(prev => ({ ...prev, extraUsers: "0" }))}
+                    className="w-6 h-6 rounded-lg flex items-center justify-center text-xs"
+                    style={{ background:"rgba(248,113,113,0.12)", border:"1px solid rgba(248,113,113,0.25)", color:"#f87171" }}>✕</button>
+                )}
+                <div className="text-gray-600 text-[10px] flex-shrink-0">
+                  Existing: <span className="text-gray-300 font-bold">{existingLims["extraUsers"]||0}</span>
+                  {adding > 0 && <> → Total: <span className="text-indigo-400 font-bold">{(existingLims["extraUsers"]||0)+adding}</span></>}
+                </div>
+              </div>
+            </div>
+          );
+        })()}
       </div>{/* end flex-col gap-4 */}
 
       {/* Grand total + payment */}

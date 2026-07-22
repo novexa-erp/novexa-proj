@@ -194,7 +194,7 @@ export async function POST(request) {
 
       const existing = userData.extraLimits || {};
       const newLimits = { ...existing };
-      const ALLOWED_KEYS = ["invoicesPerMonth","invoicesPerCustomerPerMonth","customersPerMonth","suppliersPerMonth","ordersPerSupplierPerMonth"];
+      const ALLOWED_KEYS = ["invoicesPerMonth","invoicesPerCustomerPerMonth","customersPerMonth","suppliersPerMonth","ordersPerSupplierPerMonth","extraUsers"];
 
       (reqData.lineItems || []).forEach(item => {
         if (ALLOWED_KEYS.includes(item.limitKey)) {
@@ -206,6 +206,17 @@ export async function POST(request) {
       expiresDate.setMonth(expiresDate.getMonth() + 1);
       const expiresAt = expiresDate.toISOString();
 
+      // If extra user seats approved, also bump maxDevices on the user doc
+      const extraUsersDelta = (reqData.lineItems || [])
+        .filter(i => i.limitKey === "extraUsers")
+        .reduce((s, i) => s + (Number(i.qty) || 0), 0);
+
+      const extraUsersUpdate = {};
+      if (extraUsersDelta > 0) {
+        const currentMaxDevices = Number(userData.maxDevices) || 1;
+        extraUsersUpdate.maxDevices = currentMaxDevices + extraUsersDelta;
+      }
+
       await userRef.update({
         extraLimits:             newLimits,
         extraLimitsExpiresAt:    expiresAt,
@@ -213,6 +224,7 @@ export async function POST(request) {
         extraLimitsPaymentMethod: reqData.paymentMethod || "easypaisa",
         updatedAt:               now,
         updatedBy:               admin.uid,
+        ...extraUsersUpdate,
       });
 
       // Send approval email

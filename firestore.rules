@@ -19,7 +19,8 @@ service cloud.firestore {
 
     // ── Users ─────────────────────────────────────────────────────────────────
     match /users/{userId} {
-      allow read: if isSignedIn() && isOwner(userId);
+      // Owner can read their own doc; admin can read any user doc
+      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
 
       allow create: if isSignedIn() && isOwner(userId)
         && request.resource.data.email is string
@@ -39,116 +40,127 @@ service cloud.firestore {
         && !("plan"         in request.resource.data.diff(resource.data).affectedKeys())
         && !("maxDevices"   in request.resource.data.diff(resource.data).affectedKeys());
 
+      // Admin can update any user doc (all fields)
+      allow update: if isAdmin();
+
       allow delete: if false;
 
       // ── Subcollections ──────────────────────────────────────────────────────
       match /invoices/{invoiceId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
       match /customers/{customerId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
         match /invoices/{invoiceId} {
-          allow read, write: if isSignedIn() && isOwner(userId);
+          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
         }
       }
       match /products/{productId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
       match /payments/{paymentId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
       match /purchases/{purchaseId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
       match /suppliers/{supplierId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
         match /purchases/{purchaseId} {
-          allow read, write: if isSignedIn() && isOwner(userId);
+          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
         }
         match /orders/{orderId} {
-          allow read, write: if isSignedIn() && isOwner(userId);
+          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
         }
         match /payments/{paymentId} {
-          allow read, write: if isSignedIn() && isOwner(userId);
+          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
         }
         match /receipts/{receiptId} {
-          allow read, write: if isSignedIn() && isOwner(userId);
+          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
         }
         match /returns/{returnId} {
-          allow read, write: if isSignedIn() && isOwner(userId);
+          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
         }
       }
       match /supplierPayments/{paymentId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
       match /supplierReceipts/{receiptId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
       match /supplierReturns/{returnId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
       match /expenses/{expenseId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
       match /quotations/{quotationId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
       match /hr/{hrId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
       match /reports/{reportId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
       match /settings/{settingId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
       match /activityLogs/{logId} {
-        allow read, write: if isSignedIn() && isOwner(userId);
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
       match /tickets/{ticketId} {
-        allow read: if isSignedIn() && isOwner(userId);
+        // Owner reads their own tickets; admin reads all
+        allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+        // Only owner can create a ticket (not admin — admin uses server SDK)
         allow create: if isSignedIn() && isOwner(userId)
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.subject is string
           && request.resource.data.subject.size() > 0
           && request.resource.data.message is string
           && request.resource.data.message.size() > 0;
-        allow update: if false;
+        // Admin can update tickets (reply, change status)
+        allow update: if isAdmin();
         allow delete: if false;
       }
       match /addonRequests/{requestId} {
-        allow read: if isSignedIn() && isOwner(userId);
+        // Owner reads their own; admin reads all
+        allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+        // Owner can create their own request (payment screenshot flow)
         allow create: if isSignedIn() && isOwner(userId)
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.grandTotal is number
           && request.resource.data.lineItems is list;
-        allow update: if false;
+        // Admin can create on behalf of user (manual grant flow)
+        allow create: if isAdmin();
+        // Admin can update (approve/reject status)
+        allow update: if isAdmin();
         allow delete: if false;
       }
     }
 
     // ── Businesses ────────────────────────────────────────────────────────────
     match /businesses/{businessId} {
-      allow read:   if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow read:   if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
       allow create: if isSignedIn()
         && request.resource.data.ownerId == request.auth.uid
         && request.resource.data.businessName is string
         && request.resource.data.businessName.size() > 0;
-      allow update: if isSignedIn() && resource.data.ownerId == request.auth.uid;
-      allow delete: if isSignedIn() && resource.data.ownerId == request.auth.uid;
+      allow update: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
+      allow delete: if isSignedIn() && (resource.data.ownerId == request.auth.uid || isAdmin());
     }
 
-    // ── Support Tickets (admin-facing) ────────────────────────────────────────
+    // ── Support Tickets (admin-facing global collection) ──────────────────────
     match /supportTickets/{ticketId} {
-      allow read:   if isSignedIn() && resource.data.uid == request.auth.uid;
-      allow create: if false;
-      allow update: if false;
+      allow read:   if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
+      allow create: if false;  // written by server SDK only
+      allow update: if isAdmin();
       allow delete: if false;
     }
 
-    // ── Admin Config (Package Manager / Plan Settings) ────────────────────────
-    // Logged-in users: read only (to load plan limits & tabs in dashboard)
-    // Super Admin only: write (to save plan changes from Package Manager)
+    // ── Admin Config (Package Manager / Plan Settings / Counters) ─────────────
+    // All signed-in users: read (to load plan limits, addon prices)
+    // Super Admin only: write (plan changes, counter updates via server SDK)
     match /adminConfig/{docId} {
       allow read:  if isSignedIn();
       allow write: if isAdmin();
@@ -158,11 +170,11 @@ service cloud.firestore {
       }
     }
 
-    // ── Global addon requests (admin reads only — written by server SDK) ─────
+    // ── Global addon requests (admin reads; written by server SDK only) ───────
     match /addonRequests/{requestId} {
       allow read:   if isAdmin();
-      allow create: if false;
-      allow update: if false;
+      allow create: if false;  // server SDK only (addon-request & record-addon-grant routes)
+      allow update: if false;  // server SDK only (addon-approve route)
       allow delete: if false;
     }
 

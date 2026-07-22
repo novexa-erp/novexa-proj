@@ -17,6 +17,7 @@ export const PLAN_LIMITS = {
     customersPerMonth:             100,
     suppliersPerMonth:              20,
     ordersPerSupplierPerMonth:     100,
+    extraUsers:                      0,
   },
   business: {
     invoicesPerMonth:             1000,
@@ -24,6 +25,7 @@ export const PLAN_LIMITS = {
     customersPerMonth:             500,
     suppliersPerMonth:             100,
     ordersPerSupplierPerMonth:     500,
+    extraUsers:                      0,
   },
   professional: {
     invoicesPerMonth:             5000,
@@ -31,6 +33,7 @@ export const PLAN_LIMITS = {
     customersPerMonth:            2000,
     suppliersPerMonth:             500,
     ordersPerSupplierPerMonth:    2000,
+    extraUsers:                      0,
   },
   enterprise: {
     invoicesPerMonth:             null,
@@ -38,6 +41,7 @@ export const PLAN_LIMITS = {
     customersPerMonth:            null,
     suppliersPerMonth:            null,
     ordersPerSupplierPerMonth:    null,
+    extraUsers:                   null,
   },
 };
 

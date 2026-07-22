@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useEffect, useRef } from "react";
+import { createPortal } from "react-dom";
 import { doc, getDoc, collection, query, orderBy, onSnapshot } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
@@ -48,6 +49,8 @@ const CSS = `
 @keyframes pulse-ring{0%{transform:scale(1);opacity:.7;}100%{transform:scale(1.7);opacity:0;}}
 @keyframes bar-grow{from{height:0;}to{height:var(--h);}}
 @keyframes dash{to{stroke-dashoffset:0;}}
+@keyframes modal-in{from{opacity:0;transform:scale(0.92) translateY(24px);}to{opacity:1;transform:scale(1) translateY(0);}}
+@keyframes overlay-in{from{opacity:0;}to{opacity:1;}}
 `;
 function injectCSS(id, css) {
   if (typeof document === "undefined" || document.getElementById(id)) return;
@@ -72,7 +75,7 @@ function RightPanel({ userDoc, myRequests, addonPrices }) {
   const pendingAmt = myRequests.filter(r => r.status === "pending").reduce((s, r) => s + (r.grandTotal || 0), 0);
 
   /* ── Bar chart data — quota per category ── */
-  const maxQty = Math.max(...activeRows.map(r => Number(extras?.[r.limitKey]) || 0), 1);
+  const maxQty = Math.max(...activeRows.map(r => Number(extras?.[r.limitKey]) || 0), extraUsersActive, 1);
 
   /* ── Pie chart — spend by category ── */
   const approvedReqs = myRequests.filter(r => r.status === "approved");
@@ -81,10 +84,18 @@ function RightPanel({ userDoc, myRequests, addonPrices }) {
     (req.lineItems || []).forEach(item => {
       const cat = ADDON_CATEGORIES.find(c => c.limitKey === item.limitKey);
       if (cat) spendByCat[cat.limitKey] = (spendByCat[cat.limitKey] || 0) + (item.total || 0);
+      // Track extra user seats spend separately
+      if (item.limitKey === "extraUsers") {
+        spendByCat["extraUsers"] = (spendByCat["extraUsers"] || 0) + (item.total || 0);
+      }
     });
   });
-  const pieData = ADDON_CATEGORIES.filter(c => spendByCat[c.limitKey] > 0)
-    .map(c => ({ label: c.label, icon: c.icon, color: c.color, value: spendByCat[c.limitKey] }));
+  const pieData = [
+    ...ADDON_CATEGORIES.filter(c => spendByCat[c.limitKey] > 0)
+      .map(c => ({ label: c.label, icon: c.icon, color: c.color, value: spendByCat[c.limitKey] })),
+    // Add extra users if there's spend
+    ...(spendByCat["extraUsers"] > 0 ? [{ label: "Extra User Seats", icon: "👤", color: "#6366f1", value: spendByCat["extraUsers"] }] : []),
+  ];
   const pieTotal = pieData.reduce((s, d) => s + d.value, 0);
 
   /* ── Line chart — requests over last 6 months ── */
@@ -135,9 +146,9 @@ function RightPanel({ userDoc, myRequests, addonPrices }) {
         <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
           <p className="text-gray-600 text-xs font-bold uppercase tracking-widest mb-3">Quota Overview</p>
           <div className="flex items-end justify-around gap-2 h-20">
-            {ADDON_CATEGORIES.map((cat, i) => (
+            {[...ADDON_CATEGORIES, { limitKey: "extraUsers", icon: "👤", color: "#6366f1" }].map((cat, i) => (
               <div key={cat.limitKey} className="flex flex-col items-center gap-1 flex-1">
-                <div className="w-full rounded-t-lg" style={{ height: `${20 + i * 8}px`, background: `${cat.color}15`, border: `1px solid ${cat.color}20` }} />
+                <div className="w-full rounded-t-lg" style={{ height: `${20 + i * 7}px`, background: `${cat.color}15`, border: `1px solid ${cat.color}20` }} />
                 <span className="text-[9px]">{cat.icon}</span>
               </div>
             ))}
@@ -183,6 +194,21 @@ function RightPanel({ userDoc, myRequests, addonPrices }) {
                 </div>
               );
             })}
+            {/* Extra user seats row */}
+            {extraUsersActive > 0 && (
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <span className="text-xs flex items-center gap-1.5" style={{ color: "#9ca3af" }}>
+                    👤 <span className="truncate max-w-[100px]">User Seats</span>
+                  </span>
+                  <span className="font-black text-sm" style={{ color: "#6366f1" }}>+{extraUsersActive} user{extraUsersActive > 1 ? "s" : ""}</span>
+                </div>
+                <div className="h-1.5 rounded-full overflow-hidden" style={{ background: "rgba(255,255,255,0.06)" }}>
+                  <div className="h-full rounded-full transition-all duration-700"
+                    style={{ width: `${Math.min(100, Math.round((extraUsersActive / Math.max(maxQty, extraUsersActive)) * 100))}%`, background: "linear-gradient(90deg,#6366f199,#6366f1)" }} />
+                </div>
+              </div>
+            )}
             <div className="flex items-center justify-between mt-1 pt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
               <span className="text-gray-600 text-[10px] uppercase tracking-widest">Expires</span>
               <span className="text-xs font-semibold" style={{ color: expired ? "#f87171" : "#d1d5db" }}>{fmtDate(expAt)}</span>
@@ -214,6 +240,22 @@ function RightPanel({ userDoc, myRequests, addonPrices }) {
                 </div>
               );
             })}
+            {/* Extra user seats bar */}
+            {(() => {
+              const qty = extraUsersActive;
+              const pct = qty > 0 ? Math.max(8, Math.round((qty / maxQty) * 80)) : 4;
+              return (
+                <div className="flex flex-col items-center gap-1.5 flex-1 group relative">
+                  <div className="absolute bottom-full mb-2 px-2 py-1 rounded-lg text-[10px] font-semibold whitespace-nowrap pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity z-10"
+                    style={{ background: "rgba(13,15,25,0.95)", border: "1px solid rgba(99,102,241,0.4)", color: "#a5b4fc" }}>
+                    {qty > 0 ? `+${qty} user${qty > 1 ? "s" : ""}` : "0"}
+                  </div>
+                  <div className="w-full rounded-t-xl transition-all duration-700"
+                    style={{ height: `${pct}px`, background: qty > 0 ? "linear-gradient(to top,#6366f1,#a5b4fc80)" : "rgba(255,255,255,0.05)", boxShadow: qty > 0 ? "0 0 12px rgba(99,102,241,0.4)" : "none" }} />
+                  <span className="text-sm">👤</span>
+                </div>
+              );
+            })()}
           </div>
         </div>
       )}
@@ -321,6 +363,373 @@ function RightPanel({ userDoc, myRequests, addonPrices }) {
 }
 
 /* ══════════════════════════════════════════════════════════════
+   ADDON INVOICE MODAL
+══════════════════════════════════════════════════════════════ */
+function AddonInvoiceModal({ req, onClose }) {
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => { setMounted(true); return () => setMounted(false); }, []);
+
+  if (!req || !mounted) return null;
+
+  const ts       = req.createdAt?.toDate ? req.createdAt.toDate().toISOString() : req.createdAt;
+  const approved = req.processedAt || req.createdAt;
+  const approvedTs = approved?.toDate ? approved.toDate().toISOString() : approved;
+
+  // Expiry = approvedAt + 1 month
+  const expiryDate = approvedTs
+    ? (() => { const d = new Date(approvedTs); d.setMonth(d.getMonth() + 1); return d.toISOString(); })()
+    : null;
+
+  const payLabel = {
+    easypaisa: "💚 EasyPaisa",
+    jazzcash:  "🔴 JazzCash",
+    meezan:    "🏦 Meezan Bank",
+    cash:      "💵 Cash",
+    online:    "🌐 Online",
+    cheque:    "🧾 Cheque",
+  }[req.paymentMethod] || req.paymentMethod || "—";
+
+  const invoiceNo = req.requestNumber || `ADD-${(req.id || "").slice(-6).toUpperCase()}`;
+
+  function fmtDT(iso) {
+    if (!iso) return "—";
+    try { return new Date(iso).toLocaleString("en-PK", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" }); }
+    catch { return "—"; }
+  }
+
+  const modal = (
+    <div
+      style={{
+        position: "fixed",
+        inset: 0,
+        zIndex: 99999,
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        padding: "16px",
+        background: "rgba(0,0,0,0.82)",
+        backdropFilter: "blur(14px)",
+        WebkitBackdropFilter: "blur(14px)",
+        animation: "overlay-in 0.2s ease both",
+      }}
+      onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
+
+      <div style={{
+        width: "100%",
+        maxWidth: 520,
+        maxHeight: "90vh",
+        borderRadius: 20,
+        overflow: "hidden",
+        display: "flex",
+        flexDirection: "column",
+        background: "#0d1117",
+        border: "1.5px solid rgba(99,102,241,0.4)",
+        boxShadow: "0 32px 80px rgba(0,0,0,0.85), 0 0 0 1px rgba(99,102,241,0.1)",
+        animation: "modal-in 0.28s cubic-bezier(0.34,1.56,0.64,1) both",
+      }}>
+
+        {/* Top gradient bar */}
+        <div style={{ height: 5, background: "linear-gradient(to right,#6366f1,#8b5cf6,#fbbf24)", flexShrink: 0 }} />
+
+        {/* Header */}
+        <div style={{
+          padding: "20px 24px",
+          display: "flex",
+          alignItems: "center",
+          justifyContent: "space-between",
+          flexShrink: 0,
+          background: req.source === "admin"
+            ? "linear-gradient(135deg,rgba(245,158,11,0.12),rgba(251,191,36,0.05))"
+            : "linear-gradient(135deg,rgba(99,102,241,0.1),rgba(139,92,246,0.05))",
+          borderBottom: "1px solid rgba(255,255,255,0.07)",
+        }}>
+          <div>
+            <p style={{ color: "#6b7280", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 700, marginBottom: 4 }}>
+              {req.source === "admin" ? "👑 Admin Grant" : "Add-on Invoice"}
+            </p>
+            <p style={{ color: "#fff", fontWeight: 900, fontSize: 22, lineHeight: 1 }}>{invoiceNo}</p>
+            {req.source === "admin" && (
+              <p style={{ color: "#fbbf24", fontSize: 11, fontWeight: 600, marginTop: 6 }}>
+                ✨ Given by Super Admin — no payment required
+              </p>
+            )}
+          </div>
+          <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
+            <span style={{
+              padding: "6px 14px",
+              borderRadius: 12,
+              fontSize: 12,
+              fontWeight: 800,
+              background: req.status === "approved" ? "rgba(52,211,153,0.15)" : req.status === "rejected" ? "rgba(248,113,113,0.15)" : "rgba(251,191,36,0.15)",
+              border: `1px solid ${req.status === "approved" ? "rgba(52,211,153,0.45)" : req.status === "rejected" ? "rgba(248,113,113,0.45)" : "rgba(251,191,36,0.45)"}`,
+              color: req.status === "approved" ? "#34d399" : req.status === "rejected" ? "#f87171" : "#fbbf24",
+            }}>
+              {req.status === "approved" ? "✅ Approved" : req.status === "rejected" ? "❌ Rejected" : "⏳ Pending"}
+            </span>
+            {/* Close X */}
+            <button onClick={onClose} style={{
+              width: 32, height: 32, borderRadius: 10,
+              background: "rgba(255,255,255,0.06)",
+              border: "1px solid rgba(255,255,255,0.1)",
+              color: "#9ca3af", fontSize: 16, cursor: "pointer",
+              display: "flex", alignItems: "center", justifyContent: "center",
+              transition: "all 0.15s",
+            }}>✕</button>
+          </div>
+        </div>
+
+        {/* Scrollable body */}
+        <div style={{ overflowY: "auto", flex: 1, padding: "20px 24px", display: "flex", flexDirection: "column", gap: 20 }}>
+
+          {/* Dates grid */}
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            {[
+              { label: "Requested On",  value: fmtDT(ts) },
+              { label: "Approved On",   value: req.status === "approved" ? fmtDT(approvedTs) : "—" },
+              { label: "Payment Via",   value: req.source === "admin" ? "👑 Given by Super Admin" : payLabel },
+              { label: "Expires On",    value: req.status === "approved" ? fmtDate(expiryDate) : "—" },
+            ].map(r => (
+              <div key={r.label} style={{ borderRadius: 12, padding: "12px 16px", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                <p style={{ color: "#6b7280", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, marginBottom: 6 }}>{r.label}</p>
+                <p style={{ color: "#fff", fontSize: 13, fontWeight: 600 }}>{r.value}</p>
+              </div>
+            ))}
+          </div>
+
+          {/* Line items */}
+          <div>
+            <p style={{ color: "#6b7280", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, marginBottom: 12 }}>⚡ Add-ons Purchased</p>
+            <div style={{ borderRadius: 12, overflow: "hidden", border: "1px solid rgba(255,255,255,0.08)" }}>
+              {/* Table header */}
+              <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "10px 16px", background: "rgba(99,102,241,0.12)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+                {["Add-on", "Qty Added", "Amount"].map((h, i) => (
+                  <p key={h} style={{ color: "#6b7280", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", textAlign: i > 0 ? "center" : "left" }}>{h}</p>
+                ))}
+              </div>
+              {(req.lineItems || []).map((item, i, arr) => (
+                <div key={i} style={{
+                  display: "grid", gridTemplateColumns: "2fr 1fr 1fr",
+                  padding: "12px 16px", alignItems: "center",
+                  borderBottom: i < arr.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
+                  background: i % 2 === 0 ? "rgba(255,255,255,0.01)" : "transparent",
+                }}>
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span style={{ fontSize: 18 }}>{item.icon || "⚡"}</span>
+                    <span style={{ color: "#d1d5db", fontSize: 13, fontWeight: 500 }}>{item.label}</span>
+                  </div>
+                  <p style={{ color: "#a5b4fc", fontWeight: 900, fontSize: 15, textAlign: "center" }}>+{Number(item.qty).toLocaleString()}</p>
+                  <p style={{ color: "#fbbf24", fontWeight: 700, fontSize: 14, textAlign: "center" }}>{fmtRs(item.total)}</p>
+                </div>
+              ))}
+              {/* Grand total */}
+              <div style={{
+                display: "grid", gridTemplateColumns: "2fr 1fr 1fr",
+                padding: "14px 16px", alignItems: "center",
+                background: "rgba(99,102,241,0.1)",
+                borderTop: "1.5px solid rgba(99,102,241,0.25)",
+              }}>
+                <p style={{ color: "#9ca3af", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", gridColumn: "span 2" }}>Total Paid</p>
+                <p style={{ color: "#fff", fontWeight: 900, fontSize: 18, textAlign: "center" }}>{fmtRs(req.grandTotal)}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Payment screenshot */}
+          {req.paymentScreenshot && (
+            <div>
+              <p style={{ color: "#6b7280", fontSize: 11, textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 700, marginBottom: 12 }}>📸 Payment Screenshot</p>
+              <div style={{ borderRadius: 12, overflow: "hidden", border: "1px solid rgba(255,255,255,0.1)" }}>
+                <img src={req.paymentScreenshot} alt="Payment proof"
+                  style={{ width: "100%", maxHeight: 220, objectFit: "contain", background: "#111", display: "block" }} />
+              </div>
+            </div>
+          )}
+
+          {/* Admin note */}
+          {req.adminNote && (
+            <div style={{ borderRadius: 12, padding: "12px 16px", background: "rgba(59,130,246,0.07)", border: "1px solid rgba(59,130,246,0.2)" }}>
+              <p style={{ color: "#60a5fa", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", marginBottom: 6 }}>📝 Note from Novexa</p>
+              <p style={{ color: "#d1d5db", fontSize: 13, lineHeight: 1.6 }}>{req.adminNote}</p>
+            </div>
+          )}
+
+          {/* Validity */}
+          {req.status === "approved" && expiryDate && (
+            <div style={{ borderRadius: 12, padding: "12px 16px", background: "rgba(16,185,129,0.06)", border: "1px solid rgba(16,185,129,0.2)", display: "flex", alignItems: "center", gap: 10 }}>
+              <span style={{ fontSize: 18, flexShrink: 0 }}>⏰</span>
+              <p style={{ color: "#34d399", fontSize: 13, fontWeight: 600 }}>
+                Valid for 1 month · Expires {fmtDate(expiryDate)}
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Footer */}
+        <div style={{ padding: "16px 24px", flexShrink: 0, borderTop: "1px solid rgba(255,255,255,0.07)" }}>
+          <button onClick={onClose} style={{
+            width: "100%", padding: "12px", borderRadius: 12, border: "none",
+            background: "linear-gradient(135deg,#6366f1,#8b5cf6)",
+            color: "#fff", fontWeight: 900, fontSize: 14, cursor: "pointer",
+            boxShadow: "0 4px 16px rgba(99,102,241,0.4)",
+            transition: "transform 0.15s",
+          }}>
+            Close
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+
+  return createPortal(modal, document.body);
+}
+
+/* ══════════════════════════════════════════════════════════════
+   PURCHASE HISTORY SECTION
+══════════════════════════════════════════════════════════════ */
+function PurchaseHistory({ myRequests }) {
+  const [viewInvoice, setViewInvoice] = useState(null);
+
+  // Show all requests, sorted newest first (already sorted from Firestore)
+  if (myRequests.length === 0) return null;
+
+  function fmtDT(iso) {
+    if (!iso) return "—";
+    try { return new Date(iso).toLocaleString("en-PK", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" }); }
+    catch { return "—"; }
+  }
+
+  return (
+    <>
+      {/* Invoice Modal */}
+      {viewInvoice && (
+        <AddonInvoiceModal req={viewInvoice} onClose={() => setViewInvoice(null)} />
+      )}
+
+      <div className="rounded-2xl overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
+        {/* Section header */}
+        <div className="px-5 py-4 flex items-center gap-3"
+          style={{ background: "linear-gradient(135deg,rgba(99,102,241,0.08),rgba(139,92,246,0.04))", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <span className="text-xl">🧾</span>
+          <div className="flex-1">
+            <p className="text-white font-black text-sm">Add-on Purchase History</p>
+            <p className="text-gray-500 text-[11px] mt-0.5">All your add-on requests — click View to see invoice</p>
+          </div>
+          <span className="px-2.5 py-1 rounded-full text-[10px] font-black"
+            style={{ background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc" }}>
+            {myRequests.length}
+          </span>
+        </div>
+
+        {/* Table header — desktop */}
+        <div className="hidden md:grid px-5 py-2.5 text-[10px] font-bold uppercase tracking-widest"
+          style={{ gridTemplateColumns: "0.9fr 1.4fr 1.2fr 1fr 1fr 1fr 0.8fr", color: "#4b5563", borderBottom: "1px solid rgba(255,255,255,0.05)", background: "rgba(255,255,255,0.015)" }}>
+          <span>Request #</span>
+          <span>Add-ons</span>
+          <span>Purchased On</span>
+          <span>Amount</span>
+          <span>Expires On</span>
+          <span>Status</span>
+          <span className="text-right">Invoice</span>
+        </div>
+
+        {/* Rows */}
+        {myRequests.map((req, i) => {
+          const ts         = req.createdAt?.toDate ? req.createdAt.toDate().toISOString() : req.createdAt;
+          const approvedTs = req.processedAt?.toDate ? req.processedAt.toDate().toISOString() : req.processedAt;
+          const expiryDate = (req.status === "approved" && approvedTs)
+            ? (() => { const d = new Date(approvedTs); d.setMonth(d.getMonth() + 1); return d.toISOString(); })()
+            : null;
+
+          const stMeta = {
+            approved: { color: "#34d399", bg: "rgba(52,211,153,0.1)",  border: "rgba(52,211,153,0.3)",  label: "✅ Approved" },
+            rejected: { color: "#f87171", bg: "rgba(248,113,113,0.1)", border: "rgba(248,113,113,0.3)", label: "❌ Rejected" },
+            pending:  { color: "#fbbf24", bg: "rgba(251,191,36,0.1)",  border: "rgba(251,191,36,0.3)",  label: "⏳ Pending"  },
+          }[req.status] || { color: "#fbbf24", bg: "rgba(251,191,36,0.1)", border: "rgba(251,191,36,0.3)", label: "Pending" };
+
+          // Summarize line items as short pill list
+          const summary = (req.lineItems || []).map(it => `${it.icon || "⚡"} +${Number(it.qty).toLocaleString()} ${it.label?.replace(" / Month","").replace("Extra ","")}`);
+
+          return (
+            <div key={req.id}
+              className="grid md:grid-cols-[0.9fr_1.4fr_1.2fr_1fr_1fr_1fr_0.8fr] grid-cols-1 items-start gap-2 md:gap-0 px-5 py-4 hover:bg-white/[0.018] transition-colors"
+              style={{ borderBottom: i < myRequests.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
+
+              {/* Request number */}
+              <div className="flex flex-col justify-center">
+                <p className="text-indigo-400 font-black text-xs font-mono">
+                  {req.requestNumber || `#${(req.id || "").slice(-6).toUpperCase()}`}
+                </p>
+                {req.source === "admin" && (
+                  <span className="mt-1 text-[9px] font-bold px-1.5 py-0.5 rounded-md inline-block"
+                    style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", color: "#fbbf24" }}>
+                    👑 Admin
+                  </span>
+                )}
+              </div>
+
+              {/* Add-ons summary */}
+              <div className="flex flex-col gap-1 min-w-0">
+                {summary.slice(0, 3).map((s, si) => (
+                  <p key={si} className="text-gray-300 text-xs truncate">{s}</p>
+                ))}
+                {summary.length > 3 && (
+                  <p className="text-gray-600 text-[10px]">+{summary.length - 3} more</p>
+                )}
+              </div>
+
+              {/* Purchased on */}
+              <div className="flex flex-col justify-center">
+                <p className="text-gray-400 text-xs">{fmtDT(ts)}</p>
+              </div>
+
+              {/* Amount */}
+              <div className="flex flex-col justify-center">
+                <p className="text-amber-300 font-black text-sm">{fmtRs(req.grandTotal)}</p>
+                <p className="text-gray-600 text-[10px] capitalize">{req.paymentMethod || "—"}</p>
+              </div>
+
+              {/* Expires */}
+              <div className="flex flex-col justify-center">
+                {req.status === "approved" && expiryDate ? (
+                  <>
+                    <p className="text-emerald-400 text-xs font-semibold">{fmtDate(expiryDate)}</p>
+                    {(() => {
+                      const dl = Math.ceil((new Date(expiryDate) - new Date()) / 86400000);
+                      return dl > 0
+                        ? <p className="text-gray-600 text-[10px]">{dl}d left</p>
+                        : <p className="text-red-400 text-[10px] font-bold">Expired</p>;
+                    })()}
+                  </>
+                ) : (
+                  <p className="text-gray-600 text-xs">—</p>
+                )}
+              </div>
+
+              {/* Status */}
+              <div className="flex items-start pt-0.5">
+                <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap"
+                  style={{ background: stMeta.bg, border: `1px solid ${stMeta.border}`, color: stMeta.color }}>
+                  {stMeta.label}
+                </span>
+              </div>
+
+              {/* View Invoice button */}
+              <div className="flex items-start justify-end pt-0.5">
+                <button onClick={() => setViewInvoice(req)}
+                  className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:scale-105"
+                  style={{ background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc" }}>
+                  View →
+                </button>
+              </div>
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════
    PACKAGE CARD
 ══════════════════════════════════════════════════════════════ */
 function PkgCard({ pkg, cat, addonPrices, selected, onSelect }) {
@@ -388,13 +797,16 @@ export default function AddonsView({ uid, userDoc, user }) {
   const [selections,     setSelections]     = useState({});
   const [step,           setStep]           = useState(1);
   const [selectedPay,    setSelectedPay]    = useState("easypaisa");
-  const [screenshot,     setScreenshot]     = useState(null);
-  const [screenshotName, setScreenshotName] = useState("");
-  const [submitting,     setSubmitting]     = useState(false);
-  const [submitError,    setSubmitError]    = useState("");
+  const [screenshot,          setScreenshot]          = useState(null);   // base64 — sirf preview ke liye
+  const [screenshotUrl,       setScreenshotUrl]       = useState("");     // Cloudinary URL — Firestore mein yahi jayega
+  const [screenshotName,      setScreenshotName]      = useState("");
+  const [screenshotUploading, setScreenshotUploading] = useState(false);  // upload spinner
+  const [submitting,          setSubmitting]          = useState(false);
+  const [submitError,         setSubmitError]         = useState("");
   const [myRequests,     setMyRequests]     = useState([]);
   const [reqLoading,     setReqLoading]     = useState(true);
   const [showReqPanel,   setShowReqPanel]   = useState(false); // mobile requests drawer
+  const [successPopup,   setSuccessPopup]   = useState(null);  // { lineItems, grandTotal }
 
   useEffect(() => { injectCSS("addons-v3", CSS); }, []);
 
@@ -432,18 +844,46 @@ export default function AddonsView({ uid, userDoc, user }) {
 
   const selectedAccount = PAYMENT_ACCOUNTS.find(a => a.id === selectedPay) || PAYMENT_ACCOUNTS[0];
 
-  function handleScreenshot(e) {
+  async function handleScreenshot(e) {
     const file = e.target.files?.[0];
     if (!file) return;
-    if (file.size > 3 * 1024 * 1024) { setSubmitError("Screenshot must be under 3MB."); return; }
+    if (file.size > 5 * 1024 * 1024) { setSubmitError("Screenshot must be under 5MB."); return; }
+    setSubmitError("");
     setScreenshotName(file.name);
+    setScreenshotUrl("");
+
+    // Pehle local preview set karo
     const reader = new FileReader();
-    reader.onload = ev => setScreenshot(ev.target.result);
+    reader.onload = async (ev) => {
+      const dataUrl = ev.target.result;
+      setScreenshot(dataUrl);
+
+      // Phir Cloudinary par upload karo
+      setScreenshotUploading(true);
+      try {
+        const token = await user.getIdToken();
+        const res   = await fetch("/api/upload-screenshot", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+          body:    JSON.stringify({ dataUrl, uid }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Upload failed");
+        setScreenshotUrl(data.url);
+      } catch (err) {
+        setSubmitError("Image upload failed: " + (err.message || "please try again"));
+        setScreenshot(null);
+        setScreenshotName("");
+      } finally {
+        setScreenshotUploading(false);
+      }
+    };
     reader.readAsDataURL(file);
   }
 
   async function handleSubmit() {
-    if (!screenshot) { setSubmitError("Please upload your payment screenshot first."); return; }
+    if (!screenshotUrl) { setSubmitError("Please upload your payment screenshot first."); return; }
+    if (screenshotUploading) { setSubmitError("Image is still uploading, please wait."); return; }
     if (!hasSelections) { setSubmitError("No add-ons selected."); return; }
     setSubmitError("");
     setSubmitting(true);
@@ -452,11 +892,21 @@ export default function AddonsView({ uid, userDoc, user }) {
       const res = await fetch("/api/addon-request", {
         method: "POST",
         headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
-        body: JSON.stringify({ uid, lineItems, grandTotal, paymentMethod: selectedPay, paymentScreenshot: screenshot, userName: userDoc?.name || user?.email, userEmail: user?.email }),
+        body: JSON.stringify({
+          uid,
+          lineItems,
+          grandTotal,
+          paymentMethod:     selectedPay,
+          paymentScreenshot: screenshotUrl,   // Cloudinary URL — base64 nahi
+          userName:          userDoc?.name || user?.email,
+          userEmail:         user?.email,
+        }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Request failed");
-      setStep(3);
+      // Show success popup, reset back to step 1 so history is visible
+      setSuccessPopup({ lineItems, grandTotal });
+      resetFlow();
     } catch (err) {
       setSubmitError(err.message || "Could not submit. Please try again.");
     }
@@ -465,10 +915,112 @@ export default function AddonsView({ uid, userDoc, user }) {
 
   function resetFlow() {
     setSelections({}); setStep(1); setSelectedPay("easypaisa");
-    setScreenshot(null); setScreenshotName(""); setSubmitError("");
+    setScreenshot(null); setScreenshotUrl(""); setScreenshotName(""); setSubmitError("");
   }
 
   const pendingCount = myRequests.filter(r => r.status === "pending").length;
+
+  // ── Success Popup Portal ─────────────────────────────────────────────────
+  const SuccessPopup = successPopup ? createPortal(
+    <div style={{
+      position: "fixed", inset: 0, zIndex: 99999,
+      display: "flex", alignItems: "center", justifyContent: "center", padding: 16,
+      background: "rgba(0,0,0,0.85)",
+      backdropFilter: "blur(14px)", WebkitBackdropFilter: "blur(14px)",
+      animation: "overlay-in 0.2s ease both",
+    }}>
+      <div style={{
+        width: "100%", maxWidth: 460, borderRadius: 24, overflow: "hidden",
+        background: "#0d1117",
+        border: "1.5px solid rgba(16,185,129,0.4)",
+        boxShadow: "0 32px 80px rgba(0,0,0,0.85), 0 0 0 1px rgba(16,185,129,0.08)",
+        animation: "modal-in 0.3s cubic-bezier(0.34,1.56,0.64,1) both",
+      }}>
+        {/* Top bar */}
+        <div style={{ height: 5, background: "linear-gradient(to right,#10b981,#34d399,#6366f1)" }} />
+
+        {/* Body */}
+        <div style={{ padding: "32px 28px 24px", textAlign: "center" }}>
+          {/* Icon */}
+          <div style={{ position: "relative", display: "inline-block", marginBottom: 20 }}>
+            <div style={{
+              width: 80, height: 80, borderRadius: "50%",
+              display: "flex", alignItems: "center", justifyContent: "center", fontSize: 36,
+              background: "linear-gradient(135deg,rgba(16,185,129,0.15),rgba(6,182,212,0.1))",
+              border: "2px solid rgba(16,185,129,0.4)",
+              boxShadow: "0 0 50px rgba(16,185,129,0.35)",
+              margin: "0 auto",
+            }}>✅</div>
+            <div style={{
+              position: "absolute", inset: -4, borderRadius: "50%",
+              border: "2px solid rgba(16,185,129,0.25)",
+              animation: "pulse-ring 2s ease-in-out infinite",
+            }} />
+          </div>
+
+          <h2 style={{ color: "#fff", fontWeight: 900, fontSize: 22, margin: "0 0 10px" }}>
+            Request Sent!
+          </h2>
+          <p style={{ color: "#9ca3af", fontSize: 14, lineHeight: 1.7, margin: "0 0 24px", maxWidth: 360, marginLeft: "auto", marginRight: "auto" }}>
+            Your request has been submitted and a confirmation email has been sent to you.
+            Once approved, the credits you requested will be added to your account automatically.
+          </p>
+
+          {/* Line items summary */}
+          <div style={{ borderRadius: 14, overflow: "hidden", border: "1px solid rgba(16,185,129,0.2)", marginBottom: 24 }}>
+            {successPopup.lineItems.map((item, i, arr) => (
+              <div key={i} style={{
+                display: "flex", alignItems: "center", justifyContent: "space-between",
+                padding: "11px 18px",
+                borderBottom: i < arr.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none",
+                background: i % 2 === 0 ? "rgba(16,185,129,0.04)" : "transparent",
+              }}>
+                <span style={{ color: "#d1d5db", fontSize: 13 }}>
+                  {item.icon} {item.label}
+                  <span style={{ color: "#34d399", fontWeight: 700, marginLeft: 6 }}>+{Number(item.qty).toLocaleString()}</span>
+                </span>
+                <span style={{ color: "#fbbf24", fontWeight: 700, fontSize: 13 }}>{fmtRs(item.total)}</span>
+              </div>
+            ))}
+            <div style={{
+              display: "flex", justifyContent: "space-between", alignItems: "center",
+              padding: "13px 18px",
+              background: "rgba(16,185,129,0.08)",
+              borderTop: "1.5px solid rgba(16,185,129,0.2)",
+            }}>
+              <span style={{ color: "#9ca3af", fontSize: 12, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em" }}>Total Paid</span>
+              <span style={{ color: "#fff", fontWeight: 900, fontSize: 18 }}>{fmtRs(successPopup.grandTotal)}</span>
+            </div>
+          </div>
+
+          {/* Info note */}
+          <div style={{
+            borderRadius: 12, padding: "12px 16px", marginBottom: 24,
+            background: "rgba(99,102,241,0.07)", border: "1px solid rgba(99,102,241,0.2)",
+            display: "flex", alignItems: "flex-start", gap: 10, textAlign: "left",
+          }}>
+            <span style={{ fontSize: 16, flexShrink: 0, marginTop: 1 }}>📧</span>
+            <p style={{ color: "#a5b4fc", fontSize: 12, lineHeight: 1.6, margin: 0 }}>
+              Check your email for a confirmation. Our team will review your payment and activate your add-ons as soon as possible.
+            </p>
+          </div>
+
+          {/* Close button */}
+          <button
+            onClick={() => setSuccessPopup(null)}
+            style={{
+              width: "100%", padding: "13px", borderRadius: 14, border: "none",
+              background: "linear-gradient(135deg,#10b981,#059669)",
+              color: "#fff", fontWeight: 900, fontSize: 15, cursor: "pointer",
+              boxShadow: "0 4px 20px rgba(16,185,129,0.4)",
+            }}>
+            Got it — view my history ↓
+          </button>
+        </div>
+      </div>
+    </div>,
+    document.body
+  ) : null;
 
   if (!addonPrices) {
     return (
@@ -480,6 +1032,8 @@ export default function AddonsView({ uid, userDoc, user }) {
 
   return (
     <div className="relative" style={{ fontFamily: "var(--font-poppins,sans-serif)", minHeight: "100vh" }}>
+      {/* Success popup portal */}
+      {SuccessPopup}
 
       {/* ── Animated bg ── */}
       <div className="fixed inset-0 pointer-events-none overflow-hidden" style={{ zIndex: 0 }}>
@@ -759,19 +1313,39 @@ export default function AddonsView({ uid, userDoc, user }) {
                 <div>
                   <p className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-3">📸 Upload Payment Screenshot</p>
                   <label className="flex flex-col items-center justify-center gap-4 p-7 rounded-2xl cursor-pointer transition-all duration-300 group"
-                    style={{ background: screenshot ? "rgba(16,185,129,0.07)" : "rgba(255,255,255,0.02)", border: `2px dashed ${screenshot ? "rgba(16,185,129,0.4)" : "rgba(255,255,255,0.1)"}`, boxShadow: screenshot ? "0 0 32px rgba(16,185,129,0.1)" : "none" }}>
-                    <input type="file" accept="image/*" className="hidden" onChange={handleScreenshot} />
-                    {screenshot ? (
+                    style={{
+                      background: screenshotUrl ? "rgba(16,185,129,0.07)" : screenshotUploading ? "rgba(99,102,241,0.07)" : "rgba(255,255,255,0.02)",
+                      border: `2px dashed ${screenshotUrl ? "rgba(16,185,129,0.4)" : screenshotUploading ? "rgba(99,102,241,0.4)" : "rgba(255,255,255,0.1)"}`,
+                      boxShadow: screenshotUrl ? "0 0 32px rgba(16,185,129,0.1)" : "none",
+                      cursor: screenshotUploading ? "not-allowed" : "pointer",
+                    }}>
+                    <input type="file" accept="image/*" className="hidden" onChange={handleScreenshot} disabled={screenshotUploading} />
+
+                    {screenshotUploading ? (
+                      /* Uploading state */
                       <>
-                        <img src={screenshot} alt="ss" className="max-h-44 rounded-xl object-contain shadow-xl" />
-                        <p className="text-emerald-400 font-black text-sm">✓ {screenshotName}</p>
-                        <p className="text-gray-600 text-xs">Click to replace</p>
+                        <div className="w-14 h-14 rounded-2xl flex items-center justify-center" style={{ background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.25)" }}>
+                          <div className="w-7 h-7 rounded-full border-[3px] border-t-indigo-400 border-transparent animate-spin" />
+                        </div>
+                        <p className="text-indigo-300 font-bold text-sm">Uploading your image...</p>
+                        <p className="text-gray-600 text-xs">{screenshotName}</p>
+                      </>
+                    ) : screenshotUrl ? (
+                      /* Upload done */
+                      <>
+                        <img src={screenshot} alt="payment screenshot" className="max-h-44 rounded-xl object-contain shadow-xl" />
+                        <div className="flex items-center gap-2">
+                          <span className="text-emerald-400 text-lg">✓</span>
+                          <p className="text-emerald-400 font-black text-sm">{screenshotName}</p>
+                        </div>
+                        <p className="text-gray-600 text-xs">Uploaded — click to replace</p>
                       </>
                     ) : (
+                      /* Empty state */
                       <>
                         <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl transition-transform group-hover:scale-110" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>📱</div>
-                        <p className="text-gray-300 font-bold text-sm">Click to upload screenshot</p>
-                        <p className="text-gray-600 text-xs text-center">Take a screenshot after payment and upload it here (max 3MB)</p>
+                        <p className="text-gray-300 font-bold text-sm">Click to upload payment screenshot</p>
+                        <p className="text-gray-600 text-xs text-center">Take a screenshot after payment and upload it here (max 5MB)</p>
                       </>
                     )}
                   </label>
@@ -786,48 +1360,27 @@ export default function AddonsView({ uid, userDoc, user }) {
                 <div className="flex gap-3">
                   <button onClick={() => setStep(1)} className="px-5 py-3.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/10"
                     style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>← Back</button>
-                  <button onClick={handleSubmit} disabled={submitting || !screenshot}
+                  <button onClick={handleSubmit} disabled={submitting || screenshotUploading || !screenshotUrl}
                     className="flex-1 py-3.5 rounded-xl text-sm font-black transition-all"
-                    style={{ background: screenshot && !submitting ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "rgba(255,255,255,0.05)", color: screenshot && !submitting ? "#fff" : "#4b5563", boxShadow: screenshot && !submitting ? "0 4px 24px rgba(99,102,241,0.5)" : "none", cursor: screenshot && !submitting ? "pointer" : "not-allowed" }}>
-                    {submitting ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 rounded-full border-2 border-t-white border-transparent animate-spin"/>Submitting...</span> : "🚀 Submit Request"}
+                    style={{
+                      background: screenshotUrl && !submitting && !screenshotUploading
+                        ? "linear-gradient(135deg,#6366f1,#8b5cf6)"
+                        : "rgba(255,255,255,0.05)",
+                      color: screenshotUrl && !submitting && !screenshotUploading ? "#fff" : "#4b5563",
+                      boxShadow: screenshotUrl && !submitting && !screenshotUploading ? "0 4px 24px rgba(99,102,241,0.5)" : "none",
+                      cursor: screenshotUrl && !submitting && !screenshotUploading ? "pointer" : "not-allowed",
+                    }}>
+                    {submitting
+                      ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 rounded-full border-2 border-t-white border-transparent animate-spin"/>Submitting...</span>
+                      : screenshotUploading
+                      ? <span className="flex items-center justify-center gap-2"><span className="w-4 h-4 rounded-full border-2 border-t-indigo-400 border-transparent animate-spin"/>Uploading image...</span>
+                      : "🚀 Submit Request"}
                   </button>
                 </div>
               </div>
             )}
 
-            {/* ─── STEP 3 ─── */}
-            {step === 3 && (
-              <div className="flex flex-col items-center text-center gap-6 py-10" style={{ animation: "fsu 0.5s ease both" }}>
-                <div className="relative">
-                  <div className="w-24 h-24 rounded-full flex items-center justify-center text-4xl"
-                    style={{ background: "linear-gradient(135deg,rgba(16,185,129,0.15),rgba(6,182,212,0.1))", border: "2px solid rgba(16,185,129,0.4)", boxShadow: "0 0 60px rgba(16,185,129,0.3)" }}>
-                    ✅
-                    <div className="absolute inset-0 rounded-full border-2 border-emerald-500/30" style={{ animation: "pulse-ring 2s ease-in-out infinite" }} />
-                  </div>
-                </div>
-                <div>
-                  <h2 className="text-white font-black text-2xl mb-2">Request Submitted!</h2>
-                  <p className="text-gray-400 text-sm leading-relaxed max-w-sm">Your add-on request and payment screenshot have been submitted. Our team will review and activate your add-ons as soon as possible. Check your email for confirmation.</p>
-                </div>
-                <div className="w-full max-w-sm rounded-2xl overflow-hidden" style={{ background: "rgba(16,185,129,0.07)", border: "1px solid rgba(16,185,129,0.2)" }}>
-                  {lineItems.map((item, i) => (
-                    <div key={i} className="flex items-center justify-between px-5 py-3" style={{ borderBottom: i < lineItems.length - 1 ? "1px solid rgba(255,255,255,0.05)" : "none" }}>
-                      <span className="text-gray-300 text-sm">{item.icon} {item.label} <span className="text-emerald-400 font-bold">(+{item.qty.toLocaleString()})</span></span>
-                      <span className="text-amber-400 font-bold text-sm">{fmtRs(item.total)}</span>
-                    </div>
-                  ))}
-                  <div className="flex items-center justify-between px-5 py-4 border-t" style={{ borderColor: "rgba(16,185,129,0.15)", background: "rgba(16,185,129,0.06)" }}>
-                    <span className="text-white font-black">Total Paid</span>
-                    <span className="text-white font-black text-lg">{fmtRs(grandTotal)}</span>
-                  </div>
-                </div>
-                <button onClick={resetFlow}
-                  className="px-8 py-3 rounded-xl font-black text-sm transition-all hover:scale-[1.02]"
-                  style={{ background: "linear-gradient(135deg,#6366f1,#8b5cf6)", color: "#fff", boxShadow: "0 4px 20px rgba(99,102,241,0.4)" }}>
-                  ⚡ Add More Add-ons
-                </button>
-              </div>
-            )}
+            {/* ─── STEP 3 removed — replaced by successPopup portal ─── */}
           </div>
 
           {/* ════ RIGHT: Status + Charts ════ */}
@@ -846,36 +1399,17 @@ export default function AddonsView({ uid, userDoc, user }) {
                 <RightPanel userDoc={userDoc} myRequests={myRequests} addonPrices={addonPrices} />
               )}
 
-              {/* Recent requests list */}
-              {myRequests.length > 0 && (
-                <div className="mt-4 rounded-2xl overflow-hidden" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.07)" }}>
-                  <div className="px-4 py-3 border-b" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-                    <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">Recent Requests</p>
-                  </div>
-                  <div className="divide-y" style={{ borderColor: "rgba(255,255,255,0.05)" }}>
-                    {myRequests.slice(0, 4).map((req, i) => {
-                      const stCol = { pending: "#fbbf24", approved: "#34d399", rejected: "#f87171" }[req.status] || "#fbbf24";
-                      const stLbl = { pending: "Pending", approved: "Approved", rejected: "Rejected" }[req.status] || "Pending";
-                      const ts = req.createdAt?.toDate ? req.createdAt.toDate().toISOString() : req.createdAt;
-                      return (
-                        <div key={req.id} className="flex items-center justify-between px-4 py-3 gap-2">
-                          <div className="flex-1 min-w-0">
-                            <p className="text-white text-xs font-bold">{fmtRs(req.grandTotal)}</p>
-                            <p className="text-gray-600 text-[10px]">{fmtDate(ts)}</p>
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-shrink-0">
-                            <div className="w-1.5 h-1.5 rounded-full" style={{ background: stCol }} />
-                            <span className="text-[10px] font-semibold" style={{ color: stCol }}>{stLbl}</span>
-                          </div>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
+              {/* Recent requests list — replaced by full history below */}
             </div>
           </div>
         </div>
+
+        {/* ════ PURCHASE HISTORY — full width below main layout ════ */}
+        {!reqLoading && myRequests.length > 0 && (
+          <div className="px-6 pb-10" style={{ animation: "fsu 0.65s ease both" }}>
+            <PurchaseHistory myRequests={myRequests} />
+          </div>
+        )}
       </div>
     </div>
   );

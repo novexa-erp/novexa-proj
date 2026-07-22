@@ -223,6 +223,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
     { key: "customersPerMonth",           label: "Extra Customers / Month",               icon: "👤" },
     { key: "suppliersPerMonth",           label: "Extra Suppliers / Month",               icon: "🏭" },
     { key: "ordersPerSupplierPerMonth",   label: "Extra Orders per Supplier / Month",    icon: "🛒" },
+    { key: "extraUsers",                  label: "Extra User Seats",                      icon: "🧑‍💼" },
   ];
 
   // existingLimits = what is already saved on the user
@@ -233,6 +234,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
     customersPerMonth:           Number(initial?.extraLimits?.customersPerMonth           || 0),
     suppliersPerMonth:           Number(initial?.extraLimits?.suppliersPerMonth           || 0),
     ordersPerSupplierPerMonth:   Number(initial?.extraLimits?.ordersPerSupplierPerMonth   || 0),
+    extraUsers:                  Number(initial?.extraLimits?.extraUsers                  || 0),
   });
 
   // On mount, re-fetch fresh extraLimits from Firestore (initial prop may be stale)
@@ -249,6 +251,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
               customersPerMonth:           Number(lim.customersPerMonth           || 0),
               suppliersPerMonth:           Number(lim.suppliersPerMonth           || 0),
               ordersPerSupplierPerMonth:   Number(lim.ordersPerSupplierPerMonth   || 0),
+              extraUsers:                  Number(lim.extraUsers                  || 0),
             });
           }
         }).catch(() => {});
@@ -260,7 +263,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
   // addLimits = how much NEW quota admin wants to add on top of existing
   // (starts at 0, user types how much more to add)
   const [addLimits, setAddLimits] = useState(
-    { invoicesPerMonth: "0", invoicesPerCustomerPerMonth: "0", customersPerMonth: "0", suppliersPerMonth: "0", ordersPerSupplierPerMonth: "0" }
+    { invoicesPerMonth: "0", invoicesPerCustomerPerMonth: "0", customersPerMonth: "0", suppliersPerMonth: "0", ordersPerSupplierPerMonth: "0", extraUsers: "0" }
   );
 
   // extraLimits = TOTAL = existing + new additions (what gets saved)
@@ -287,6 +290,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
     suppliersPerMonth_20: 500, suppliersPerMonth_50: 1200, suppliersPerMonth_100: 2200, suppliersPerMonth_250: 5000, suppliersPerMonth_500: 9000, suppliersPerMonth_1000: 16000,
     ordersPerSupplierPerMonth_per: 10,
     ordersPerSupplierPerMonth_50: 500, ordersPerSupplierPerMonth_100: 900, ordersPerSupplierPerMonth_250: 2000, ordersPerSupplierPerMonth_500: 3500, ordersPerSupplierPerMonth_1000: 6000,
+    extraUser_monthly: 1000,
   };
 
   // ── Load addon prices from Firestore ─────────────────────────────────────
@@ -346,6 +350,14 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
     pushItem(Number(newAdditions.suppliersPerMonth) || 0,           "suppliersPerMonth",           "🏭", "Extra Suppliers");
     pushItem(Number(newAdditions.ordersPerSupplierPerMonth) || 0,   "ordersPerSupplierPerMonth",   "🛒", "Extra Orders per Supplier / Month");
 
+    // Extra user seats — flat rate (no tiered packages)
+    const extraUsersQty = Number(newAdditions.extraUsers) || 0;
+    if (extraUsersQty > 0) {
+      const perUserPrice = p["extraUser_monthly"] ?? DEFAULT_ADDON_P["extraUser_monthly"] ?? 1000;
+      const total = extraUsersQty * perUserPrice;
+      items.push({ key: "extraUsers", icon: "🧑‍💼", label: "Extra User Seats", qty: extraUsersQty, unitPrice: perUserPrice, total });
+    }
+
     return { items, grandTotal: items.reduce((s, i) => s + i.total, 0) };
   }
 
@@ -356,9 +368,18 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
     try {
       const token   = await getToken();
       const headers = { "Content-Type": "application/json", authorization: `Bearer ${token}` };
-      // Save total = existing + new
+
+      // ── Fresh read from Firestore before calculating totals ──────────────
+      // Prevents stale state from overwriting existing limits incorrectly
+      const { getDoc, doc: fsDoc } = await import("firebase/firestore");
+      const { db: fdb }            = await import("@/lib/firebase");
+      const freshSnap = await getDoc(fsDoc(fdb, "users", initial.uid));
+      const freshLims = freshSnap.exists() ? (freshSnap.data().extraLimits || {}) : {};
+
       const cleaned = {};
-      EXTRA_FIELDS_LIST.forEach(f => { cleaned[f.key] = existingLimits[f.key] + (Number(addLimits[f.key]) || 0); });
+      EXTRA_FIELDS_LIST.forEach(f => {
+        cleaned[f.key] = (Number(freshLims[f.key]) || 0) + (Number(addLimits[f.key]) || 0);
+      });
       const purchasedAt   = new Date().toISOString();
       const expiresAtDate = new Date(); expiresAtDate.setMonth(expiresAtDate.getMonth() + 1);
       const expiresAt     = expiresAtDate.toISOString();
@@ -380,6 +401,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
             customersPerMonth:           Number(freshLimits.customersPerMonth           || 0),
             suppliersPerMonth:           Number(freshLimits.suppliersPerMonth           || 0),
             ordersPerSupplierPerMonth:   Number(freshLimits.ordersPerSupplierPerMonth   || 0),
+            extraUsers:                  Number(freshLimits.extraUsers                  || 0),
           });
         } else {
           setExistingLimits({ ...cleaned });
@@ -394,10 +416,28 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
       if (initial.email && lineItems.length > 0) {
         fetch("/api/admin/send-addon-invoice", { method: "POST", headers, body: JSON.stringify({ uid: initial.uid, userName: initial.name || initial.email, userEmail: initial.email, lineItems, grandTotal, paymentMethod: addonPayMethod, purchasedAt, expiresAt }) }).catch(() => {});
       }
+
+      // Record admin grant in history — so user sees it in Purchase History
+      if (lineItems.length > 0) {
+        fetch("/api/admin/record-addon-grant", {
+          method:  "POST",
+          headers,
+          body: JSON.stringify({
+            uid:           initial.uid,
+            userName:      initial.name || initial.email || "",
+            userEmail:     initial.email || "",
+            lineItems:     lineItems.map(i => ({ limitKey: i.key, icon: i.icon, label: i.label, qty: i.qty, total: i.total })),
+            grandTotal,
+            paymentMethod: addonPayMethod,
+            purchasedAt,
+            expiresAt,
+          }),
+        }).catch(() => {});
+      }
       const expSucc = new Date(); expSucc.setMonth(expSucc.getMonth() + 1);
       setAddonSuccess({ items: lineItems, grandTotal, payMethod: addonPayMethod, expiresAt: expSucc.toISOString(), totalLimits: cleaned });
       // Reset additions to 0 after save
-      setAddLimits({ invoicesPerMonth: "0", invoicesPerCustomerPerMonth: "0", customersPerMonth: "0", suppliersPerMonth: "0", ordersPerSupplierPerMonth: "0" });
+      setAddLimits({ invoicesPerMonth: "0", invoicesPerCustomerPerMonth: "0", customersPerMonth: "0", suppliersPerMonth: "0", ordersPerSupplierPerMonth: "0", extraUsers: "0" });
       onToast?.("Extra limits saved! Invoice sent. ✓", "success");
       setTimeout(() => setExtraDone(false), 3000);
     } catch (err) {

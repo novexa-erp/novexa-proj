@@ -18,7 +18,7 @@ async function verifyUser(request) {
 function fmtRs(n) { return "Rs. " + Number(n || 0).toLocaleString("en-US"); }
 
 // ── User confirmation email HTML ──────────────────────────────────────────────
-function buildUserConfirmEmail({ userName, userEmail, lineItems, grandTotal, paymentMethod }) {
+function buildUserConfirmEmail({ userName, userEmail, lineItems, grandTotal, paymentMethod, requestNumber }) {
   const payLabel = paymentMethod === "easypaisa" ? "EasyPaisa"
     : paymentMethod === "jazzcash" ? "JazzCash" : "Meezan Bank";
 
@@ -46,6 +46,7 @@ function buildUserConfirmEmail({ userName, userEmail, lineItems, grandTotal, pay
   <div style="color:#bfdbfe;font-size:11px;font-weight:600;letter-spacing:2px;text-transform:uppercase;margin-bottom:8px;">Add-on Request Received</div>
   <div style="color:#fff;font-size:24px;font-weight:800;">⚡ Your Request Has Been Submitted!</div>
   <div style="color:#93c5fd;font-size:13px;margin-top:8px;">Hi <strong style="color:#fff;">${userName}</strong>, we've received your add-on request and payment.</div>
+  ${requestNumber ? `<div style="margin-top:14px;display:inline-block;background:rgba(255,255,255,0.15);border:1px solid rgba(255,255,255,0.25);border-radius:8px;padding:6px 14px;font-family:monospace;font-size:14px;font-weight:800;color:#fff;letter-spacing:1px;">${requestNumber}</div>` : ""}
 </td></tr>
 <tr><td style="padding:24px 40px 16px;">
   <div style="background:#eff6ff;border:1px solid #bfdbfe;border-radius:12px;padding:16px 20px;">
@@ -69,14 +70,19 @@ function buildUserConfirmEmail({ userName, userEmail, lineItems, grandTotal, pay
   </table>
 </td></tr>
 <tr><td style="padding:0 40px 24px;">
-  <table width="100%" cellpadding="0" cellspacing="0"><tr><td width="55%"></td><td width="45%">
-    <div style="border-top:2px solid #e5e7eb;padding-top:12px;">
-      <div style="display:flex;justify-content:space-between;padding:8px 0;font-size:15px;font-weight:800;color:#111827;">
-        <span>Total Paid</span><span style="color:#d97706;">${fmtRs(grandTotal)}</span>
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr><td width="55%"></td><td width="45%">
+      <div style="border-top:2px solid #e5e7eb;padding-top:12px;">
+        <table width="100%" cellpadding="0" cellspacing="0">
+          <tr>
+            <td style="font-size:15px;font-weight:800;color:#111827;padding:8px 0;">Total Paid</td>
+            <td style="font-size:15px;font-weight:800;color:#d97706;padding:8px 0;text-align:right;">${fmtRs(grandTotal)}</td>
+          </tr>
+        </table>
+        <div style="font-size:12px;color:#6b7280;margin-top:4px;">via ${payLabel}</div>
       </div>
-      <div style="font-size:12px;color:#6b7280;margin-top:4px;">via ${payLabel}</div>
-    </div>
-  </td></tr></table>
+    </td></tr>
+  </table>
 </td></tr>
 <tr><td style="padding:0 40px 24px;">
   <div style="background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.25);border-radius:8px;padding:14px 18px;">
@@ -99,7 +105,7 @@ function buildUserConfirmEmail({ userName, userEmail, lineItems, grandTotal, pay
 }
 
 // ── Admin notification email HTML ─────────────────────────────────────────────
-function buildAdminNotifyEmail({ userName, userEmail, lineItems, grandTotal, paymentMethod, requestId }) {
+function buildAdminNotifyEmail({ userName, userEmail, lineItems, grandTotal, paymentMethod, requestId, requestNumber }) {
   const payLabel = paymentMethod === "easypaisa" ? "EasyPaisa"
     : paymentMethod === "jazzcash" ? "JazzCash" : "Meezan Bank";
 
@@ -132,23 +138,31 @@ function buildAdminNotifyEmail({ userName, userEmail, lineItems, grandTotal, pay
 </td></tr>
 <tr><td style="padding:24px 40px 16px;">
   <div style="background:#fffbeb;border:1.5px solid #fde68a;border-radius:12px;padding:16px 20px;">
-    <div style="font-size:12px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;">📋 Request Details</div>
-    <div style="display:grid;grid-template-columns:1fr 1fr;gap:12px;">
-      <div>
-        <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">User</div>
-        <div style="font-size:14px;font-weight:700;color:#111827;">${userName}</div>
-        <div style="font-size:12px;color:#6b7280;">${userEmail}</div>
-      </div>
-      <div>
-        <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Payment Method</div>
-        <div style="font-size:14px;font-weight:700;color:#d97706;">${payLabel}</div>
-        <div style="font-size:12px;color:#6b7280;">Total: ${fmtRs(grandTotal)}</div>
-      </div>
-    </div>
-    <div style="margin-top:10px;">
-      <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Request ID</div>
-      <div style="font-size:12px;font-family:monospace;color:#374151;">${requestId}</div>
-    </div>
+    <div style="font-size:12px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:1px;margin-bottom:12px;">📋 Request Details</div>
+    <table width="100%" cellpadding="0" cellspacing="0">
+      <tr>
+        <td width="50%" style="padding-bottom:10px;vertical-align:top;">
+          <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">User</div>
+          <div style="font-size:14px;font-weight:700;color:#111827;">${userName}</div>
+          <div style="font-size:12px;color:#374151;font-weight:600;">${userEmail}</div>
+        </td>
+        <td width="50%" style="padding-bottom:10px;vertical-align:top;">
+          <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Payment Method</div>
+          <div style="font-size:14px;font-weight:700;color:#d97706;">${payLabel}</div>
+          <div style="font-size:12px;color:#6b7280;">Total: ${fmtRs(grandTotal)}</div>
+        </td>
+      </tr>
+      <tr>
+        <td style="padding-top:6px;border-top:1px solid #fde68a;vertical-align:top;">
+          <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Request No.</div>
+          <div style="font-size:13px;font-family:monospace;font-weight:800;color:#92400e;">${requestNumber}</div>
+        </td>
+        <td style="padding-top:6px;border-top:1px solid #fde68a;vertical-align:top;">
+          <div style="font-size:10px;color:#9ca3af;text-transform:uppercase;letter-spacing:1px;margin-bottom:3px;">Firestore ID</div>
+          <div style="font-size:11px;font-family:monospace;color:#6b7280;">${requestId}</div>
+        </td>
+      </tr>
+    </table>
   </div>
 </td></tr>
 <tr><td style="padding:0 40px 20px;">
@@ -178,7 +192,7 @@ function buildAdminNotifyEmail({ userName, userEmail, lineItems, grandTotal, pay
 </td></tr>
 <tr><td style="padding:20px 40px;text-align:center;border-top:1px solid #e5e7eb;">
   <div style="font-size:13px;font-weight:700;color:#d97706;">Novexa ERP — Admin Panel</div>
-  <div style="font-size:10px;color:#d1d5db;margin-top:10px;">Automated admin alert — do not reply.</div>
+  <div style="font-size:10px;color:red;margin-top:10px;">Automated admin alert — do not reply.</div>
 </td></tr>
 <tr><td style="height:4px;background:linear-gradient(to right,#f59e0b,#fbbf24,#1d4ed8);"></td></tr>
 </table></td></tr></table>
@@ -206,9 +220,31 @@ export async function POST(request) {
 
     const { adminDb } = await getAdminModules();
 
+    // ── Generate human-readable request number (global, universal) ────────
+    // Format: ADD-DDMMYY-NN  e.g. ADD-220726-00
+    // Counter stored in adminConfig/addonCounter → { lastSerial: N }
+    const today = new Date();
+    const dd    = String(today.getDate()).padStart(2, "0");
+    const mm    = String(today.getMonth() + 1).padStart(2, "0");
+    const yy    = String(today.getFullYear()).slice(-2);
+    const dateStr = `${dd}${mm}${yy}`;                   // e.g. "220726"
+
+    const counterRef = adminDb.collection("adminConfig").doc("addonCounter");
+
+    // Atomic increment using Firestore transaction
+    let serial;
+    await adminDb.runTransaction(async (tx) => {
+      const snap = await tx.get(counterRef);
+      serial = snap.exists ? (snap.data().lastSerial + 1) : 0;
+      tx.set(counterRef, { lastSerial: serial }, { merge: true });
+    });
+
+    const requestNumber = `ADD-${dateStr}-${String(serial).padStart(2, "0")}`;
+
     // ── Save to Firestore under users/{uid}/addonRequests ─────────────────
     const requestData = {
       uid,
+      requestNumber,                          // ← human-readable ID
       userName:    userName || userEmail || "",
       userEmail:   userEmail || "",
       lineItems:   lineItems.map(item => ({
@@ -261,8 +297,8 @@ export async function POST(request) {
         await transporter.sendMail({
           from:    `"Novexa ERP" <${gmailUser}>`,
           to:      userEmail,
-          subject: `Your Add-on Request Has Been Received — Novexa ERP`,
-          html:    buildUserConfirmEmail({ userName: userName || userEmail, userEmail, lineItems, grandTotal, paymentMethod }),
+          subject: `[${requestNumber}] Your Add-on Request Has Been Received — Novexa ERP`,
+          html:    buildUserConfirmEmail({ userName: userName || userEmail, userEmail, lineItems, grandTotal, paymentMethod, requestNumber }),
         });
       } catch (e) { console.error("[addon-request] User email failed:", e.message); }
 
@@ -271,13 +307,13 @@ export async function POST(request) {
         await transporter.sendMail({
           from:    `"Novexa ERP System" <${gmailUser}>`,
           to:      adminEmail,
-          subject: `🔔 New Add-on Request from ${userName || userEmail} — Rs. ${Number(grandTotal).toLocaleString()}`,
-          html:    buildAdminNotifyEmail({ userName: userName || userEmail, userEmail, lineItems, grandTotal, paymentMethod, requestId }),
+          subject: `🔔 [${requestNumber}] New Add-on Request from ${userName || userEmail} — Rs. ${Number(grandTotal).toLocaleString()}`,
+          html:    buildAdminNotifyEmail({ userName: userName || userEmail, userEmail, lineItems, grandTotal, paymentMethod, requestId, requestNumber }),
         });
       } catch (e) { console.error("[addon-request] Admin email failed:", e.message); }
     }
 
-    return NextResponse.json({ success: true, requestId });
+    return NextResponse.json({ success: true, requestId, requestNumber });
 
   } catch (err) {
     console.error("[addon-request] Error:", err.message);

@@ -51,7 +51,7 @@ export async function POST(request) {
         update.extraLimits = null;
       } else {
         // Only store numeric or null values for each known key
-        const allowed = ["invoicesPerMonth","invoicesPerCustomerPerMonth","customersPerMonth","suppliersPerMonth","ordersPerSupplierPerMonth"];
+        const allowed = ["invoicesPerMonth","invoicesPerCustomerPerMonth","customersPerMonth","suppliersPerMonth","ordersPerSupplierPerMonth","extraUsers"];
         const cleaned = {};
         allowed.forEach(k => {
           if (extraLimits[k] !== undefined) {
@@ -68,7 +68,25 @@ export async function POST(request) {
     if (lastRenewedBy) update.lastRenewedBy = lastRenewedBy;
 
     // Add-on expiry / purchase tracking
-    if (extraLimitsExpiresAt    !== undefined) update.extraLimitsExpiresAt    = extraLimitsExpiresAt;
+    // For extraLimitsExpiresAt — always keep the LATER date (never shorten existing expiry)
+    if (extraLimitsExpiresAt !== undefined) {
+      if (extraLimitsExpiresAt) {
+        // Read existing expiry and keep whichever is later
+        try {
+          const userSnap = await adminDb.collection("users").doc(uid).get();
+          const existingExpiry = userSnap.exists ? userSnap.data().extraLimitsExpiresAt : null;
+          if (existingExpiry && new Date(existingExpiry) > new Date(extraLimitsExpiresAt)) {
+            update.extraLimitsExpiresAt = existingExpiry; // keep the later one
+          } else {
+            update.extraLimitsExpiresAt = extraLimitsExpiresAt;
+          }
+        } catch {
+          update.extraLimitsExpiresAt = extraLimitsExpiresAt;
+        }
+      } else {
+        update.extraLimitsExpiresAt = extraLimitsExpiresAt;
+      }
+    }
     if (extraLimitsPurchasedAt  !== undefined) update.extraLimitsPurchasedAt  = extraLimitsPurchasedAt;
     if (extraLimitsPaymentMethod !== undefined) update.extraLimitsPaymentMethod = extraLimitsPaymentMethod;
 

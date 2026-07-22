@@ -1161,6 +1161,7 @@ function DashboardContent() {
                   { key: "customersPerMonth",           label: "Extra Customers",                       icon: "👤" },
                   { key: "suppliersPerMonth",           label: "Extra Suppliers",                       icon: "🏭" },
                   { key: "ordersPerSupplierPerMonth",   label: "Extra Orders per Supplier / Month",    icon: "🛒" },
+                  { key: "extraUsers",                  label: "Extra User Seats",                      icon: "🧑‍💼" },
                 ];
                 const activeRows = EXTRA_ROWS.filter(r => Number(extras?.[r.key]) > 0);
                 if (!extras || activeRows.length === 0) return null;
