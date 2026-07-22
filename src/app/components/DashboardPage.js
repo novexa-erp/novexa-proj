@@ -1126,6 +1126,18 @@ function DashboardContent() {
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-2">📊 Monthly Limits</p>
                   <div className="flex flex-col gap-1.5">
+                    {/* Device / User Seats — from userDoc.maxDevices */}
+                    <div
+                      className="flex items-center justify-between px-3 py-2 rounded-xl"
+                      style={{ background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.2)" }}
+                    >
+                      <span className="text-gray-400 text-xs flex items-center gap-1.5">
+                        <span>📱</span> Login Devices / Sessions
+                      </span>
+                      <span className="text-xs font-black ml-2 flex-shrink-0" style={{ color: "#c4b5fd" }}>
+                        {Number(userDoc?.maxDevices) || 1} device{(Number(userDoc?.maxDevices) || 1) !== 1 ? "s" : ""}
+                      </span>
+                    </div>
                     {[
                       { label: "Invoices / Month",              val: planDetails.limits.invoicesPerMonth },
                       { label: "Invoices per Customer / Month", val: planDetails.limits.invoicesPerCustomerPerMonth },
