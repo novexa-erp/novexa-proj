@@ -1,0 +1,26 @@
+{
+  "name": "Novexa ERP",
+  "short_name": "Novexa",
+  "description": "Novexa — Smart Business Management",
+  "start_url": "/dashboard",
+  "display": "standalone",
+  "orientation": "portrait-primary",
+  "background_color": "#0d1117",
+  "theme_color": "#F59E0B",
+  "icons": [
+    {
+      "src": "/images/Novexa N Logo.png",
+      "sizes": "1536x1024",
+      "type": "image/png",
+      "purpose": "any"
+    },
+    {
+      "src": "/images/Novexa N Logo.png",
+      "sizes": "any",
+      "type": "image/png",
+      "purpose": "maskable"
+    }
+  ],
+  "categories": ["business", "productivity"],
+  "lang": "en"
+}

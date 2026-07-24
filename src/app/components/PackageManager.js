@@ -19,6 +19,7 @@ const ALL_TABS = [
   { id: "settings",    label: "Settings",    icon: "⚙️" },
   { id: "contact",     label: "Contact Us",  icon: "📞" },
   { id: "my-tickets",  label: "My Tickets",  icon: "🎫" },
+  { id: "backup",  label: "Backup",  icon: "💾" },
 ];
 
 // ── Default plans (used when Firestore has no data yet) ───────────────────────
@@ -41,7 +42,7 @@ const DEFAULT_PLANS = [
       suppliersPerMonth: 20,
       ordersPerSupplierPerMonth: 100,
     },
-    allowedTabs: ["overview","invoices","customers","inventory","payments","purchases","settings","contact","my-tickets"],
+    allowedTabs: ["overview", "backup", "invoices","customers","inventory","payments","purchases","settings","contact","my-tickets"],
   },
   {
     id: "business",
@@ -61,7 +62,7 @@ const DEFAULT_PLANS = [
       suppliersPerMonth: 100,
       ordersPerSupplierPerMonth: 500,
     },
-    allowedTabs: ["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","settings","contact","my-tickets"],
+    allowedTabs: ["overview","invoices","backup","customers","inventory","payments","purchases","order-form","analytics","settings","contact","my-tickets"],
   },
   {
     id: "professional",
@@ -81,7 +82,7 @@ const DEFAULT_PLANS = [
       suppliersPerMonth: 500,
       ordersPerSupplierPerMonth: 2000,
     },
-    allowedTabs: ["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","hr","branches","settings","contact","my-tickets"],
+    allowedTabs: ["overview","invoices","customers", "backup","inventory","payments","purchases","order-form","analytics","hr","branches","settings","contact","my-tickets"],
   },
   {
     id: "enterprise",
@@ -101,7 +102,7 @@ const DEFAULT_PLANS = [
       suppliersPerMonth: null,
       ordersPerSupplierPerMonth: null,
     },
-    allowedTabs: ["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","hr","branches","settings","contact","my-tickets"],
+    allowedTabs: ["overview","invoices","customers","inventory","backup","payments","purchases","order-form","analytics","hr","branches","settings","contact","my-tickets"],
   },
 ];
 
@@ -479,7 +480,7 @@ export default function PackageManager({ getToken, onToast }) {
             <div className="flex flex-col gap-2">
               {ALL_TABS.map(tab => {
                 const allowed = activePlan.allowedTabs.includes(tab.id);
-                const isCore  = tab.id === "overview" || tab.id === "settings" || tab.id === "contact" || tab.id === "my-tickets";
+                const isCore  = tab.id === "overview" || tab.id === "settings" || tab.id === "contact" || tab.id === "my-tickets" || tab.id === "backup" ;
                 return (
                   <button key={tab.id} type="button"
                     onClick={() => !isCore && toggleTab(activePlan.id, tab.id)}

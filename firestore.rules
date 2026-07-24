@@ -29,6 +29,9 @@ service cloud.firestore {
         && request.resource.data.name.size() > 0
         && request.resource.data.name.size() <= 100;
 
+      // Admin can create user doc (restore flow — Auth account may need separate recreation)
+      allow create: if isAdmin();
+
       // Users can update their own doc EXCEPT protected admin-only fields
       allow update: if isSignedIn() && isOwner(userId)
         && !("status"       in request.resource.data.diff(resource.data).affectedKeys())
@@ -119,9 +122,9 @@ service cloud.firestore {
           && request.resource.data.subject.size() > 0
           && request.resource.data.message is string
           && request.resource.data.message.size() > 0;
-        // Admin can update tickets (reply, change status)
+        // Admin can update tickets (reply, change status) and delete (restore)
         allow update: if isAdmin();
-        allow delete: if false;
+        allow delete: if isAdmin(); // admin restore (replace mode)
       }
       match /addonRequests/{requestId} {
         // Owner reads their own; admin reads all
@@ -131,11 +134,11 @@ service cloud.firestore {
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.grandTotal is number
           && request.resource.data.lineItems is list;
-        // Admin can create on behalf of user (manual grant flow)
+        // Admin can create on behalf of user (manual grant flow) and restore
         allow create: if isAdmin();
-        // Admin can update (approve/reject status)
+        // Admin can update (approve/reject status) and delete (restore replace mode)
         allow update: if isAdmin();
-        allow delete: if false;
+        allow delete: if isAdmin();
       }
     }
 
@@ -153,14 +156,14 @@ service cloud.firestore {
     // ── Support Tickets (admin-facing global collection) ──────────────────────
     match /supportTickets/{ticketId} {
       allow read:   if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
-      allow create: if false;  // written by server SDK only
+      allow create: if isAdmin(); // admin restore needs create access
       allow update: if isAdmin();
-      allow delete: if false;
+      allow delete: if isAdmin(); // admin restore (replace mode) needs delete
     }
 
     // ── Admin Config (Package Manager / Plan Settings / Counters) ─────────────
     // All signed-in users: read (to load plan limits, addon prices)
-    // Super Admin only: write (plan changes, counter updates via server SDK)
+    // Super Admin only: write (plan changes, counter updates)
     match /adminConfig/{docId} {
       allow read:  if isSignedIn();
       allow write: if isAdmin();
@@ -170,12 +173,12 @@ service cloud.firestore {
       }
     }
 
-    // ── Global addon requests (admin reads; written by server SDK only) ───────
+    // ── Global addon requests ─────────────────────────────────────────────────
     match /addonRequests/{requestId} {
       allow read:   if isAdmin();
-      allow create: if false;  // server SDK only (addon-request & record-addon-grant routes)
-      allow update: if false;  // server SDK only (addon-approve route)
-      allow delete: if false;
+      allow create: if isAdmin(); // admin restore + server SDK
+      allow update: if isAdmin(); // admin restore + server SDK
+      allow delete: if isAdmin(); // admin restore (replace mode)
     }
 
     // ── Deny everything else ─────────────────────────────────────────────────

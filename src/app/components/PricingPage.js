@@ -6,7 +6,7 @@ import { onSnapshot, doc } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 
 // ── Countdown end date (for banner only) ─────────────────────────────────────
-const EARLY_BIRD_END = new Date("2026-08-14T23:59:59");
+const EARLY_BIRD_END = new Date("2026-08-16T23:59:59");
 // ─────────────────────────────────────────────────────────────────────────────
 
 // ── Hook: real-time plans from Firestore ─────────────────────────────────────
@@ -177,55 +177,55 @@ function CountdownBanner() {
     { label: "Seconds", val: pad(seconds) },
   ];
 
-  //Offer koi lagyae to uska countdown hay 
+  // Offer koi lagyae to uska countdown hay 
 
-  // return (
-  //   <div
-  //     className="relative overflow-hidden mx-4 sm:mx-6 lg:mx-8 mb-8 rounded-2xl px-6 py-4"
-  //     style={{
-  //       background: "linear-gradient(135deg,rgba(239,68,68,0.12),rgba(245,158,11,0.10))",
-  //       border: "1px solid rgba(239,68,68,0.3)",
-  //       boxShadow: "0 0 30px rgba(239,68,68,0.1)",
-  //     }}
-  //   >
-  //     {/* Shimmer line */}
-  //     <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-red-400/60 to-transparent" />
+  return (
+    <div
+      className="relative overflow-hidden mx-4 sm:mx-6 lg:mx-8 mb-8 rounded-2xl px-6 py-4"
+      style={{
+        background: "linear-gradient(135deg,rgba(239,68,68,0.12),rgba(245,158,11,0.10))",
+        border: "1px solid rgba(239,68,68,0.3)",
+        boxShadow: "0 0 30px rgba(239,68,68,0.1)",
+      }}
+    >
+      {/* Shimmer line */}
+      <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-red-400/60 to-transparent" />
 
-  //     <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8 text-center">
-  //       <div className="flex items-center gap-2">
-  //         <span className="text-2xl">🔥</span>
-  //         <div>
-  //           <p className="text-white font-bold text-sm md:text-base">Early Bird Offer — Limited Time!</p>
-  //           <p className="text-gray-400 text-xs">Yeh discount offer sirf kuch waqt ke liye hai. Jaldi karein!</p>
-  //         </div>
-  //       </div>
+      <div className="flex flex-col sm:flex-row items-center justify-center gap-4 sm:gap-8 text-center">
+        <div className="flex items-center gap-2">
+          <span className="text-2xl">🔥</span>
+          <div>
+            <p className="text-white font-bold text-sm md:text-base">Early Bird Offer — Limited Time!</p>
+            <p className="text-gray-400 text-xs">Yeh discount offer sirf kuch waqt ke liye hai. Jaldi karein!</p>
+          </div>
+        </div>
 
-  //       <div className="flex items-center gap-2">
-  //         {units.map((u, i) => (
-  //           <div key={u.label} className="flex items-center gap-2">
-  //             <div className="flex flex-col items-center">
-  //               <div
-  //                 className="w-12 h-12 rounded-xl flex items-center justify-center text-xl font-black tabular-nums"
-  //                 style={{
-  //                   background: "rgba(239,68,68,0.15)",
-  //                   border: "1px solid rgba(239,68,68,0.35)",
-  //                   color: "#fca5a5",
-  //                   fontVariantNumeric: "tabular-nums",
-  //                 }}
-  //               >
-  //                 {u.val}
-  //               </div>
-  //               <span className="text-gray-500 text-[10px] mt-1 uppercase tracking-wider">{u.label}</span>
-  //             </div>
-  //             {i < units.length - 1 && (
-  //               <span className="text-red-400 font-bold text-lg mb-4">:</span>
-  //             )}
-  //           </div>
-  //         ))}
-  //       </div>
-  //     </div>
-  //   </div>
-  // );
+        <div className="flex items-center gap-2">
+          {units.map((u, i) => (
+            <div key={u.label} className="flex items-center gap-2">
+              <div className="flex flex-col items-center">
+                <div
+                  className="w-12 h-12 rounded-xl flex items-center justify-center text-xl font-black tabular-nums"
+                  style={{
+                    background: "rgba(239,68,68,0.15)",
+                    border: "1px solid rgba(239,68,68,0.35)",
+                    color: "#fca5a5",
+                    fontVariantNumeric: "tabular-nums",
+                  }}
+                >
+                  {u.val}
+                </div>
+                <span className="text-gray-500 text-[10px] mt-1 uppercase tracking-wider">{u.label}</span>
+              </div>
+              {i < units.length - 1 && (
+                <span className="text-red-400 font-bold text-lg mb-4">:</span>
+              )}
+            </div>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
 
 }
 

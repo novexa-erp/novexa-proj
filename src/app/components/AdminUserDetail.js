@@ -1,5 +1,6 @@
 "use client";
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
+import { encryptJson, decryptFile, isEncryptedFile, encryptedFileName } from "@/lib/backupCrypto";
 
 /* ══════════════════════════════════════════════════════════════════════
    Helpers
@@ -1233,14 +1234,65 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
     return () => clearInterval(id);
   }, []);
 
-  // Include both soft-deleted (deleted:true) AND admin-trashed (adminTrash:true) items
+  // ── Auto-purge expired adminTrash items (15-day window elapsed) ──────────
+  // Runs on mount + every minute (tick). Uses dataRef to always have latest data without
+  // re-creating the effect on every data refresh.
+  const dataRef = useRef(data);
+  useEffect(() => { dataRef.current = data; }, [data]);
+
+  useEffect(() => {
+    if (!uid) return;
+    const d = dataRef.current;
+    if (!d) return;
+
+    // Build flat list with explicit _col tags
+    const allAdminTrash = [
+      ...(d.invoices||[]).filter(i=>i.adminTrash).map(i=>({...i, _col:"invoices"})),
+      ...(d.customers||[]).filter(i=>i.adminTrash).map(i=>({...i, _col:"customers"})),
+      ...(d.products||[]).filter(i=>i.adminTrash).map(i=>({...i, _col:"products"})),
+      ...(d.payments||[]).filter(i=>i.adminTrash).map(i=>({...i, _col:"payments"})),
+      ...(d.suppliers||[]).filter(i=>i.adminTrash).map(i=>({...i, _col:"suppliers"})),
+      ...(d.orders||[]).filter(i=>i.adminTrash).map(i=>({...i, _col:"orders"})),
+    ];
+
+    const expired = allAdminTrash.filter(item => calc15DayCountdown(item.adminTrashedAt).expired);
+    if (expired.length === 0) return;
+
+    let cancelled = false;
+    (async () => {
+      try {
+        const token = await getToken();
+        await Promise.allSettled(
+          expired.map(item =>
+            fetch("/api/admin/permanent-delete", {
+              method:  "POST",
+              headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+              body:    JSON.stringify({
+                uid,
+                itemId:     item.id,
+                collection: item._col,
+                supplierId: item._supplierId || null,
+              }),
+            })
+          )
+        );
+        if (!cancelled) onRefresh();
+      } catch { /* silently ignore */ }
+    })();
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [tick, uid]);
+
+  // Admin trash shows ONLY items permanently deleted by user (adminTrash:true)
+  // Regular user trash (deleted:true, adminTrash:false) is NOT shown here — that's the user's own trash
   const buckets = {
-    invoices:  data.invoices.filter(i=>i.deleted||i.adminTrash).map(i=>({...i,_col:"invoices"})),
-    customers: data.customers.filter(c=>c.deleted||c.adminTrash).map(c=>({...c,_col:"customers"})),
-    products:  data.products.filter(p=>p.deleted||p.adminTrash).map(p=>({...p,_col:"products"})),
-    payments:  data.payments.filter(p=>p.deleted||p.adminTrash).map(p=>({...p,_col:"payments"})),
-    suppliers: data.suppliers.filter(s=>s.deleted||s.adminTrash).map(s=>({...s,_col:"suppliers"})),
-    orders:    data.orders.filter(o=>o.deleted||o.adminTrash).map(o=>({...o,_col:"orders"})),
+    invoices:  data.invoices.filter(i=>i.adminTrash).map(i=>({...i,_col:"invoices"})),
+    customers: data.customers.filter(c=>c.adminTrash).map(c=>({...c,_col:"customers"})),
+    products:  data.products.filter(p=>p.adminTrash).map(p=>({...p,_col:"products"})),
+    payments:  data.payments.filter(p=>p.adminTrash).map(p=>({...p,_col:"payments"})),
+    suppliers: data.suppliers.filter(s=>s.adminTrash).map(s=>({...s,_col:"suppliers"})),
+    orders:    data.orders.filter(o=>o.adminTrash).map(o=>({...o,_col:"orders"})),
   };
   const total   = Object.values(buckets).reduce((s,a)=>s+a.length,0);
   const current = buckets[trashTab]||[];
@@ -1278,8 +1330,8 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
         style={{ background:"rgba(248,113,113,0.06)", border:"1px solid rgba(248,113,113,0.18)" }}>
         <div className="flex items-center justify-between">
           <div>
-            <p className="text-white font-bold text-sm">🗑️ User Trash Archive</p>
-            <p className="text-gray-500 text-xs mt-0.5">All deleted items — admin can fully restore. Items permanently deleted by user are auto-purged after 15 days.</p>
+            <p className="text-white font-bold text-sm">🗑️ Admin Trash Archive</p>
+            <p className="text-gray-500 text-xs mt-0.5">Items permanently deleted by user — admin can still restore within 15 days. After expiry they are deleted from database forever.</p>
           </div>
           <span className="px-3 py-1.5 rounded-xl text-xs font-bold"
             style={{ background:"rgba(248,113,113,0.1)", border:"1px solid rgba(248,113,113,0.2)", color:"#f87171" }}>
@@ -1289,12 +1341,12 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
         {/* Legend */}
         <div className="flex gap-4 mt-3 flex-wrap">
           <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-red-400" />
-            <span className="text-gray-500 text-[10px]">In user&apos;s trash (user can restore)</span>
+            <div className="w-2 h-2 rounded-full bg-purple-400" />
+            <span className="text-gray-500 text-[10px]">Permanently deleted by user — ⏰ 15-day recovery window (admin can restore)</span>
           </div>
           <div className="flex items-center gap-1.5">
-            <div className="w-2 h-2 rounded-full bg-purple-400" />
-            <span className="text-gray-500 text-[10px]">Permanently deleted by user — ⏰ 15-day timer running (admin can still restore)</span>
+            <div className="w-2 h-2 rounded-full bg-red-400" />
+            <span className="text-gray-500 text-[10px]">⚠️ Expired — will be permanently deleted from database</span>
           </div>
         </div>
       </div>
@@ -1315,13 +1367,13 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
       </div>
 
       {/* list */}
-      {current.length === 0 ? <Empty icon="✨" label={`No deleted ${trashTab}`} /> : (
+      {current.length === 0 ? <Empty icon="✨" label={`No items in admin trash`} /> : (
         <div className="rounded-xl overflow-hidden" style={{ border:"1px solid rgba(255,255,255,0.07)" }}>
           {current.map((item,idx)=>{
-            const isAdminTrash = !!item.adminTrash;
+            // All items here are adminTrash:true
             // eslint-disable-next-line no-unused-expressions
             tick; // re-evaluate every minute
-            const countdown = isAdminTrash ? calc15DayCountdown(item.adminTrashedAt) : null;
+            const countdown = calc15DayCountdown(item.adminTrashedAt);
             return (
               <div key={item.id}
                 className="flex items-center gap-3 px-4 py-3.5 hover:bg-white/[0.02] transition-colors"
@@ -1330,8 +1382,8 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
                 {/* Icon */}
                 <div className="w-9 h-9 rounded-xl flex items-center justify-center text-base flex-shrink-0"
                   style={{
-                    background: isAdminTrash?"rgba(167,139,250,0.12)":"rgba(248,113,113,0.1)",
-                    border:`1px solid ${isAdminTrash?"rgba(167,139,250,0.3)":"rgba(248,113,113,0.2)"}`,
+                    background: countdown.expired ? "rgba(248,113,113,0.12)" : "rgba(167,139,250,0.12)",
+                    border:`1px solid ${countdown.expired ? "rgba(248,113,113,0.3)" : "rgba(167,139,250,0.3)"}`,
                   }}>
                   {TRASH_TABS.find(t=>t.id===item._col)?.icon||"🗑"}
                 </div>
@@ -1340,35 +1392,24 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 flex-wrap">
                     <p className="text-white text-sm font-semibold truncate">{trashLabel(item)}</p>
-                    {isAdminTrash && (
-                      <span className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
-                        style={{ background:"rgba(167,139,250,0.15)", color:"#a78bfa", border:"1px solid rgba(167,139,250,0.3)" }}>
-                        Permanently deleted
-                      </span>
-                    )}
+                    <span className="text-[9px] font-bold px-1.5 py-0.5 rounded flex-shrink-0"
+                      style={{ background:"rgba(167,139,250,0.15)", color:"#a78bfa", border:"1px solid rgba(167,139,250,0.3)" }}>
+                      Perm. deleted by user
+                    </span>
                   </div>
                   <p className="text-gray-500 text-[11px] truncate">{trashSub(item)}</p>
                 </div>
 
                 {/* Date + countdown */}
                 <div className="hidden sm:flex flex-col items-end flex-shrink-0 mr-2 gap-0.5">
-                  {isAdminTrash ? (
-                    <>
-                      <p className="text-gray-600 text-[10px] uppercase tracking-wide">Auto-delete in</p>
-                      <p className={`text-xs font-bold ${countdown?.expired ? "text-red-400" : countdown?.daysLeft <= 3 ? "text-amber-400" : "text-purple-400"}`}>
-                        {countdown?.display || "—"}
-                      </p>
-                      <p className="text-gray-600 text-[10px]">Deleted: {fmtDate(item.adminTrashedAt)}</p>
-                    </>
-                  ) : (
-                    <>
-                      <p className="text-gray-600 text-[10px]">{isAdminTrash?"Perm. deleted":"In trash"}</p>
-                      <p className="text-gray-400 text-xs">{fmtDate(item.adminTrashedAt||item.deletedAt)}</p>
-                    </>
-                  )}
+                  <p className="text-gray-600 text-[10px] uppercase tracking-wide">Auto-delete in</p>
+                  <p className={`text-xs font-bold ${countdown.expired ? "text-red-400" : countdown.daysLeft <= 3 ? "text-amber-400" : "text-purple-400"}`}>
+                    {countdown.display}
+                  </p>
+                  <p className="text-gray-600 text-[10px]">Deleted: {fmtDate(item.adminTrashedAt)}</p>
                 </div>
 
-                {/* Restore button — always shown, restores to user's trash */}
+                {/* Restore button */}
                 <button onClick={()=>setRestoreId(item.id)}
                   className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:scale-105 flex-shrink-0"
                   style={{ background:"rgba(52,211,153,0.08)", color:"#34d399", border:"1px solid rgba(52,211,153,0.2)" }}>
@@ -1384,7 +1425,6 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
       {restoreId && (()=>{
         const item = current.find(i=>i.id===restoreId);
         if (!item) return null;
-        const isAdminTrash = !!item.adminTrash;
         return (
           <div className="fixed inset-0 z-[70] flex items-center justify-center p-4"
             style={{ background:"rgba(0,0,0,0.85)", backdropFilter:"blur(8px)" }}>
@@ -2253,7 +2293,1201 @@ function AddonsTab({ uid, user, getToken, onToast }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
-   SIDEBAR TABS config  (no "Orders" tab — orders live inside Suppliers)
+   BACKUP TAB — Admin can export / restore any user's data
+══════════════════════════════════════════════════════════════════════ */
+function BackupTab({ uid: targetUid, userName }) {
+  const fileInputRef = useRef(null);
+  // export
+  const [exporting,   setExporting]   = useState(false);
+  const [exportMsg,   setExportMsg]   = useState({ type:"", text:"" });
+  const [exportProg,  setExportProg]  = useState(0);
+  const [exportLabel, setExportLabel] = useState("");
+  // folder
+  const [dirHandle,   setDirHandle]   = useState(null);
+  const [folderName,  setFolderName]  = useState("");
+  const [folderModal, setFolderModal] = useState(false); // ask same/new
+  const pendingRef = useRef(null); // { json, fileName, docCount }
+  // restore
+  const [restoring,    setRestoring]    = useState(false);
+  const [restoreMsg,   setRestoreMsg]   = useState({ type:"", text:"" });
+  const [restoreProg,  setRestoreProg]  = useState(0);
+  const [restoreLabel, setRestoreLabel] = useState("");
+  const [modalStep,    setModalStep]    = useState(null);
+  const [pendingFile,  setPendingFile]  = useState(null);
+  const [fileInfo,     setFileInfo]     = useState(null);
+
+  const FLAT_COLS = [
+    "invoices","customers","products","payments","purchases",
+    "suppliers","supplierPayments","supplierReceipts","supplierReturns",
+    "expenses","quotations",
+  ];
+  const SUPPLIER_NESTED = ["orders","payments","receipts","returns"];
+  const CUSTOMER_NESTED = ["invoices"];
+
+  // ── Auto-backup state ──────────────────────────────────────────────────────
+  const [autoEnabled,    setAutoEnabled]    = useState(false);
+  const [autoIntervalId, setAutoIntervalId] = useState("daily");
+  const [autoNextAt,     setAutoNextAt]     = useState(null);
+  const [autoMsg,        setAutoMsg]        = useState({ type:"", text:"" });
+  const [countdown,      setCountdown]      = useState("");
+  const [autoDestModal,  setAutoDestModal]  = useState(false);
+  const autoTimerRef   = useRef(null);
+  const autoNextAtRef  = useRef(null);
+  const folderPurposeRef = useRef("manual"); // "manual" | "auto-enable"
+
+  // ── History state ──────────────────────────────────────────────────────────
+  const [history, setHistory] = useState([]);
+
+  // ── Password protection ──────────────────────────────────────────────────────
+  const [pwModal,    setPwModal]    = useState("idle");
+  const [pwInput,    setPwInput]    = useState("");
+  const [pwConfirm,  setPwConfirm]  = useState("");
+  const [pwShow,     setPwShow]     = useState(false);
+  const [pwError,    setPwError]    = useState("");
+  const pwPendingRef = useRef(null);
+  const pwRestoreRef = useRef(null);
+
+  // ── Per-user IDB keys ──────────────────────────────────────────────────────
+  const IDB_AUTO_KEY  = `adminBackup_auto_${targetUid}`;
+  const IDB_HIST_KEY  = `adminBackup_hist_${targetUid}`;
+  const IDB_DIR_KEY   = `adminBackup_dir_${targetUid}`;
+
+  // ── Auto-backup intervals ──────────────────────────────────────────────────
+  const AUTO_INTERVALS = [
+    { id:"1h",      label:"Every 1 Hour",   ms: 1  * 60 * 60 * 1000 },
+    { id:"6h",      label:"Every 6 Hours",  ms: 6  * 60 * 60 * 1000 },
+    { id:"12h",     label:"Every 12 Hours", ms: 12 * 60 * 60 * 1000 },
+    { id:"daily",   label:"Daily (24 hrs)", ms: 24 * 60 * 60 * 1000 },
+    { id:"weekly",  label:"Weekly",         ms: 7  * 24 * 60 * 60 * 1000 },
+    { id:"monthly", label:"Monthly (30d)",  ms: 30 * 24 * 60 * 60 * 1000 },
+  ];
+
+  function fmtDTLocal(iso) {
+    if (!iso) return "—";
+    return new Date(iso).toLocaleDateString("en-PK", { day:"2-digit", month:"short", year:"numeric", hour:"2-digit", minute:"2-digit" });
+  }
+
+  function serDoc(id, data) {
+    const out = { _id: id };
+    for (const [k, v] of Object.entries(data)) {
+      out[k] = v && typeof v.toDate === "function" ? { _type:"Timestamp", _ms: v.toDate().getTime() } : v;
+    }
+    return out;
+  }
+
+  function deserDoc(obj) {
+    const { _id, ...rest } = obj;
+    const out = {};
+    for (const [k, v] of Object.entries(rest)) {
+      out[k] = v && typeof v === "object" && v._type === "Timestamp" ? new Date(v._ms) : v;
+    }
+    return { id: _id, data: out };
+  }
+
+  // ── The rest of this component is defined below ──
+
+  // ── IDB helpers (reuse novexa_backup store, per-user keys) ────────────────
+  function openBtIDB() {
+    return new Promise((res, rej) => {
+      const req = indexedDB.open("novexa_backup", 2);
+      req.onupgradeneeded = (e) => { if (!e.target.result.objectStoreNames.contains("handles")) e.target.result.createObjectStore("handles"); };
+      req.onsuccess = () => res(req.result); req.onerror = () => rej(req.error);
+    });
+  }
+  async function btIdbPut(key, val) { try { const db = await openBtIDB(); const tx = db.transaction("handles","readwrite"); tx.objectStore("handles").put(val,key); await new Promise((r,j)=>{tx.oncomplete=r;tx.onerror=j;}); } catch {} }
+  async function btIdbGet(key) { try { const db = await openBtIDB(); const tx = db.transaction("handles","readonly"); const req = tx.objectStore("handles").get(key); return await new Promise(r=>{req.onsuccess=()=>r(req.result??null);req.onerror=()=>r(null);}); } catch { return null; } }
+  async function btIdbDel(key) { try { const db = await openBtIDB(); const tx = db.transaction("handles","readwrite"); tx.objectStore("handles").delete(key); } catch {} }
+
+  function fmtCd(ms) {
+    if (ms <= 0) return "now";
+    const s=Math.floor(ms/1000),m=Math.floor(s/60),h=Math.floor(m/60),d=Math.floor(h/24);
+    if (d>0) return `${d}d ${h%24}h`; if (h>0) return `${h}h ${m%60}m`; if (m>0) return `${m}m ${s%60}s`; return `${s}s`;
+  }
+
+  // ── Load saved state on mount ──────────────────────────────────────────────
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+    if ("showDirectoryPicker" in window) {
+      btIdbGet(IDB_DIR_KEY).then(h => { if (h) { setDirHandle(h); setFolderName(h.name || "Saved Folder"); } });
+    }
+    btIdbGet(IDB_AUTO_KEY).then(s => {
+      if (s?.intervalId) { setAutoEnabled(true); setAutoIntervalId(s.intervalId); setAutoNextAt(s.nextAt); autoNextAtRef.current = s.nextAt; }
+    });
+    btIdbGet(IDB_HIST_KEY).then(h => { if (Array.isArray(h)) setHistory(h); });
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [targetUid]);
+
+  // ── Auto countdown + fire ──────────────────────────────────────────────────
+  useEffect(() => {
+    if (autoTimerRef.current) { clearInterval(autoTimerRef.current); autoTimerRef.current = null; }
+    if (!autoEnabled || !autoNextAt) { setCountdown(""); return; }
+    const tick = () => {
+      const rem = (autoNextAtRef.current||0) - Date.now();
+      setCountdown(fmtCd(rem));
+      if (rem <= 0) {
+        runAutoBackupSilent();
+        const ms = AUTO_INTERVALS.find(i=>i.id===autoIntervalId)?.ms || 24*3600*1000;
+        const next = Date.now()+ms; autoNextAtRef.current=next; setAutoNextAt(next);
+        btIdbPut(IDB_AUTO_KEY, {intervalId:autoIntervalId, nextAt:next});
+      }
+    };
+    tick(); autoTimerRef.current = setInterval(tick, 1000);
+    return () => { if (autoTimerRef.current) clearInterval(autoTimerRef.current); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoEnabled, autoNextAt, autoIntervalId]);
+
+  // ── History helpers ────────────────────────────────────────────────────────
+  async function addHistEntry(fileName, docCount, type) {
+    const entry = { at: new Date().toISOString(), fileName, docCount, type };
+    const cur = await btIdbGet(IDB_HIST_KEY);
+    const arr = Array.isArray(cur) ? [entry,...cur].slice(0,50) : [entry];
+    await btIdbPut(IDB_HIST_KEY, arr); setHistory(arr);
+  }
+
+  async function doAutoExport(dh) {
+    const { collection: col, getDocs } = await import("firebase/firestore");
+    const { db: fdb } = await import("@/lib/firebase");
+    const backup = { version:2, exportedAt:new Date().toISOString(), uid:targetUid, collections:{} };
+    for (const colId of FLAT_COLS) { try { const s=await getDocs(col(fdb,"users",targetUid,colId)); backup.collections[colId]=s.docs.map(d=>serDoc(d.id,d.data())); } catch {} }
+    backup.customerNested = {};
+    const cSnap = await getDocs(col(fdb,"users",targetUid,"customers"));
+    for (const cd of cSnap.docs) { backup.customerNested[cd.id]={}; for (const sub of CUSTOMER_NESTED) { try { const ss=await getDocs(col(fdb,"users",targetUid,"customers",cd.id,sub)); if(ss.docs.length) backup.customerNested[cd.id][sub]=ss.docs.map(d=>serDoc(d.id,d.data())); } catch {} } }
+    backup.supplierNested = {};
+    const sSnap = await getDocs(col(fdb,"users",targetUid,"suppliers"));
+    for (const sd of sSnap.docs) { backup.supplierNested[sd.id]={}; for (const sub of SUPPLIER_NESTED) { try { const ss=await getDocs(col(fdb,"users",targetUid,"suppliers",sd.id,sub)); if(ss.docs.length) backup.supplierNested[sd.id][sub]=ss.docs.map(d=>serDoc(d.id,d.data())); } catch {} } }
+    let totalDocs=0;
+    Object.values(backup.collections).forEach(a=>{totalDocs+=a.length;});
+    if(backup.customerNested) Object.values(backup.customerNested).forEach(s=>Object.values(s).forEach(a=>{totalDocs+=a.length;}));
+    if(backup.supplierNested) Object.values(backup.supplierNested).forEach(s=>Object.values(s).forEach(a=>{totalDocs+=a.length;}));
+    const json=JSON.stringify(backup,null,2);
+    const now=new Date(); const fileName=`novexa-backup-${targetUid.slice(0,8)}-${now.toISOString().split("T")[0]}_${now.toTimeString().slice(0,8).replace(/:/g,"-")}.json`;
+    await writeToDirHandle(dh, json, fileName);
+    await addHistEntry(fileName, totalDocs, "auto");
+    return { fileName, totalDocs };
+  }
+
+  async function runAutoBackupSilent() {
+    const dh = dirHandle; if (!dh) return;
+    try {
+      const perm = await dh.requestPermission({ mode:"readwrite" });
+      if (perm!=="granted") { setAutoMsg({type:"error",text:"Auto-backup failed: folder permission denied."}); return; }
+      const { fileName, totalDocs } = await doAutoExport(dh);
+      setAutoMsg({type:"success",text:`Auto backup saved: ${fileName} (${totalDocs.toLocaleString()} records)`});
+    } catch(err) { setAutoMsg({type:"error",text:"Auto backup failed: "+err.message}); }
+  }
+
+  // ── Auto enable/disable ────────────────────────────────────────────────────
+  function handleEnableAuto() {
+    if (!("showDirectoryPicker" in window)) { setAutoMsg({type:"error",text:"Auto-backup requires File System Access API support."}); return; }
+    if (dirHandle) { setAutoDestModal(true); }
+    else { activateAutoNewFolder(); }
+  }
+
+  async function activateAutoSameFolder() {
+    setAutoDestModal(false);
+    try { const p=await dirHandle.requestPermission({mode:"readwrite"}); if(p!=="granted") throw new Error("Permission denied."); commitAutoEnable(dirHandle); }
+    catch(err) { setAutoMsg({type:"error",text:"Folder error: "+err.message}); }
+  }
+
+  async function activateAutoNewFolder() {
+    setAutoDestModal(false);
+    try {
+      const dh=await window.showDirectoryPicker({mode:"readwrite"});
+      setDirHandle(dh); setFolderName(dh.name||"Saved Folder"); await btIdbPut(IDB_DIR_KEY, dh);
+      commitAutoEnable(dh);
+    } catch(err) { if(err.name!=="AbortError") setAutoMsg({type:"error",text:"Folder error: "+err.message}); }
+  }
+
+  function commitAutoEnable(dh) {
+    const ms=AUTO_INTERVALS.find(i=>i.id===autoIntervalId)?.ms||24*3600*1000;
+    const nextAt=Date.now()+ms; autoNextAtRef.current=nextAt;
+    setAutoNextAt(nextAt); setAutoEnabled(true);
+    btIdbPut(IDB_AUTO_KEY, {intervalId:autoIntervalId, nextAt});
+    setAutoMsg({type:"success",text:`Auto-backup enabled. First backup in ${fmtCd(ms)}.`});
+    if (dh && dh!==dirHandle) { setDirHandle(dh); setFolderName(dh.name||"Saved Folder"); }
+  }
+
+  function handleDisableAuto() {
+    setAutoEnabled(false); setAutoNextAt(null); autoNextAtRef.current=null;
+    setCountdown(""); setAutoMsg({type:"",text:""}); btIdbDel(IDB_AUTO_KEY);
+  }
+
+  async function doExport() {
+    setExporting(true); setExportMsg({ type:"", text:"" }); setExportProg(0);
+    try {
+      // ── Step 1: Pick folder FIRST (while still in user gesture) ──────────
+      let dh = dirHandle;
+      if (typeof window !== "undefined" && "showDirectoryPicker" in window) {
+        if (!dh) {
+          // No saved folder — open picker NOW (still inside click gesture)
+          try {
+            dh = await window.showDirectoryPicker({ mode: "readwrite" });
+            setDirHandle(dh); setFolderName(dh.name || "Saved Folder");
+            await btIdbPut(IDB_DIR_KEY, dh);
+          } catch (err) {
+            if (err.name !== "AbortError")
+              setExportMsg({ type:"error", text:"Folder error: " + err.message });
+            setExporting(false); setExportProg(0); setExportLabel("");
+            return;
+          }
+        } else {
+          // Saved folder exists — verify permission NOW (still in gesture)
+          try {
+            const perm = await dh.requestPermission({ mode:"readwrite" });
+            if (perm !== "granted") throw new Error("Folder permission was not granted.");
+          } catch (err) {
+            // Permission denied — ask to pick new folder (still in gesture)
+            try {
+              dh = await window.showDirectoryPicker({ mode: "readwrite" });
+              setDirHandle(dh); setFolderName(dh.name || "Saved Folder");
+              await btIdbPut(IDB_DIR_KEY, dh);
+            } catch (e2) {
+              if (e2.name !== "AbortError")
+                setExportMsg({ type:"error", text:"Folder error: " + e2.message });
+              setExporting(false); setExportProg(0); setExportLabel("");
+              return;
+            }
+          }
+        }
+      }
+
+      // ── Step 2: Now read Firestore data ───────────────────────────────────
+      const { collection: col, getDocs } = await import("firebase/firestore");
+      const { db: fdb } = await import("@/lib/firebase");
+      const backup = { version: 2, exportedAt: new Date().toISOString(), uid: targetUid, collections: {} };
+      const total = FLAT_COLS.length + 2;
+      let done = 0;
+      for (const colId of FLAT_COLS) {
+        setExportLabel(`Reading ${colId}...`); setExportProg(Math.round((done/total)*100));
+        const snap = await getDocs(col(fdb, "users", targetUid, colId));
+        backup.collections[colId] = snap.docs.map(d => serDoc(d.id, d.data()));
+        done++;
+      }
+      setExportLabel("Reading customer invoices..."); setExportProg(Math.round((done/total)*100));
+      backup.customerNested = {};
+      const custSnap = await getDocs(col(fdb, "users", targetUid, "customers"));
+      for (const custDoc of custSnap.docs) {
+        backup.customerNested[custDoc.id] = {};
+        for (const sub of CUSTOMER_NESTED) {
+          const subSnap = await getDocs(col(fdb, "users", targetUid, "customers", custDoc.id, sub));
+          if (subSnap.docs.length) backup.customerNested[custDoc.id][sub] = subSnap.docs.map(d => serDoc(d.id, d.data()));
+        }
+      }
+      done++;
+      setExportLabel("Reading supplier data..."); setExportProg(Math.round((done/total)*100));
+      backup.supplierNested = {};
+      const supSnap = await getDocs(col(fdb, "users", targetUid, "suppliers"));
+      for (const supDoc of supSnap.docs) {
+        backup.supplierNested[supDoc.id] = {};
+        for (const sub of SUPPLIER_NESTED) {
+          const subSnap = await getDocs(col(fdb, "users", targetUid, "suppliers", supDoc.id, sub));
+          if (subSnap.docs.length) backup.supplierNested[supDoc.id][sub] = subSnap.docs.map(d => serDoc(d.id, d.data()));
+        }
+      }
+      done++;
+      setExportLabel("Done!"); setExportProg(100);
+      let totalDocs = 0;
+      Object.values(backup.collections).forEach(a => { totalDocs += a.length; });
+      if (backup.customerNested) Object.values(backup.customerNested).forEach(s => Object.values(s).forEach(a => { totalDocs += a.length; }));
+      if (backup.supplierNested) Object.values(backup.supplierNested).forEach(s => Object.values(s).forEach(a => { totalDocs += a.length; }));
+      const json = JSON.stringify(backup, null, 2);
+      const now = new Date();
+      const fileName = `novexa-backup-${targetUid.slice(0,8)}-${now.toISOString().split("T")[0]}_${now.toTimeString().slice(0,8).replace(/:/g,"-")}.json`;
+
+      // ── Step 3: Write to folder or download ───────────────────────────────
+      if (dh) {
+        askPasswordThenWrite(dh, json, fileName, totalDocs, "manual");
+        setExporting(false); setExportProg(0); setExportLabel("");
+        return;
+      }
+
+      // Fallback: browser download
+      const blob = new Blob([json], { type:"application/json" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = fileName;
+      document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
+      setExportMsg({ type:"success", text:`✅ Downloaded! ${totalDocs.toLocaleString()} records.` });
+      await addHistEntry(fileName, totalDocs, "manual");
+    } catch (err) { setExportMsg({ type:"error", text:"Export failed: " + err.message }); }
+    setExporting(false); setExportProg(0); setExportLabel("");
+  }
+
+  // ── Folder helpers ────────────────────────────────────────────────────────
+  async function openNewFolderPicker(pending) {
+    try {
+      const dh = await window.showDirectoryPicker({ mode: "readwrite" });
+      setDirHandle(dh); setFolderName(dh.name || "Saved Folder");
+      await btIdbPut(IDB_DIR_KEY, dh);
+      askPasswordThenWrite(dh, pending.json, pending.fileName, pending.totalDocs, "manual");
+    } catch (err) {
+      if (err.name !== "AbortError") setExportMsg({ type:"error", text:"Folder error: " + err.message });
+      pendingRef.current = null;
+    }
+  }
+
+  async function useSameFolder() {
+    setFolderModal(false);
+    const p = pendingRef.current; if (!p || !dirHandle) return;
+    pendingRef.current = null;
+    try {
+      const perm = await dirHandle.requestPermission({ mode:"readwrite" });
+      if (perm !== "granted") throw new Error("Permission denied.");
+      askPasswordThenWrite(dirHandle, p.json, p.fileName, p.totalDocs, "manual");
+    } catch (err) {
+      if (err.name !== "AbortError") setExportMsg({ type:"error", text:"Folder error: " + err.message });
+    }
+  }
+
+  async function chooseNewFolder() {
+    setFolderModal(false);
+    const p = pendingRef.current; if (!p) return;
+    pendingRef.current = null;
+    await openNewFolderPicker(p);
+  }
+
+  async function writeToDirHandle(dh, json, fileName) {
+    const fh = await dh.getFileHandle(fileName, { create: true });
+    const w  = await fh.createWritable();
+    await w.write(json); await w.close();
+  }
+
+  async function writeToDirEncrypted(dh, json, baseFileName, password) {
+    const encFileName = encryptedFileName(baseFileName);
+    const buffer = await encryptJson(json, password);
+    const fh = await dh.getFileHandle(encFileName, { create: true });
+    const w  = await fh.createWritable();
+    await w.write(buffer); await w.close();
+    return encFileName;
+  }
+
+  function askPasswordThenWrite(dh, json, fileName, totalDocs, type) {
+    pwPendingRef.current = { dh, json, fileName, totalDocs, type };
+    setPwInput(""); setPwConfirm(""); setPwError(""); setPwShow(false);
+    setPwModal("ask");
+  }
+
+  async function handleAskSkip() {
+    setPwModal("idle");
+    const { dh, json, fileName, totalDocs, type } = pwPendingRef.current || {};
+    if (!json || !dh) return;
+    setExporting(true);
+    try {
+      await writeToDirHandle(dh, json, fileName);
+      setExportMsg({ type:"success", text:`✅ Saved to "${dh.name}" — ${totalDocs?.toLocaleString()} records.` });
+      await addHistEntry(fileName, totalDocs, type || "manual");
+    } catch (err) {
+      setExportMsg({ type:"error", text:"Save failed: " + err.message });
+    }
+    setExporting(false); pwPendingRef.current = null;
+  }
+
+  async function handlePwSet() {
+    if (!pwInput) { setPwError("Please enter a password."); return; }
+    if (pwInput !== pwConfirm) { setPwError("Passwords don't match."); return; }
+    if (pwInput.length < 6) { setPwError("Password must be at least 6 characters."); return; }
+    setPwModal("idle");
+    const { dh, json, fileName, totalDocs, type } = pwPendingRef.current || {};
+    if (!json || !dh) return;
+    setExporting(true);
+    try {
+      const savedName = await writeToDirEncrypted(dh, json, fileName, pwInput);
+      setExportMsg({
+        type:"success",
+        text:`🔐 Encrypted backup saved as "${savedName}" (${totalDocs?.toLocaleString()} records). Restore via "Select Backup File" on this page.`,
+      });
+      await addHistEntry(savedName, totalDocs, type || "manual");
+    } catch (err) {
+      setExportMsg({ type:"error", text:"Encrypted save failed: " + err.message });
+    }
+    setExporting(false); pwPendingRef.current = null;
+    setPwInput(""); setPwConfirm("");
+  }
+
+  async function handlePwEnter() {
+    if (!pwInput) { setPwError("Please enter the password."); return; }
+    setPwError("");
+    const { rawBuffer, fileName } = pwRestoreRef.current || {};
+    if (!rawBuffer) return;
+    try {
+      const json = await decryptFile(rawBuffer, pwInput);
+      const parsed = JSON.parse(json);
+      setPwModal("idle"); setPwInput("");
+      processBackupFile(parsed, fileName);
+    } catch {
+      setPwError("Wrong password or corrupted file. Please try again.");
+    }
+  }
+
+  function processBackupFile(parsed, fileName) {
+    if (!parsed?.version || !parsed?.collections) {
+      setRestoreMsg({ type:"error", text:"Invalid backup file. Select a valid Novexa backup." }); return;
+    }
+    let count = 0;
+    Object.values(parsed.collections).forEach(a => { count += a?.length || 0; });
+    if (parsed.customerNested) Object.values(parsed.customerNested).forEach(s => Object.values(s).forEach(a => { count += a?.length || 0; }));
+    if (parsed.supplierNested) Object.values(parsed.supplierNested).forEach(s => Object.values(s).forEach(a => { count += a?.length || 0; }));
+    setPendingFile(parsed);
+    setFileInfo({ name: fileName, exportedAt: parsed.exportedAt, docCount: count, originalUid: parsed.uid, encrypted: isEncryptedFile(fileName) });
+    setRestoreMsg({ type:"", text:"" }); setModalStep("choose");
+  }
+
+  function handleFileSelect(e) {
+    const file = e.target.files?.[0]; if (!file) return;
+    e.target.value = "";
+
+    if (isEncryptedFile(file.name)) {
+      const reader = new FileReader();
+      reader.onload = (ev) => {
+        pwRestoreRef.current = { rawBuffer: ev.target.result, fileName: file.name };
+        setPwInput(""); setPwError(""); setPwShow(false);
+        setPwModal("enter");
+      };
+      reader.readAsArrayBuffer(file);
+      return;
+    }
+
+    const reader = new FileReader();
+    reader.onload = (ev) => {
+      try {
+        const parsed = JSON.parse(ev.target.result);
+        processBackupFile(parsed, file.name);
+      } catch {
+        setRestoreMsg({ type:"error", text:"Error reading file. Select a valid JSON or .novexa backup file." });
+      }
+    };
+    reader.readAsText(file);
+  }
+
+  async function executeRestore(mode) {
+    setModalStep(null); setRestoring(true); setRestoreMsg({ type:"", text:"" }); setRestoreProg(0);
+    try {
+      const { collection: col, getDocs, doc: fsDoc, writeBatch } = await import("firebase/firestore");
+      const { db: fdb } = await import("@/lib/firebase");
+
+      async function batchWrite(writes) {
+        let batch = writeBatch(fdb); let cnt = 0;
+        for (const { ref, data } of writes) {
+          batch.set(ref, data, { merge: false }); cnt++;
+          if (cnt === 490) { await batch.commit(); batch = writeBatch(fdb); cnt = 0; }
+        }
+        if (cnt > 0) await batch.commit();
+      }
+      async function batchDel(refs) {
+        let batch = writeBatch(fdb); let cnt = 0;
+        for (const ref of refs) {
+          batch.delete(ref); cnt++;
+          if (cnt === 490) { await batch.commit(); batch = writeBatch(fdb); cnt = 0; }
+        }
+        if (cnt > 0) await batch.commit();
+      }
+
+      const backupDate = pendingFile.exportedAt ? new Date(pendingFile.exportedAt) : new Date(0);
+      const allCols = Object.keys(pendingFile.collections);
+      const total = allCols.length + 2; let done = 0;
+
+      for (const colId of allCols) {
+        setRestoreLabel(`Restoring ${colId}...`); setRestoreProg(Math.round((done/total)*100));
+        const bDocs = pendingFile.collections[colId] || [];
+        const bIds  = new Set(bDocs.map(d => d._id));
+        if (mode === "replace") {
+          const live = await getDocs(col(fdb, "users", targetUid, colId));
+          const del  = live.docs.filter(d => !bIds.has(d.id)).map(d => fsDoc(fdb, "users", targetUid, colId, d.id));
+          if (del.length) await batchDel(del);
+        } else {
+          const live = await getDocs(col(fdb, "users", targetUid, colId));
+          const del  = live.docs.filter(d => {
+            if (bIds.has(d.id)) return false;
+            const ct = d.data().createdAt;
+            const ms = ct?.toDate ? ct.toDate().getTime() : ct ? new Date(ct).getTime() : 0;
+            return ms <= backupDate.getTime();
+          }).map(d => fsDoc(fdb, "users", targetUid, colId, d.id));
+          if (del.length) await batchDel(del);
+        }
+        const writes = bDocs.map(raw => { const { id, data } = deserDoc(raw); return { ref: fsDoc(fdb, "users", targetUid, colId, id), data }; });
+        if (writes.length) await batchWrite(writes);
+        done++;
+      }
+
+      setRestoreLabel("Restoring customer invoices..."); setRestoreProg(Math.round((done/total)*100));
+      if (pendingFile.customerNested) {
+        for (const [custId, subs] of Object.entries(pendingFile.customerNested)) {
+          for (const [sub, docs] of Object.entries(subs || {})) {
+            const bIds = new Set(docs.map(d => d._id));
+            if (mode === "replace") {
+              const live = await getDocs(col(fdb, "users", targetUid, "customers", custId, sub));
+              const del  = live.docs.filter(d => !bIds.has(d.id)).map(d => fsDoc(fdb, "users", targetUid, "customers", custId, sub, d.id));
+              if (del.length) await batchDel(del);
+            } else {
+              const live = await getDocs(col(fdb, "users", targetUid, "customers", custId, sub));
+              const del  = live.docs.filter(d => {
+                if (bIds.has(d.id)) return false;
+                const ct = d.data().createdAt;
+                const ms = ct?.toDate ? ct.toDate().getTime() : ct ? new Date(ct).getTime() : 0;
+                return ms <= backupDate.getTime();
+              }).map(d => fsDoc(fdb, "users", targetUid, "customers", custId, sub, d.id));
+              if (del.length) await batchDel(del);
+            }
+            const writes = docs.map(raw => { const { id, data } = deserDoc(raw); return { ref: fsDoc(fdb, "users", targetUid, "customers", custId, sub, id), data }; });
+            if (writes.length) await batchWrite(writes);
+          }
+        }
+      }
+      done++;
+
+      setRestoreLabel("Restoring supplier data..."); setRestoreProg(Math.round((done/total)*100));
+      if (pendingFile.supplierNested) {
+        for (const [supId, subs] of Object.entries(pendingFile.supplierNested)) {
+          for (const [sub, docs] of Object.entries(subs || {})) {
+            const bIds = new Set(docs.map(d => d._id));
+            if (mode === "replace") {
+              const live = await getDocs(col(fdb, "users", targetUid, "suppliers", supId, sub));
+              const del  = live.docs.filter(d => !bIds.has(d.id)).map(d => fsDoc(fdb, "users", targetUid, "suppliers", supId, sub, d.id));
+              if (del.length) await batchDel(del);
+            } else {
+              const live = await getDocs(col(fdb, "users", targetUid, "suppliers", supId, sub));
+              const del  = live.docs.filter(d => {
+                if (bIds.has(d.id)) return false;
+                const ct = d.data().createdAt;
+                const ms = ct?.toDate ? ct.toDate().getTime() : ct ? new Date(ct).getTime() : 0;
+                return ms <= backupDate.getTime();
+              }).map(d => fsDoc(fdb, "users", targetUid, "suppliers", supId, sub, d.id));
+              if (del.length) await batchDel(del);
+            }
+            const writes = docs.map(raw => { const { id, data } = deserDoc(raw); return { ref: fsDoc(fdb, "users", targetUid, "suppliers", supId, sub, id), data }; });
+            if (writes.length) await batchWrite(writes);
+          }
+        }
+      }
+      done++;
+      setRestoreProg(100);
+      const modeLabel = mode === "replace" ? "Full replace" : "Smart merge";
+      setRestoreMsg({ type:"success", text:`✅ ${modeLabel} complete! ${fileInfo?.docCount?.toLocaleString()} records restored to ${userName || targetUid}.` });
+    } catch (err) { setRestoreMsg({ type:"error", text:"Restore failed: " + err.message }); }
+    setRestoring(false); setRestoreProg(0); setRestoreLabel("");
+    setPendingFile(null); setFileInfo(null);
+  }
+
+  // ── JSX ───────────────────────────────────────────────────────────────────
+  const cardS = { background:"rgba(255,255,255,0.025)", border:"1px solid rgba(255,255,255,0.07)" };
+
+  return (
+    <>
+      {/* ── Password modals ── */}
+      {pwModal === "ask" && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          style={{ background:"rgba(0,0,0,0.82)", backdropFilter:"blur(8px)" }}>
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+            style={{ background:"#0d1117", border:"1px solid rgba(99,102,241,0.4)", boxShadow:"0 32px 80px rgba(0,0,0,0.8)" }}>
+            <div style={{ height:4, background:"linear-gradient(90deg,#6366f1,#8b5cf6)" }} />
+            <div className="px-6 py-5 flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🔐</span>
+                <div>
+                  <p className="text-white font-black text-sm">Protect this backup?</p>
+                  <p className="text-gray-500 text-xs">Encrypt with a password before saving</p>
+                </div>
+                <button onClick={() => { setPwModal("idle"); pwPendingRef.current = null; }}
+                  className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+              </div>
+              <div className="rounded-xl px-4 py-3 text-xs leading-relaxed text-gray-400"
+                style={{ background:"rgba(99,102,241,0.06)", border:"1px solid rgba(99,102,241,0.18)" }}>
+                🔒 <span className="text-indigo-300 font-semibold">Encrypted (.novexa)</span> — unlock via restore on this page.<br />
+                📄 <span className="text-gray-300 font-semibold">Unencrypted (.json)</span> — plain readable JSON.
+              </div>
+              <div className="flex gap-3">
+                <button onClick={handleAskSkip}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                  style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"#9ca3af" }}>
+                  📄 Skip, save plain
+                </button>
+                <button onClick={() => setPwModal("set")}
+                  className="flex-1 py-2.5 rounded-xl text-sm font-black"
+                  style={{ background:"linear-gradient(135deg,#6366f1,#4f46e5)", color:"#fff" }}>
+                  🔐 Yes, add password
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pwModal === "set" && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          style={{ background:"rgba(0,0,0,0.82)", backdropFilter:"blur(8px)" }}>
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+            style={{ background:"#0d1117", border:"1px solid rgba(99,102,241,0.4)", boxShadow:"0 32px 80px rgba(0,0,0,0.8)" }}>
+            <div style={{ height:4, background:"linear-gradient(90deg,#6366f1,#8b5cf6)" }} />
+            <div className="px-6 py-5 flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🔑</span>
+                <div>
+                  <p className="text-white font-black text-sm">Set Backup Password</p>
+                  <p className="text-gray-500 text-xs">AES-256 encryption — remember this password!</p>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Password</label>
+                <div className="relative">
+                  <input type={pwShow ? "text" : "password"} value={pwInput}
+                    onChange={e => { setPwInput(e.target.value); setPwError(""); }}
+                    onKeyDown={e => e.key === "Enter" && handlePwSet()}
+                    placeholder="Enter password (min 6 chars)"
+                    className="w-full rounded-xl px-4 py-2.5 text-sm text-white outline-none pr-10"
+                    style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.12)" }}
+                    autoFocus
+                  />
+                  <button type="button" onClick={() => setPwShow(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs">
+                    {pwShow ? "Hide" : "Show"}
+                  </button>
+                </div>
+              </div>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Confirm Password</label>
+                <input type={pwShow ? "text" : "password"} value={pwConfirm}
+                  onChange={e => { setPwConfirm(e.target.value); setPwError(""); }}
+                  onKeyDown={e => e.key === "Enter" && handlePwSet()}
+                  placeholder="Repeat password"
+                  className="w-full rounded-xl px-4 py-2.5 text-sm text-white outline-none"
+                  style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.12)" }}
+                />
+              </div>
+              {pwError && <p className="text-red-400 text-xs font-semibold">{pwError}</p>}
+              <div className="rounded-xl px-3 py-2 text-[11px] text-amber-500"
+                style={{ background:"rgba(245,158,11,0.06)", border:"1px solid rgba(245,158,11,0.2)" }}>
+                ⚠️ If you forget this password, the backup cannot be recovered.
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setPwModal("ask")} className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                  style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"#9ca3af" }}>← Back</button>
+                <button onClick={handlePwSet} className="flex-1 py-2.5 rounded-xl text-sm font-black"
+                  style={{ background:"linear-gradient(135deg,#6366f1,#4f46e5)", color:"#fff" }}>🔐 Encrypt &amp; Save</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {pwModal === "enter" && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          style={{ background:"rgba(0,0,0,0.82)", backdropFilter:"blur(8px)" }}>
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+            style={{ background:"#0d1117", border:"1px solid rgba(245,158,11,0.35)", boxShadow:"0 32px 80px rgba(0,0,0,0.8)" }}>
+            <div style={{ height:4, background:"linear-gradient(90deg,#F59E0B,#f97316)" }} />
+            <div className="px-6 py-5 flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🔐</span>
+                <div>
+                  <p className="text-white font-black text-sm">Encrypted Backup</p>
+                  <p className="text-gray-500 text-xs truncate max-w-[180px]">{pwRestoreRef.current?.fileName}</p>
+                </div>
+                <button onClick={() => { setPwModal("idle"); pwRestoreRef.current = null; }}
+                  className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+              </div>
+              <p className="text-gray-400 text-xs">Enter the password used when creating this backup.</p>
+              <div className="flex flex-col gap-1">
+                <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Password</label>
+                <div className="relative">
+                  <input type={pwShow ? "text" : "password"} value={pwInput}
+                    onChange={e => { setPwInput(e.target.value); setPwError(""); }}
+                    onKeyDown={e => e.key === "Enter" && handlePwEnter()}
+                    placeholder="Enter backup password"
+                    className="w-full rounded-xl px-4 py-2.5 text-sm text-white outline-none pr-10"
+                    style={{ background:"rgba(255,255,255,0.06)", border:"1px solid rgba(255,255,255,0.12)" }}
+                    autoFocus
+                  />
+                  <button type="button" onClick={() => setPwShow(v => !v)}
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs">
+                    {pwShow ? "Hide" : "Show"}
+                  </button>
+                </div>
+              </div>
+              {pwError && <p className="text-red-400 text-xs font-semibold">{pwError}</p>}
+              <button onClick={handlePwEnter} className="w-full py-3 rounded-xl text-sm font-black"
+                style={{ background:"linear-gradient(135deg,#F59E0B,#D97706)", color:"#000" }}>
+                🔓 Unlock &amp; Continue
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Folder ask modal ── */}
+      {folderModal && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+          style={{ background:"rgba(0,0,0,0.80)", backdropFilter:"blur(8px)" }}>
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+            style={{ background:"#0d1117", border:"1px solid rgba(245,158,11,0.35)", boxShadow:"0 32px 80px rgba(0,0,0,0.8)" }}>
+            <div style={{ height:4, background:"linear-gradient(90deg,#F59E0B,#f97316)" }} />
+            <div className="px-6 py-5 flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">📁</span>
+                <div>
+                  <p className="text-white font-black text-sm">Where to save?</p>
+                  <p className="text-gray-500 text-xs">A folder is already saved</p>
+                </div>
+                <button onClick={() => { setFolderModal(false); pendingRef.current = null; }}
+                  className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+              </div>
+              <div className="px-4 py-3 rounded-xl flex items-center gap-3"
+                style={{ background:"rgba(245,158,11,0.06)", border:"1px solid rgba(245,158,11,0.2)" }}>
+                <span className="text-xl">🗂️</span>
+                <p className="text-amber-300 font-bold text-sm truncate">{folderName}</p>
+              </div>
+              <div className="flex flex-col gap-2">
+                <button onClick={useSameFolder}
+                  className="w-full py-3 rounded-xl text-sm font-black"
+                  style={{ background:"linear-gradient(135deg,#F59E0B,#D97706)", color:"#000" }}>
+                  ✅ Yes, save to this folder
+                </button>
+                <button onClick={chooseNewFolder}
+                  className="w-full py-2.5 rounded-xl text-sm font-semibold"
+                  style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"#9ca3af" }}>
+                  📂 Choose a different folder
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Restore mode chooser ── */}
+      {modalStep === "choose" && fileInfo && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+          style={{ background:"rgba(0,0,0,0.80)", backdropFilter:"blur(8px)" }}>
+          <div className="w-full max-w-md rounded-2xl overflow-hidden"
+            style={{ background:"#0d1117", border:"1px solid rgba(255,255,255,0.1)", boxShadow:"0 32px 80px rgba(0,0,0,0.8)" }}>
+            <div style={{ height:4, background:"linear-gradient(90deg,#3b82f6,#8b5cf6,#F59E0B)" }} />
+            <div className="px-6 py-5 flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">♻️</span>
+                <div>
+                  <p className="text-white font-black text-sm">Choose Restore Mode</p>
+                  <p className="text-gray-500 text-xs">Restoring to: <span className="text-amber-300 font-semibold">{userName || targetUid}</span></p>
+                </div>
+                <button onClick={() => { setModalStep(null); setPendingFile(null); setFileInfo(null); }}
+                  className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+              </div>
+              <div className="rounded-xl px-4 py-3 flex flex-col gap-1.5"
+                style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)" }}>
+                <div className="flex gap-2 text-xs"><span className="text-gray-500 w-20">File:</span><span className="text-white font-medium truncate">{fileInfo.name}</span>{fileInfo.encrypted && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0" style={{ background:"rgba(99,102,241,0.15)", color:"#818cf8", border:"1px solid rgba(99,102,241,0.3)" }}>🔐 Encrypted</span>}</div>
+                <div className="flex gap-2 text-xs"><span className="text-gray-500 w-20">Backup Date:</span><span className="text-amber-300 font-medium">{fmtDTLocal(fileInfo.exportedAt)}</span></div>
+                <div className="flex gap-2 text-xs"><span className="text-gray-500 w-20">Records:</span><span className="text-green-400 font-bold">{fileInfo.docCount?.toLocaleString()}</span></div>
+                {fileInfo.originalUid && fileInfo.originalUid !== targetUid && (
+                  <div className="flex gap-2 text-xs mt-1 px-2 py-1.5 rounded-lg" style={{ background:"rgba(245,158,11,0.08)", border:"1px solid rgba(245,158,11,0.25)" }}>
+                    <span className="text-amber-400">⚠️</span>
+                    <span className="text-amber-300 text-[11px]">This backup is from a different user UID. Admin override — proceed with caution.</span>
+                  </div>
+                )}
+              </div>
+              <button onClick={() => setModalStep("confirm-merge")}
+                className="w-full text-left rounded-2xl p-4 flex items-start gap-3 transition-all hover:scale-[1.01]"
+                style={{ background:"rgba(52,211,153,0.06)", border:"2px solid rgba(52,211,153,0.35)" }}>
+                <span className="text-xl mt-0.5 flex-shrink-0">🔀</span>
+                <div>
+                  <p className="text-white font-black text-sm">Smart Merge — Recommended</p>
+                  <p className="text-gray-400 text-xs leading-relaxed mt-1">Backup data restored. Records created <span className="text-green-400 font-semibold">after</span> the backup date remain safe.</p>
+                  <div className="flex gap-1.5 mt-1.5">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background:"rgba(52,211,153,0.12)", color:"#34d399" }}>✅ New data safe</span>
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background:"rgba(52,211,153,0.12)", color:"#34d399" }}>✅ Backup restored</span>
+                  </div>
+                </div>
+              </button>
+              <button onClick={() => setModalStep("confirm-replace")}
+                className="w-full text-left rounded-2xl p-4 flex items-start gap-3 transition-all hover:scale-[1.01]"
+                style={{ background:"rgba(239,68,68,0.05)", border:"1.5px solid rgba(239,68,68,0.25)" }}>
+                <span className="text-xl mt-0.5 flex-shrink-0">🔄</span>
+                <div>
+                  <p className="text-white font-black text-sm">Full Replace</p>
+                  <p className="text-gray-400 text-xs leading-relaxed mt-1">User&apos;s <span className="text-red-400 font-semibold">entire current data deleted</span> and replaced with backup. Any work after the backup is <span className="text-red-400 font-semibold">permanently lost</span>.</p>
+                  <div className="flex gap-1.5 mt-1.5">
+                    <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background:"rgba(239,68,68,0.12)", color:"#f87171" }}>⚠️ New data deleted</span>
+                  </div>
+                </div>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm Merge ── */}
+      {modalStep === "confirm-merge" && fileInfo && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+          style={{ background:"rgba(0,0,0,0.80)", backdropFilter:"blur(8px)" }}>
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+            style={{ background:"#0d1117", border:"1px solid rgba(52,211,153,0.35)", boxShadow:"0 32px 80px rgba(0,0,0,0.8)" }}>
+            <div style={{ height:4, background:"linear-gradient(90deg,#34d399,#059669)" }} />
+            <div className="px-6 py-5 flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">🔀</span>
+                <div>
+                  <p className="text-white font-black text-sm">Confirm Smart Merge</p>
+                  <p className="text-gray-500 text-xs">Into: <span className="text-amber-300">{userName || targetUid}</span></p>
+                </div>
+              </div>
+              <div className="rounded-xl px-4 py-3 text-xs leading-relaxed text-gray-400"
+                style={{ background:"rgba(52,211,153,0.05)", border:"1px solid rgba(52,211,153,0.2)" }}>
+                📅 Backup date: <span className="text-amber-300 font-semibold">{fmtDTLocal(fileInfo.exportedAt)}</span><br />
+                Records created <span className="text-green-400 font-medium">after this date</span> will be kept.<br />
+                Backup records will be overwritten.
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setModalStep("choose")} className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                  style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"#9ca3af" }}>← Back</button>
+                <button onClick={() => executeRestore("merge")} className="flex-1 py-2.5 rounded-xl text-sm font-black"
+                  style={{ background:"linear-gradient(135deg,#34d399,#059669)", color:"#000" }}>Smart Merge →</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Confirm Replace ── */}
+      {modalStep === "confirm-replace" && fileInfo && (
+        <div className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+          style={{ background:"rgba(0,0,0,0.80)", backdropFilter:"blur(8px)" }}>
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+            style={{ background:"#0d1117", border:"1px solid rgba(239,68,68,0.4)", boxShadow:"0 32px 80px rgba(0,0,0,0.8)" }}>
+            <div style={{ height:4, background:"linear-gradient(90deg,#ef4444,#f97316)" }} />
+            <div className="px-6 py-5 flex flex-col gap-4">
+              <div className="flex items-center gap-3">
+                <span className="text-2xl">⚠️</span>
+                <div>
+                  <p className="text-white font-black text-sm">Full Replace — Danger!</p>
+                  <p className="text-gray-500 text-xs">Into: <span className="text-amber-300">{userName || targetUid}</span></p>
+                </div>
+              </div>
+              <div className="rounded-xl px-4 py-3 text-xs leading-relaxed"
+                style={{ background:"rgba(239,68,68,0.06)", border:"1px solid rgba(239,68,68,0.2)", color:"#fca5a5" }}>
+                ❌ Everything after backup date (<span className="font-semibold text-amber-300">{fmtDTLocal(fileInfo.exportedAt)}</span>) in this user&apos;s account will be <span className="font-bold text-red-300">permanently deleted</span>.<br /><br />
+                Are you sure you want to proceed?
+              </div>
+              <div className="flex gap-3">
+                <button onClick={() => setModalStep("choose")} className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+                  style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"#9ca3af" }}>← Back</button>
+                <button onClick={() => executeRestore("replace")} className="flex-1 py-2.5 rounded-xl text-sm font-black"
+                  style={{ background:"linear-gradient(135deg,#ef4444,#c62828)", color:"#fff" }}>Yes, Delete &amp; Replace</button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── PAGE BODY ── */}
+      <div className="flex flex-col gap-5 w-full max-w-4xl">
+
+        {/* ── Row 1: Export + Restore side by side on lg ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
+
+          {/* Export */}
+          <div className="rounded-2xl p-5 flex flex-col gap-4" style={cardS}>
+            <div className="pb-2 border-b border-white/10">
+              <p className="text-xs font-black uppercase tracking-widest" style={{ color:"#34d399" }}>📦 Export Backup</p>
+            </div>
+            <div className="rounded-xl p-4 flex flex-col gap-2"
+              style={{ background:"rgba(52,211,153,0.04)", border:"1px solid rgba(52,211,153,0.15)" }}>
+              <p className="text-gray-300 text-sm leading-relaxed">
+                Download a full backup of <span className="text-green-400 font-semibold">{userName || targetUid}</span>&apos;s data — invoices, customers, inventory, payments, suppliers, and all nested records.
+              </p>
+              <p className="text-gray-500 text-xs">Saved directly to your machine. Use it later to restore this user&apos;s data.</p>
+            </div>
+
+            {folderName && (
+              <div className="flex items-center gap-3 px-3 py-2.5 rounded-xl"
+                style={{ background:"rgba(245,158,11,0.05)", border:"1px solid rgba(245,158,11,0.2)" }}>
+                <span className="text-base flex-shrink-0">🗂️</span>
+                <div className="flex-1 min-w-0">
+                  <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-0.5">Saved Folder</p>
+                  <p className="text-amber-300 font-semibold text-xs truncate">{folderName}</p>
+                </div>
+                <button onClick={() => { setDirHandle(null); setFolderName(""); btIdbDel(IDB_DIR_KEY); }}
+                  title="Forget folder" className="text-gray-600 hover:text-red-400 text-sm flex-shrink-0">✕</button>
+              </div>
+            )}
+
+            {exporting && (
+              <div className="flex flex-col gap-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-400 truncate">{exportLabel}</span>
+                  <span className="text-green-400 font-bold ml-2 flex-shrink-0">{exportProg}%</span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.07)" }}>
+                  <div className="h-full rounded-full transition-all duration-300"
+                    style={{ width:`${exportProg}%`, background:"linear-gradient(90deg,#34d399,#059669)" }} />
+                </div>
+              </div>
+            )}
+
+            {exportMsg.text && (
+              <div className="px-3 py-2.5 rounded-xl text-xs font-medium"
+                style={{
+                  background: exportMsg.type==="success" ? "rgba(52,211,153,0.08)" : "rgba(248,113,113,0.08)",
+                  border:`1px solid ${exportMsg.type==="success" ? "rgba(52,211,153,0.3)" : "rgba(248,113,113,0.3)"}`,
+                  color: exportMsg.type==="success" ? "#34d399" : "#f87171",
+                }}>
+                {exportMsg.text}
+              </div>
+            )}
+
+            <button onClick={doExport} disabled={exporting}
+              className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-black transition-all hover:scale-[1.02] active:scale-95 mt-auto"
+              style={{
+                background: exporting ? "rgba(52,211,153,0.15)" : "linear-gradient(135deg,#34d399,#059669)",
+                color: exporting ? "#34d399" : "#000",
+                border: exporting ? "1px solid rgba(52,211,153,0.3)" : "none",
+                cursor: exporting ? "not-allowed" : "pointer",
+              }}>
+              {exporting
+                ? <><svg className="w-4 h-4 animate-spin flex-shrink-0" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25"/><path fill="currentColor" d="M4 12a8 8 0 018-8v8z" className="opacity-75"/></svg>Exporting...</>
+                : "⬇️ Export Backup"
+              }
+            </button>
+          </div>
+
+          {/* Restore */}
+          <div className="rounded-2xl p-5 flex flex-col gap-4" style={cardS}>
+            <div className="pb-2 border-b border-white/10">
+              <p className="text-xs font-black uppercase tracking-widest" style={{ color:"#F59E0B" }}>♻️ Restore to User</p>
+            </div>
+            <div className="rounded-xl p-4 flex flex-col gap-2"
+              style={{ background:"rgba(245,158,11,0.04)", border:"1px solid rgba(245,158,11,0.15)" }}>
+              <p className="text-gray-300 text-sm leading-relaxed">
+                Upload a backup file and restore it directly into <span className="text-amber-400 font-semibold">{userName || targetUid}</span>&apos;s account. Encrypted <span className="text-indigo-300 font-semibold">.novexa</span> files will ask for password here.
+              </p>
+              <div className="flex flex-col gap-2 mt-1">
+                <div className="flex items-start gap-2 px-3 py-2 rounded-xl text-xs"
+                  style={{ background:"rgba(52,211,153,0.06)", border:"1px solid rgba(52,211,153,0.2)" }}>
+                  <span className="flex-shrink-0">🔀</span>
+                  <div><p className="text-green-400 font-bold">Smart Merge</p><p className="text-gray-500">New work after backup date stays safe.</p></div>
+                </div>
+                <div className="flex items-start gap-2 px-3 py-2 rounded-xl text-xs"
+                  style={{ background:"rgba(239,68,68,0.05)", border:"1px solid rgba(239,68,68,0.2)" }}>
+                  <span className="flex-shrink-0">🔄</span>
+                  <div><p className="text-red-400 font-bold">Full Replace</p><p className="text-gray-500">All current data deleted, replaced with backup.</p></div>
+                </div>
+              </div>
+            </div>
+
+            {restoring && (
+              <div className="flex flex-col gap-2">
+                <div className="flex justify-between text-xs">
+                  <span className="text-gray-400 truncate">{restoreLabel}</span>
+                  <span className="text-amber-400 font-bold ml-2 flex-shrink-0">{restoreProg}%</span>
+                </div>
+                <div className="h-2 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.07)" }}>
+                  <div className="h-full rounded-full transition-all duration-300"
+                    style={{ width:`${restoreProg}%`, background:"linear-gradient(90deg,#F59E0B,#D97706)" }} />
+                </div>
+              </div>
+            )}
+
+            {restoreMsg.text && (
+              <div className="px-3 py-2.5 rounded-xl text-xs font-medium"
+                style={{
+                  background: restoreMsg.type==="success" ? "rgba(52,211,153,0.08)" : "rgba(248,113,113,0.08)",
+                  border:`1px solid ${restoreMsg.type==="success" ? "rgba(52,211,153,0.3)" : "rgba(248,113,113,0.3)"}`,
+                  color: restoreMsg.type==="success" ? "#34d399" : "#f87171",
+                }}>
+                {restoreMsg.text}
+              </div>
+            )}
+
+            <input ref={fileInputRef} type="file" accept=".json,.novexa,application/json" className="hidden" onChange={handleFileSelect} />
+            <button onClick={() => fileInputRef.current?.click()} disabled={restoring}
+              className="flex items-center justify-center gap-2 py-3 rounded-xl text-sm font-black transition-all hover:scale-[1.02] active:scale-95 mt-auto"
+              style={{
+                background: restoring ? "rgba(245,158,11,0.15)" : "linear-gradient(135deg,#F59E0B,#D97706)",
+                color: restoring ? "#F59E0B" : "#000",
+                border: restoring ? "1px solid rgba(245,158,11,0.3)" : "none",
+                cursor: restoring ? "not-allowed" : "pointer",
+              }}>
+              {restoring
+                ? <><svg className="w-4 h-4 animate-spin flex-shrink-0" viewBox="0 0 24 24" fill="none"><circle cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" className="opacity-25"/><path fill="currentColor" d="M4 12a8 8 0 018-8v8z" className="opacity-75"/></svg>Restoring...</>
+                : "⬆️ Select Backup File to Restore"
+              }
+            </button>
+
+            <div className="rounded-xl p-3 flex flex-col gap-1"
+              style={{ background:"rgba(239,68,68,0.04)", border:"1px solid rgba(239,68,68,0.15)" }}>
+              <p className="text-[10px] font-black uppercase tracking-widest text-red-500">⚠️ Admin Notes</p>
+              <ul className="flex flex-col gap-0.5 mt-1">
+                {["Always export a fresh backup before restoring.","Encrypted .novexa files unlock only via restore on this page.","Smart Merge preserves data added after the backup.","Full Replace permanently deletes post-backup data.","Cross-user restores allowed (admin override)."]
+                  .map((t,i) => (
+                  <li key={i} className="flex items-start gap-1.5 text-[11px] text-gray-600">
+                    <span className="text-red-700 mt-0.5 flex-shrink-0">•</span>{t}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          </div>
+        </div>
+
+        {/* ══ AUTO-BACKUP ══ */}
+        <div className="rounded-2xl p-5 flex flex-col gap-4"
+          style={{ background:"rgba(255,255,255,0.025)", border:"1px solid rgba(255,255,255,0.07)" }}>
+          <div className="pb-2 border-b border-white/10">
+            <p className="text-xs font-black uppercase tracking-widest" style={{ color:"#8b5cf6" }}>⏱️ Auto-Backup — {userName || targetUid}</p>
+          </div>
+          <div className="rounded-xl p-4 flex flex-col gap-2"
+            style={{ background:"rgba(139,92,246,0.04)", border:"1px solid rgba(139,92,246,0.15)" }}>
+            <p className="text-gray-300 text-sm">Automatically back up this user&apos;s data at a set interval. Each backup saves as a new file — nothing is overwritten.</p>
+            <p className="text-gray-500 text-xs">✅ Requires a saved folder. ✅ Works only while this tab is open.</p>
+          </div>
+
+          {/* Auto-dest modal */}
+          {autoDestModal && (
+            <div className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+              style={{ background:"rgba(0,0,0,0.80)", backdropFilter:"blur(8px)" }}>
+              <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+                style={{ background:"#0d1117", border:"1px solid rgba(139,92,246,0.35)", boxShadow:"0 32px 80px rgba(0,0,0,0.8)" }}>
+                <div style={{ height:4, background:"linear-gradient(90deg,#8b5cf6,#6d28d9)" }} />
+                <div className="px-6 py-5 flex flex-col gap-4">
+                  <div className="flex items-center gap-3">
+                    <span className="text-2xl">⏱️</span>
+                    <div>
+                      <p className="text-white font-black text-sm">Auto-Backup Destination</p>
+                      <p className="text-gray-500 text-xs">Where should auto-backups be saved?</p>
+                    </div>
+                    <button onClick={() => setAutoDestModal(false)} className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+                  </div>
+                  <div className="px-4 py-3 rounded-xl flex items-center gap-3"
+                    style={{ background:"rgba(245,158,11,0.06)", border:"1px solid rgba(245,158,11,0.2)" }}>
+                    <span className="text-xl">🗂️</span>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-[10px] text-gray-500 uppercase font-bold mb-0.5">Current Folder</p>
+                      <p className="text-amber-300 font-bold text-sm truncate">{folderName}</p>
+                    </div>
+                  </div>
+                  <div className="flex flex-col gap-2">
+                    <button onClick={activateAutoSameFolder}
+                      className="w-full py-3 rounded-xl text-sm font-black"
+                      style={{ background:"linear-gradient(135deg,#8b5cf6,#6d28d9)", color:"#fff" }}>
+                      ✅ Use this folder
+                    </button>
+                    <button onClick={activateAutoNewFolder}
+                      className="w-full py-2.5 rounded-xl text-sm font-semibold"
+                      style={{ background:"rgba(255,255,255,0.05)", border:"1px solid rgba(255,255,255,0.1)", color:"#9ca3af" }}>
+                      📂 Choose a different folder
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+          )}
+
+          {/* Interval picker */}
+          <div className="flex flex-col gap-2">
+            <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Backup Frequency</p>
+            <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+              {AUTO_INTERVALS.map(opt => (
+                <button key={opt.id} onClick={() => setAutoIntervalId(opt.id)} disabled={autoEnabled}
+                  className="px-3 py-2.5 rounded-xl text-xs font-bold transition-all"
+                  style={{
+                    background: autoIntervalId===opt.id ? "rgba(139,92,246,0.2)" : "rgba(255,255,255,0.03)",
+                    border: autoIntervalId===opt.id ? "2px solid rgba(139,92,246,0.6)" : "1px solid rgba(255,255,255,0.07)",
+                    color: autoIntervalId===opt.id ? "#c4b5fd" : "#6b7280",
+                    cursor: autoEnabled ? "not-allowed" : "pointer",
+                    opacity: autoEnabled && autoIntervalId!==opt.id ? 0.4 : 1,
+                  }}>
+                  {opt.label}
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Active status */}
+          {autoEnabled && (
+            <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
+              style={{ background:"rgba(139,92,246,0.06)", border:"1px solid rgba(139,92,246,0.25)" }}>
+              <span className="text-xl flex-shrink-0">🟣</span>
+              <div className="flex-1">
+                <p className="text-purple-300 font-black text-xs uppercase tracking-wider">Auto-Backup Active</p>
+                <p className="text-gray-400 text-xs mt-0.5">
+                  Next backup in <span className="text-purple-200 font-bold">{countdown || "…"}</span>
+                  {folderName && <> → <span className="text-amber-300 font-semibold">{folderName}</span></>}
+                </p>
+              </div>
+            </div>
+          )}
+
+          {autoMsg.text && (
+            <div className="px-4 py-3 rounded-xl text-sm font-medium"
+              style={{
+                background: autoMsg.type==="success" ? "rgba(139,92,246,0.08)" : "rgba(248,113,113,0.08)",
+                border:`1px solid ${autoMsg.type==="success" ? "rgba(139,92,246,0.35)" : "rgba(248,113,113,0.3)"}`,
+                color: autoMsg.type==="success" ? "#c4b5fd" : "#f87171",
+              }}>
+              {autoMsg.text}
+            </div>
+          )}
+
+          <div className="flex gap-3">
+            {!autoEnabled
+              ? <button onClick={handleEnableAuto}
+                  className="flex-1 py-3 rounded-xl text-sm font-black transition-all hover:scale-[1.02]"
+                  style={{ background:"linear-gradient(135deg,#8b5cf6,#6d28d9)", color:"#fff" }}>
+                  ▶ Enable Auto-Backup
+                </button>
+              : <button onClick={handleDisableAuto}
+                  className="flex-1 py-3 rounded-xl text-sm font-black transition-all hover:scale-[1.02]"
+                  style={{ background:"rgba(239,68,68,0.12)", border:"1px solid rgba(239,68,68,0.3)", color:"#f87171" }}>
+                  ⏹ Disable Auto-Backup
+                </button>
+            }
+          </div>
+        </div>
+
+        {/* ══ BACKUP HISTORY ══ */}
+        <div className="rounded-2xl p-5 flex flex-col gap-4"
+          style={{ background:"rgba(255,255,255,0.025)", border:"1px solid rgba(255,255,255,0.07)" }}>
+          <div className="pb-2 border-b border-white/10">
+            <p className="text-xs font-black uppercase tracking-widest" style={{ color:"#60a5fa" }}>📋 Backup History — {userName || targetUid}</p>
+          </div>
+          {history.length === 0 ? (
+            <div className="flex flex-col items-center gap-2 py-6 text-center">
+              <span className="text-4xl opacity-20">🗂️</span>
+              <p className="text-gray-600 text-sm">No backups yet</p>
+              <p className="text-gray-700 text-xs">Every backup (manual or auto) for this user will appear here.</p>
+            </div>
+          ) : (
+            <>
+              <div className="flex flex-col gap-2">
+                {history.map((entry, i) => (
+                  <div key={i} className="flex items-center gap-3 px-4 py-3 rounded-xl"
+                    style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.06)" }}>
+                    <div className="flex-shrink-0">
+                      {entry.type === "auto"
+                        ? <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase"
+                            style={{ background:"rgba(139,92,246,0.15)", color:"#c4b5fd", border:"1px solid rgba(139,92,246,0.3)" }}>⏱ Auto</span>
+                        : <span className="px-2 py-0.5 rounded-full text-[10px] font-black uppercase"
+                            style={{ background:"rgba(52,211,153,0.12)", color:"#34d399", border:"1px solid rgba(52,211,153,0.3)" }}>✋ Manual</span>
+                      }
+                    </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="text-white text-xs font-semibold truncate">{entry.fileName}</p>
+                      <p className="text-gray-500 text-[11px] mt-0.5">{fmtDTLocal(entry.at)}</p>
+                    </div>
+                    <div className="flex-shrink-0 text-right">
+                      <p className="text-green-400 text-xs font-bold">{entry.docCount?.toLocaleString()}</p>
+                      <p className="text-gray-600 text-[10px]">records</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+              <button onClick={async () => { await btIdbDel(IDB_HIST_KEY); setHistory([]); }}
+                className="self-end text-xs text-gray-600 hover:text-red-400 transition-colors underline underline-offset-2">
+                Clear history
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   SIDEBAR TABS config
 ══════════════════════════════════════════════════════════════════════ */
 const TABS = [
   { id:"profile",   icon:"👤", label:"Profile"   },
@@ -2266,13 +3500,19 @@ const TABS = [
   { id:"tickets",   icon:"🎫", label:"Tickets"    },
   { id:"trash",     icon:"🗑️", label:"Trash"      },
   { id:"activity",  icon:"📋", label:"Activity"   },
+  { id:"backup",    icon:"💾", label:"Backup"     },
 ];
 
 /* ══════════════════════════════════════════════════════════════════════
    MAIN EXPORT
 ══════════════════════════════════════════════════════════════════════ */
 export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
-  const [activeTab, setActiveTab] = useState("profile");
+  const [activeTab, setActiveTab] = useState(() => {
+    if (typeof window !== "undefined") {
+      return localStorage.getItem(`adminUserDetailTab_${uid}`) || "profile";
+    }
+    return "profile";
+  });
   const [data,      setData]      = useState(null);
   const [loading,   setLoading]   = useState(true);
   const [error,     setError]     = useState(null);
@@ -2302,7 +3542,12 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
         {/* ── top bar ── */}
         <div className="flex items-center gap-4 px-6 py-4 flex-shrink-0"
           style={{ borderBottom:"1px solid rgba(255,255,255,0.07)", background:"linear-gradient(135deg,rgba(37,99,235,0.07),rgba(245,158,11,0.03))" }}>
-          <button onClick={onClose}
+          <button onClick={() => {
+            if (typeof window !== "undefined") {
+              localStorage.removeItem(`adminUserDetailTab_${uid}`);
+            }
+            onClose();
+          }}
             className="flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all hover:bg-white/10 flex-shrink-0"
             style={{ border:"1px solid rgba(255,255,255,0.1)", color:"#9ca3af" }}>
             ← Back
@@ -2343,7 +3588,7 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
               let badge = null;
               if (tab.id==="trash" && data) {
                 const n = [data.invoices,data.customers,data.products,data.payments,data.suppliers,data.orders]
-                  .flat().filter(i=>i.deleted).length;
+                  .flat().filter(i=>i.adminTrash).length;
                 if (n>0) badge = n;
               }
               // tickets badge — show Open count (loaded lazily, so just show dot if tab active)
@@ -2351,7 +3596,10 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
                 ? { bg:"rgba(59,130,246,0.2)", color:"#60a5fa", border:"1px solid rgba(59,130,246,0.3)" }
                 : { bg:"rgba(248,113,113,0.2)", color:"#f87171", border:"1px solid rgba(248,113,113,0.3)" };
               return (
-                <button key={tab.id} onClick={()=>setActiveTab(tab.id)}
+                <button key={tab.id} onClick={() => {
+                  setActiveTab(tab.id);
+                  if (typeof window !== "undefined") localStorage.setItem(`adminUserDetailTab_${uid}`, tab.id);
+                }}
                   className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all relative text-left w-full"
                   style={{ background:isActive?"linear-gradient(135deg,rgba(37,99,235,0.18),rgba(245,158,11,0.07))":"transparent", border:isActive?"1px solid rgba(37,99,235,0.25)":"1px solid transparent", color:isActive?"#fff":"#6b7280" }}>
                   {isActive && (
@@ -2402,6 +3650,7 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
                 {activeTab==="tickets"   && <TicketsTab uid={uid} getToken={getToken} onToast={onToast} />}
                 {activeTab==="trash"     && <TrashTab uid={uid} data={data} getToken={getToken} onToast={onToast} onRefresh={loadData} />}
                 {activeTab==="activity"  && <ActivityTab activityLogs={data.activityLogs} />}
+                {activeTab==="backup"    && <BackupTab uid={uid} userName={data.user?.name} />}
               </>
             )}
           </main>

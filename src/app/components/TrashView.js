@@ -3,10 +3,9 @@
 import { useState, useEffect } from "react";
 import {
   collection, query, where, onSnapshot,
-  doc, updateDoc, deleteDoc, serverTimestamp, getDocs, getDoc,
+  doc, updateDoc, serverTimestamp, getDocs, getDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { auth } from "@/lib/firebase";
 import SweetAlert from "./SweetAlert";
 
 function formatRs(n) {
@@ -90,36 +89,34 @@ export default function TrashView({ uid }) {
     return () => clearInterval(id);
   }, []);
 
-  // ── Auto-purge expired adminTrash items (15-day window elapsed) ──────────
+  // ── Auto-promote expired regular-trash items → adminTrash (15-day window elapsed) ──────────
+  // When a user's regular deleted item (deleted:true, adminTrash:false) expires 15 days after
+  // deletedAt, it moves to admin trash (adminTrash:true) automatically — disappears from user's trash
   useEffect(() => {
     if (!uid) return;
     const allItems = Object.values(items).flat();
-    const expired  = allItems.filter(item => {
-      if (!item.adminTrash) return false;
-      const cd = calc15DayCountdown(item.adminTrashedAt);
+    // Items in regular trash (not yet admin-trashed) that have passed 15 days since deletedAt
+    const expiredRegular = allItems.filter(item => {
+      if (item.adminTrash) return false; // already in admin trash
+      if (!item.deletedAt) return false;
+      const cd = calc15DayCountdown(item.deletedAt);
       return cd.expired;
     });
-    if (expired.length === 0) return;
+    if (expiredRegular.length === 0) return;
 
-    // Fire-and-forget: get current user's token and permanently delete expired items
+    // Promote them to adminTrash — they'll disappear from user trash and appear in admin trash
     (async () => {
       try {
-        const token = await auth.currentUser?.getIdToken(true);
-        if (!token) return; // only works if user is logged in (client-side safety check)
-
+        const { updateDoc, doc: fsDoc, serverTimestamp: st } = await import("firebase/firestore");
+        const { db: fdb } = await import("@/lib/firebase");
+        const now = new Date().toISOString();
         await Promise.allSettled(
-          expired.map(item =>
-            fetch("/api/admin/permanent-delete", {
-              method:  "POST",
-              headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
-              body:    JSON.stringify({
-                uid,
-                itemId:     item.id,
-                collection: item._col,
-                supplierId: item._supplierId || null,
-              }),
-            })
-          )
+          expiredRegular.map(item => {
+            const ref = item._col === "orders"
+              ? fsDoc(fdb, "users", uid, "suppliers", item._supplierId, "orders", item.id)
+              : fsDoc(fdb, "users", uid, item._col, item.id);
+            return updateDoc(ref, { adminTrash: true, adminTrashedAt: now });
+          })
         );
       } catch {
         // Silently ignore — will retry on next render/load
@@ -306,7 +303,7 @@ export default function TrashView({ uid }) {
         await updateDoc(doc(db, "users", uid, "customers", item.customerId, "invoices", item.id), adminTrashUpdate).catch(() => {});
       }
 
-      showToast("Moved to admin archive. Contact support to restore.", "error");
+      showToast("Permanently deleted.", "error");
     } catch (err) {
       showToast(err.message || "Delete failed", "error");
     }
@@ -391,7 +388,7 @@ export default function TrashView({ uid }) {
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div>
             <h2 className="text-white font-black text-xl">🗑️ Trash</h2>
-            <p className="text-gray-500 text-xs mt-0.5">Deleted items — restore or permanently remove. Items sent to permanent delete are auto-deleted after 15 days.</p>
+            <p className="text-gray-500 text-xs mt-0.5">Deleted items — restore or permanently delete them from here.</p>
           </div>
           <span className="px-3 py-1.5 rounded-xl text-sm font-bold"
             style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>
@@ -471,24 +468,20 @@ export default function TrashView({ uid }) {
                         {countdown?.display || "—"}
                       </p>
                     </>
-                  ) : item._col === "invoices" ? (
-                    // Show 15-day countdown for deleted invoices
+                  ) : (
+                    // Show 15-day countdown for ALL regular trash items (based on deletedAt)
                     (() => {
                       const cd = calc15DayCountdown(item.deletedAt);
                       return (
                         <>
-                          <p className="text-gray-600 text-[10px] uppercase tracking-wide">Restore within</p>
+                          <p className="text-gray-600 text-[10px] uppercase tracking-wide">Auto-move in</p>
                           <p className={`text-xs font-bold ${cd.expired ? "text-red-400" : cd.daysLeft <= 3 ? "text-amber-400" : "text-green-400"}`}>
-                            {cd.expired ? "⚠️ Expired" : cd.display}
+                            {cd.expired ? "⚠️ Moving..." : cd.display}
                           </p>
+                          <p className="text-gray-600 text-[10px]">{fmtDate(item.deletedAt)}</p>
                         </>
                       );
                     })()
-                  ) : (
-                    <>
-                      <p className="text-gray-600 text-[10px] uppercase tracking-wide">Deleted</p>
-                      <p className="text-gray-400 text-xs">{fmtDate(item.deletedAt)}</p>
-                    </>
                   )}
                 </div>
 
@@ -628,9 +621,8 @@ export default function TrashView({ uid }) {
             <span className="text-4xl">⚠️</span>
             <h3 className="text-white font-bold text-lg">Delete Permanently?</h3>
             <p className="text-gray-400 text-sm">
-              Once deleted, this data <span className="text-white font-bold">cannot be recovered</span> on your own.
-              Only in a genuine emergency, you may contact support — but restoration is{" "}
-              <span className="text-red-400 font-bold">not guaranteed</span>.
+              <span className="text-white font-bold">{getLabel(item)}</span> will be permanently deleted.
+              This action <span className="text-red-400 font-bold">cannot be undone</span>.
             </p>
             <div className="flex gap-3">
               <button onClick={() => setPermId(null)} disabled={working}

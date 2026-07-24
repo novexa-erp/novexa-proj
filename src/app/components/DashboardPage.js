@@ -24,6 +24,8 @@ import MyTicketsView from "./MyTicketsView";
 import TrashView from "./TrashView";
 import ComingSoonView from "./ComingSoonView";
 import AddonsView from "./AddonsView";
+import BackupView from "./BackupView";
+import PWAInstallButton from "./PWAInstallButton";
 
 // ── Sidebar nav items ────────────────────────────────────────────────────────
 const navItems = [
@@ -41,6 +43,7 @@ const navItems = [
   { icon: "📞", label: "Contact Us",  id: "contact"     },
   { icon: "🎫", label: "My Tickets",  id: "my-tickets"  },
   { icon: "⚡", label: "Add-ons",     id: "addons"      },
+  { icon: "💾", label: "Backup",      id: "backup"      },
 ];
 
 // ── Plan → allowed tab IDs ────────────────────────────────────────────────────
@@ -49,24 +52,24 @@ const navItems = [
 const PLAN_PERMISSIONS = {
   starter: new Set([
     "overview", "invoices", "customers", "inventory",
-    "payments", "purchases", "settings", "contact", "my-tickets", "trash", "addons",
+    "payments", "purchases", "settings", "contact", "my-tickets", "trash", "addons", "backup",
   ]),
   business: new Set([
     "overview", "invoices", "customers", "inventory",
     "payments", "purchases", "order-form", "analytics",
-    "settings", "contact", "my-tickets", "trash", "addons",
+    "settings", "contact", "my-tickets", "trash", "addons", "backup",
   ]),
   professional: new Set([
     "overview", "invoices", "customers", "inventory",
     "payments", "purchases", "order-form", "analytics",
     "hr", "branches",
-    "settings", "contact", "my-tickets", "trash", "addons",
+    "settings", "contact", "my-tickets", "trash", "addons", "backup",
   ]),
   enterprise: new Set([
     "overview", "invoices", "customers", "inventory",
     "payments", "purchases", "order-form", "analytics",
     "hr", "branches",
-    "settings", "contact", "my-tickets", "trash", "addons",
+    "settings", "contact", "my-tickets", "trash", "addons", "backup",
   ]),
 };
 
@@ -75,7 +78,7 @@ const ALWAYS_SHOW_TABS = new Set([
   "overview", "invoices", "customers", "inventory",
   "payments", "purchases", "order-form", "analytics",
   "hr", "branches",
-  "settings", "contact", "my-tickets", "addons",
+  "settings", "contact", "my-tickets", "addons", "backup",
 ]);
 
 function getPlanPermissions(plan) {
@@ -273,7 +276,7 @@ function DashboardContent() {
             if (planData) {
               setPlanDetails(planData);
               if (planData?.allowedTabs) {
-                setAllowedTabsSet(new Set([...planData.allowedTabs, "trash", "addons"]));
+                setAllowedTabsSet(new Set([...planData.allowedTabs, "trash", "addons", "backup"]));
                 return;
               }
             }
@@ -1336,6 +1339,9 @@ function DashboardContent() {
               <DigitalClock />
             </div>
 
+            {/* PWA Install Button */}
+            <PWAInstallButton style={{ padding: "6px 12px", fontSize: 12, borderRadius: 10 }} />
+
             {/* Refresh current view button */}
             <button
               onClick={() => {
@@ -1487,6 +1493,8 @@ function DashboardContent() {
             <TrashView key={`trash-${refreshKey}`} uid={user?.uid} />
           ) : activeNav === "addons" ? (
             <AddonsView key={`addons-${refreshKey}`} uid={user?.uid} userDoc={userDoc} user={user} />
+          ) : activeNav === "backup" ? (
+            <BackupView key={`backup-${refreshKey}`} uid={user?.uid} userDoc={userDoc} />
           ) : (
           <>
           {/* Overview Section with Professional Loader */}
