@@ -78,13 +78,14 @@ export default function PWAInstallButton({ className = "", style = {} }) {
           onClick={() => setShowIosHint(true)}
           className={className}
           style={{
-            display: "flex", alignItems: "center", gap: 8,
-            padding: "10px 16px", borderRadius: 12, cursor: "pointer",
+            display: "flex", alignItems: "center", gap: 6,
+            padding: "7px 10px", borderRadius: 12, cursor: "pointer",
             background: "linear-gradient(135deg,#3b82f6,#6366f1)",
-            color: "#fff", fontWeight: 700, fontSize: 13, border: "none",
+            color: "#fff", fontWeight: 700, fontSize: 12, border: "none",
             ...style,
           }}>
-          📲 Install App
+          <span>📲</span>
+          <span className="hidden sm:inline">Install App</span>
         </button>
 
         {showIosHint && (
@@ -136,13 +137,14 @@ export default function PWAInstallButton({ className = "", style = {} }) {
   if (state === "installed") {
     return (
       <div style={{
-        display: "flex", alignItems: "center", gap: 8,
-        padding: "10px 16px", borderRadius: 12,
+        display: "flex", alignItems: "center", gap: 6,
+        padding: "7px 10px", borderRadius: 12,
         background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.25)",
-        color: "#34d399", fontWeight: 700, fontSize: 13,
+        color: "#34d399", fontWeight: 700, fontSize: 12,
         ...style,
       }} className={className}>
-        ✅ App Installed
+        <span>✅</span>
+        <span className="hidden sm:inline">Installed</span>
       </div>
     );
   }
@@ -151,17 +153,18 @@ export default function PWAInstallButton({ className = "", style = {} }) {
   if (state === "available") {
     return (
       <button onClick={handleInstall} className={className} style={{
-        display: "flex", alignItems: "center", gap: 8,
-        padding: "10px 16px", borderRadius: 12, cursor: "pointer",
+        display: "flex", alignItems: "center", gap: 6,
+        padding: "7px 10px", borderRadius: 12, cursor: "pointer",
         background: "linear-gradient(135deg,#3b82f6,#6366f1)",
-        color: "#fff", fontWeight: 700, fontSize: 13, border: "none",
+        color: "#fff", fontWeight: 700, fontSize: 12, border: "none",
         boxShadow: "0 4px 16px rgba(59,130,246,0.3)",
         transition: "transform .15s",
         ...style,
       }}
         onMouseEnter={e => e.currentTarget.style.transform = "scale(1.04)"}
         onMouseLeave={e => e.currentTarget.style.transform = "scale(1)"}>
-        📲 Install App
+        <span>📲</span>
+        <span className="hidden sm:inline">Install App</span>
       </button>
     );
   }

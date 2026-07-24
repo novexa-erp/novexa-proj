@@ -296,11 +296,12 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
   // Helper: get actual balance of an invoice (excluding previous-balance carry-forward items)
   // Also subtracts goods returns from payments collection
   const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+  const getVarMultFn  = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
   const getActualBalance = inv => {
     const actualAmt = inv.actualAmount != null
       ? Number(inv.actualAmount)
       : (inv.items || []).filter(it => !isPrevBalItem(it))
-          .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+          .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMultFn(it) * (Number(it.unitPrice) || 0), 0);
     const invReturnsTotal = customerPayments
       .filter(p => p.type === "return" && p.invoiceId === inv.id)
       .reduce((s, p) => s + (Number(p.returnAmount) || 0), 0);
@@ -326,7 +327,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
     const amt = i.actualAmount != null
       ? Number(i.actualAmount)
       : (i.items || []).filter(it => !isPrevBalItem(it))
-          .reduce((sum, it) => sum + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+          .reduce((sum, it) => sum + (Number(it.qty) || 0) * getVarMultFn(it) * (Number(it.unitPrice) || 0), 0);
     return s + amt;
   }, 0);
   const totalPaid = custInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
@@ -411,9 +412,10 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
       // Calculate actual amount excluding "Previous Balance · INV-" carry-forward items
       // These items are bookkeeping only — history should show real sale amount
       const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+      const getVarMult    = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
       const actualItems   = (formData.items || []).filter(it => !isPrevBalItem(it));
       const actualAmount  = actualItems.reduce(
-        (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0
+        (s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0
       );
       // Apply same discount ratio to actual amount
       const discountVal = formData.discountType === "percent"
@@ -477,7 +479,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         );
         const hasNewItems = newItems.length > 0;
         const newPurchaseAmount = newItems.reduce(
-          (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0
+          (s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0
         );
 
         if (hasNewItems) {
@@ -492,7 +494,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
           // Recalculate totals with merged items
           const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
           const mergedSubtotal = mergedItems.reduce(
-            (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0
+            (s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0
           );
           const mergedDiscount = formData.discountType === "percent"
             ? mergedSubtotal * (Number(formData.discountValue) || 0) / 100
@@ -505,7 +507,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
           // actualAmount with merged items (no prev bal)
           const mergedActual = mergedItems
             .filter(it => !isPrevBalItem(it))
-            .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+            .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0);
           const mergedDiscountForActual = formData.discountType === "percent"
             ? mergedActual * (Number(formData.discountValue) || 0) / 100
             : Math.min(Number(formData.discountValue) || 0, mergedActual);
@@ -605,9 +607,9 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         // ── Handle Goods Return ──────────────────────────────────────────────
         const retData = formData.returnItem;
         if (retData && retData.description && Number(retData.qty) > 0 && Number(retData.rate) > 0) {
-          // Variant multiplier for custom (non-inventory) return items
+          // Variant multiplier for return items (inventory or non-inventory)
           // e.g. 0.5 kg variant → multiplier = 0.5, so returnAmount = qty × 0.5 × rate
-          const retVarMult = (!retData.productId && retData.variantLabel)
+          const retVarMult = retData.variantLabel
             ? (() => { const n = parseFloat(retData.variantLabel); return (!isNaN(n) && n > 0) ? n : 1; })()
             : 1;
 
@@ -1307,11 +1309,12 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             {custInvoices.map(inv => {
               // Actual purchase amount — exclude "Previous Balance · INV-" carry-forward items
               const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+              const getVMult      = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
               const displayAmount = inv.actualAmount != null
                 ? Number(inv.actualAmount)
                 : (inv.items || [])
                     .filter(it => !isPrevBalItem(it))
-                    .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0)
+                    .reduce((s, it) => s + (Number(it.qty) || 0) * getVMult(it) * (Number(it.unitPrice) || 0), 0)
                   || Number(inv.amount) || 0;
               const amtPaid = Number(inv.amountPaid) || 0;
               // Include goods returns from payments for accurate balance
@@ -1650,10 +1653,11 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose, userDoc, 
   function getActualAmount(inv) {
     if (inv.actualAmount != null) return Number(inv.actualAmount);
     if (inv.originalAmount != null) return Number(inv.originalAmount);
-    const isPrevBal = (desc) => (desc || "").startsWith("Previous Balance · INV-");
+    const isPrevBal  = (desc) => (desc || "").startsWith("Previous Balance · INV-");
+    const getVMult2  = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
     return (inv.items || [])
       .filter(it => !isPrevBal(it.description))
-      .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0)
+      .reduce((s, it) => s + (Number(it.qty) || 0) * getVMult2(it) * (Number(it.unitPrice) || 0), 0)
       || Number(inv.amount) || 0;
   }
   const totalInvoices  = invoices.length;

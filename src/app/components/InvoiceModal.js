@@ -25,7 +25,7 @@ export function calcTotals(form) {
   const isPrevBal = it => (it.description || "").startsWith("Previous Balance · INV-");
   const subtotal = form.items.reduce(
     (s, it) => {
-      const varMult = (!it.productId && it.variantLabel) ? getVariantMultiplier(it.variantLabel) : 1;
+      const varMult = it.variantLabel ? getVariantMultiplier(it.variantLabel) : 1;
       return s + (Number(it.qty) || 0) * varMult * (Number(it.unitPrice) || 0);
     }, 0
   );
@@ -42,7 +42,7 @@ export function calcTotals(form) {
   const actualSubtotal = form.items
     .filter(it => !isPrevBal(it))
     .reduce((s, it) => {
-      const varMult = (!it.productId && it.variantLabel) ? getVariantMultiplier(it.variantLabel) : 1;
+      const varMult = it.variantLabel ? getVariantMultiplier(it.variantLabel) : 1;
       return s + (Number(it.qty) || 0) * varMult * (Number(it.unitPrice) || 0);
     }, 0);
   const actualDiscount = form.discountType === "percent"
@@ -324,9 +324,7 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const variantMultiplier = (!item.productId && item.variantLabel)
-    ? getVariantMultiplier(item.variantLabel)
-    : 1;
+  const variantMultiplier = item.variantLabel ? getVariantMultiplier(item.variantLabel) : 1;
   const lineTotal = (Number(item.qty) || 0) * variantMultiplier * (Number(item.unitPrice) || 0);
   const stock = Number(item.stock) || 0;
   const qty = Number(item.qty) || 0;
@@ -336,9 +334,9 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
 
   return (
     <div ref={rowRef} className="relative flex flex-col gap-2">
-      {/* Main Row */}
-      <div className="grid gap-2 items-center"
-        style={{ gridTemplateColumns: hasVariants ? "1fr 64px 110px 80px 36px" : "1fr 64px 110px 80px 36px" }}>
+      {/* Main Row — on mobile: description full-width, then qty/price/total in a row below */}
+      <div className="hidden sm:grid gap-2 items-center"
+        style={{ gridTemplateColumns: "1fr 64px 110px 80px 36px" }}>
 
         {/* description + autocomplete */}
         <div className="relative">
@@ -438,6 +436,87 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
           style={{ color: "#f87171", background: "rgba(248,113,113,0.08)", opacity: (canRemove && !isRowLocked) ? 1 : 0.15 }}>
           ✕
         </button>
+      </div>
+
+      {/* Mobile layout — stacked: description full-width, then qty + price + total + remove in one row */}
+      <div className="flex flex-col gap-1.5 sm:hidden">
+        {/* Description */}
+        <div className="relative">
+          <input type="text" placeholder="Item / product name" value={item.description}
+            onChange={e => isRowLocked ? undefined : handleDescChange(e.target.value)}
+            onFocus={() => { if (!isRowLocked && suggestions.length > 0) setShowSug(true); }}
+            readOnly={isRowLocked}
+            autoComplete="off"
+            style={{
+              ...base, paddingRight: isRowLocked ? 12 : 32,
+              opacity: isRowLocked ? 0.65 : 1,
+              cursor: isRowLocked ? "default" : "text",
+              background: isRowLocked ? "rgba(255,255,255,0.02)" : base.background,
+              color: isRowLocked ? "#9ca3af" : "#fff",
+            }} />
+          {!isRowLocked && (
+            <button type="button" onClick={() => onOpenPicker(idx)}
+              title="Browse all products"
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-500 hover:text-amber-400 transition-colors text-sm">
+              📦
+            </button>
+          )}
+          {!isRowLocked && showSug && (
+            <div className="absolute top-full left-0 right-0 mt-1 rounded-xl overflow-hidden z-30"
+              style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
+              {suggestions.map(p => {
+                const hasVars = p.variantType !== "none" && p.variants?.length > 0;
+                const totalStock = hasVars ? p.variants.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0) : (p.stock || 0);
+                return (
+                  <button key={p.id} type="button"
+                    onMouseDown={() => selectSuggestion(p)}
+                    className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-white/[0.04] transition-colors border-b border-white/[0.04] last:border-0">
+                    <div>
+                      <p className="text-white text-xs font-medium">{p.name} {hasVars && <span className="text-gray-500 text-[10px]">({p.variants.length} variants)</span>}</p>
+                      <p className="text-gray-500 text-[10px]">Stock: {totalStock}</p>
+                    </div>
+                    <p className="text-amber-400 text-xs font-bold ml-2 flex-shrink-0">{hasVars ? "Select variant →" : formatRs(p.price)}</p>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+        </div>
+        {/* Qty + Unit Price + Total + Remove */}
+        <div className="grid gap-1.5 items-center" style={{ gridTemplateColumns: "60px 1fr 72px 32px" }}>
+          <input type="number" inputMode="numeric" min="1" placeholder="Qty" value={item.qty}
+            onChange={e => isRowLocked ? undefined : handleQtyChange(e.target.value)}
+            readOnly={isRowLocked}
+            max={item.stock || undefined}
+            style={{
+              ...base, textAlign: "center", padding: "8px 4px", fontSize: 12,
+              borderColor: (qty > stock && stock > 0) ? "#f87171" : "rgba(255,255,255,0.09)",
+              opacity: isRowLocked ? 0.65 : 1,
+              cursor: isRowLocked ? "default" : "text",
+              background: isRowLocked ? "rgba(255,255,255,0.02)" : base.background,
+              color: isRowLocked ? "#9ca3af" : "#fff",
+            }} />
+          <input type="number" inputMode="decimal" min="0" placeholder="Unit price" value={item.unitPrice}
+            onChange={e => isRowLocked ? undefined : onChange(idx, "unitPrice", e.target.value)}
+            readOnly={isRowLocked}
+            disabled={!isRowLocked && (hasVariants && item.variantId)}
+            style={{
+              ...base, textAlign: "right", padding: "8px 8px", fontSize: 12,
+              opacity: isRowLocked ? 0.65 : (hasVariants && item.variantId) ? 0.6 : 1,
+              cursor: isRowLocked ? "default" : (hasVariants && item.variantId) ? "not-allowed" : "text",
+              background: isRowLocked ? "rgba(255,255,255,0.02)" : (hasVariants && item.variantId) ? "rgba(255,255,255,0.02)" : base.background,
+              color: isRowLocked ? "#9ca3af" : "#fff",
+            }} />
+          <p className="text-[11px] font-semibold text-right pr-0.5 flex-shrink-0"
+            style={{ color: lineTotal > 0 ? (isRowLocked ? "#6b7280" : "#fff") : "#4b5563" }}>
+            {lineTotal > 0 ? formatRs(lineTotal) : "—"}
+          </p>
+          <button type="button" onClick={() => onRemove(idx)} disabled={!canRemove || isRowLocked}
+            className="w-8 h-8 rounded-xl flex items-center justify-center transition-colors flex-shrink-0"
+            style={{ color: "#f87171", background: "rgba(248,113,113,0.08)", opacity: (canRemove && !isRowLocked) ? 1 : 0.15 }}>
+            ✕
+          </button>
+        </div>
       </div>
 
       {/* Variant Selection Row (if product has variants) */}
@@ -734,8 +813,8 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
   );
 
   // ── goods return helpers (edit mode) ────────────────────────────────────────
-  // variant multiplier for custom (non-inventory) return items
-  const retVarMult = (!returnItem.productId && returnItem.variantLabel)
+  // variant multiplier for return items (inventory or non-inventory)
+  const retVarMult = returnItem.variantLabel
     ? getVariantMultiplier(returnItem.variantLabel)
     : 1;
   const returnTotal = (Number(returnItem.qty) || 0) * retVarMult * (Number(returnItem.rate) || 0);
@@ -821,15 +900,15 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
     />
     
     <div ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-start justify-center p-4 overflow-y-auto"
+      className="fixed inset-0 z-50 flex items-start justify-center p-2 sm:p-4 overflow-y-auto"
       style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(6px)" }}
       onClick={(e) => { if (e.target === overlayRef.current) onClose(); }}>
 
-      <div className="relative w-full max-w-2xl my-6 rounded-2xl flex flex-col"
+      <div className="relative w-full max-w-2xl my-2 sm:my-6 rounded-2xl flex flex-col"
         style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.1)" }}>
 
         {/* ── Header ── */}
-        <div className="flex items-center justify-between px-6 py-5 border-b border-white/[0.07]">
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 sm:py-5 border-b border-white/[0.07]">
           <div>
             <h2 className="text-white font-black text-xl">{initial ? "Edit Invoice" : "New Invoice"}</h2>
             <p className="text-gray-500 text-xs mt-0.5">{initial ? "Update invoice details" : "Fill in the details below"}</p>
@@ -840,7 +919,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
           </button>
         </div>
 
-        <form onSubmit={handleSubmit} className="flex flex-col gap-5 p-6">
+        <form onSubmit={handleSubmit} className="flex flex-col gap-5 p-4 sm:p-6">
 
           {/* ── Logo upload ── */}
           <div>
@@ -887,8 +966,8 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
           {/* ── Customer Info ── */}
           <div>
             <p className={sect} style={{ color: "#F59E0B" }}>Customer Information</p>
-            <div className="grid grid-cols-2 gap-3">
-              <FInput label="Customer Name" req cls="col-span-2">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              <FInput label="Customer Name" req cls="sm:col-span-2">
                 <StyledInput placeholder="e.g. Ali Traders" value={form.customerName}
                   onChange={set("customerName")} req />
               </FInput>
@@ -919,7 +998,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
               <FInput label="Email" req>
                 <StyledInput type="email" placeholder="customer@example.com" value={form.email} onChange={set("email")} req />
               </FInput>
-              <FInput label="Address" cls="col-span-2">
+              <FInput label="Address" cls="sm:col-span-2">
                 <StyledInput placeholder="Street, City..." value={form.address} onChange={set("address")} />
               </FInput>
             </div>
@@ -929,8 +1008,8 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
           <div>
             <p className={sect} style={{ color: "#2563EB" }}>Items / Services</p>
             <div className="flex flex-col gap-2">
-              {/* column headers */}
-              <div className="grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
+              {/* column headers — desktop only */}
+              <div className="hidden sm:grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
                 style={{ gridTemplateColumns: "1fr 64px 110px 80px 36px" }}>
                 <span>Description {!initial && <span className="text-gray-700 normal-case font-normal">(type to search)</span>}</span>
                 <span className="text-center">Qty</span>
@@ -938,31 +1017,76 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                 <span className="text-right">Total</span>
                 <span />
               </div>
+              {/* column headers — mobile only */}
+              <div className="sm:hidden flex justify-between text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1">
+                <span>Description {!initial && <span className="text-gray-700 normal-case font-normal">(search)</span>}</span>
+                <div className="flex gap-3">
+                  <span style={{ width: 60, textAlign: "center" }}>Qty</span>
+                  <span style={{ flex: 1, textAlign: "right" }}>Price</span>
+                </div>
+              </div>
 
               {/* Edit mode: all existing items fully locked (read-only display rows) */}
               {initial ? (
                 form.items.map((item, idx) => {
-                  const lineTotal = (Number(item.qty) || 0) * (Number(item.unitPrice) || 0);
+                  const varMult = item.variantLabel ? getVariantMultiplier(item.variantLabel) : 1;
+                  const lineTotal = (Number(item.qty) || 0) * varMult * (Number(item.unitPrice) || 0);
                   return (
-                    <div key={idx} className="grid gap-2 items-center"
-                      style={{ gridTemplateColumns: "1fr 64px 110px 80px 36px" }}>
-                      <div className="px-3 py-2 rounded-xl text-sm text-gray-400 truncate"
-                        style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.06)" }}>
-                        {item.description || "—"}
+                    <div key={idx}>
+                      {/* desktop */}
+                      <div className="hidden sm:grid gap-2 items-center"
+                        style={{ gridTemplateColumns: "1fr 64px 110px 80px 36px" }}>
+                        <div className="px-3 py-2 rounded-xl text-sm text-gray-400 truncate"
+                          style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.06)" }}>
+                          {item.description || "—"}
+                          {item.variantLabel && (
+                            <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                              style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b" }}>
+                              {item.variantLabel}
+                            </span>
+                          )}
+                        </div>
+                        <div className="px-2 py-2 rounded-xl text-sm text-gray-400 text-center"
+                          style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.06)" }}>
+                          {item.qty}
+                        </div>
+                        <div className="px-2 py-2 rounded-xl text-sm text-gray-400 text-right"
+                          style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.06)" }}>
+                          {item.unitPrice}
+                          {item.variantUnit && <span className="text-[10px] text-gray-600 ml-0.5">/{item.variantUnit}</span>}
+                        </div>
+                        <p className="text-xs font-semibold text-right pr-1" style={{ color: lineTotal > 0 ? "#9ca3af" : "#4b5563" }}>
+                          {lineTotal > 0 ? formatRs(lineTotal) : "—"}
+                        </p>
+                        <div className="w-9 h-9" />
                       </div>
-                      <div className="px-2 py-2 rounded-xl text-sm text-gray-400 text-center"
-                        style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.06)" }}>
-                        {item.qty}
+                      {/* mobile */}
+                      <div className="sm:hidden flex flex-col gap-1">
+                        <div className="px-3 py-2 rounded-xl text-sm text-gray-400 truncate"
+                          style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.06)" }}>
+                          {item.description || "—"}
+                          {item.variantLabel && (
+                            <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                              style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b" }}>
+                              {item.variantLabel}
+                            </span>
+                          )}
+                        </div>
+                        <div className="grid gap-1.5 items-center" style={{ gridTemplateColumns: "60px 1fr 72px" }}>
+                          <div className="px-2 py-1.5 rounded-xl text-xs text-gray-400 text-center"
+                            style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.06)" }}>
+                            {item.qty}
+                          </div>
+                          <div className="px-2 py-1.5 rounded-xl text-xs text-gray-400 text-right"
+                            style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.06)" }}>
+                            {item.unitPrice}
+                            {item.variantUnit && <span className="text-[10px] text-gray-600 ml-0.5">/{item.variantUnit}</span>}
+                          </div>
+                          <p className="text-xs font-semibold text-right pr-1" style={{ color: lineTotal > 0 ? "#9ca3af" : "#4b5563" }}>
+                            {lineTotal > 0 ? formatRs(lineTotal) : "—"}
+                          </p>
+                        </div>
                       </div>
-                      <div className="px-2 py-2 rounded-xl text-sm text-gray-400 text-right"
-                        style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.06)" }}>
-                        {item.unitPrice}
-                      </div>
-                      <p className="text-xs font-semibold text-right pr-1" style={{ color: lineTotal > 0 ? "#9ca3af" : "#4b5563" }}>
-                        {lineTotal > 0 ? formatRs(lineTotal) : "—"}
-                      </p>
-                      {/* locked — no remove button */}
-                      <div className="w-9 h-9" />
                     </div>
                   );
                 })
@@ -1039,7 +1163,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                       {isVariant ? (
                         /* ── Variant mode: product + unit input + rate (locked) + total ── */
                         <>
-                          <div className="grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
+                          <div className="hidden sm:grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
                             style={{ gridTemplateColumns: "1fr 120px 110px 90px" }}>
                             <span>Product</span>
                             <span className="text-center">Qty ({variantUnit})</span>
@@ -1047,7 +1171,8 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                             <span className="text-right">Total</span>
                           </div>
 
-                          <div className="grid gap-2 items-center"
+                          {/* Desktop row */}
+                          <div className="hidden sm:grid gap-2 items-center"
                             style={{ gridTemplateColumns: "1fr 120px 110px 90px" }}>
                             {/* Product name — read only */}
                             <div className="px-3 py-2 rounded-xl text-sm truncate"
@@ -1095,11 +1220,58 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                                 : "—"}
                             </p>
                           </div>
+
+                          {/* Mobile stacked */}
+                          <div className="sm:hidden flex flex-col gap-2">
+                            <div className="px-3 py-2 rounded-xl text-sm truncate"
+                              style={{ background: "rgba(255,255,255,0.03)", border: "1.5px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
+                              {additionalItems[0]?.description || "—"}
+                              {variantLabel && <span className="ml-1 text-[10px] text-amber-400">({variantLabel})</span>}
+                            </div>
+                            <div className="grid gap-2 items-center" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                              <div className="flex flex-col gap-1">
+                                <label style={lbl}>Qty ({variantUnit})</label>
+                                <input
+                                  type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="e.g. 0.5"
+                                  value={additionalItems[0]?.qty || ""}
+                                  onChange={e => setAddItem(0, "qty", e.target.value)}
+                                  style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(245,158,11,0.3)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" }}
+                                />
+                                <div className="flex flex-wrap gap-1">
+                                  {unitPresets.map(p => (
+                                    <button key={p} type="button"
+                                      onClick={() => setAddItem(0, "qty", p)}
+                                      className="px-1.5 py-0.5 rounded text-[9px] font-semibold transition-colors"
+                                      style={{
+                                        background: additionalItems[0]?.qty === p ? "rgba(245,158,11,0.3)" : "rgba(255,255,255,0.05)",
+                                        color: additionalItems[0]?.qty === p ? "#f59e0b" : "#6b7280",
+                                        border: `1px solid ${additionalItems[0]?.qty === p ? "rgba(245,158,11,0.4)" : "rgba(255,255,255,0.08)"}`,
+                                      }}>
+                                      {p}
+                                    </button>
+                                  ))}
+                                </div>
+                              </div>
+                              <div className="flex flex-col gap-1">
+                                <label style={lbl}>Rate / {variantUnit}</label>
+                                <div className="px-2 py-2 rounded-xl text-sm text-right"
+                                  style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.06)", color: "#9ca3af" }}>
+                                  {formatRs(additionalItems[0]?.unitPrice)}
+                                </div>
+                                <p className="text-xs font-bold text-right mt-1"
+                                  style={{ color: (Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0 ? "#f59e0b" : "#4b5563" }}>
+                                  {(Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0
+                                    ? `Total: ${formatRs((Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0))}`
+                                    : "Total: —"}
+                                </p>
+                              </div>
+                            </div>
+                          </div>
                         </>
                       ) : (
                         /* ── Normal mode: product + qty + rate + total ── */
                         <>
-                          <div className="grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
+                          <div className="hidden sm:grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
                             style={{ gridTemplateColumns: "1fr 90px 110px 90px" }}>
                             <span>Product</span>
                             <span className="text-center">Qty</span>
@@ -1107,7 +1279,8 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                             <span className="text-right">Total</span>
                           </div>
 
-                          <div className="grid gap-2 items-center"
+                          {/* Desktop row */}
+                          <div className="hidden sm:grid gap-2 items-center"
                             style={{ gridTemplateColumns: "1fr 90px 110px 90px" }}>
                             {/* Product name — read only */}
                             <div className="px-3 py-2 rounded-xl text-sm truncate"
@@ -1134,6 +1307,40 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                               {(Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0
                                 ? formatRs((Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0))
                                 : "—"}
+                            </p>
+                          </div>
+
+                          {/* Mobile stacked */}
+                          <div className="sm:hidden flex flex-col gap-2">
+                            <div className="px-3 py-2 rounded-xl text-sm truncate"
+                              style={{ background: "rgba(255,255,255,0.03)", border: "1.5px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
+                              {additionalItems[0]?.description || "—"}
+                            </div>
+                            <div className="grid gap-2 items-center" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                              <div>
+                                <label style={lbl}>Qty</label>
+                                <input
+                                  type="number" inputMode="numeric" min="1" placeholder="Qty"
+                                  value={additionalItems[0]?.qty || ""}
+                                  onChange={e => setAddItem(0, "qty", e.target.value)}
+                                  style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(255,255,255,0.09)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" }}
+                                />
+                              </div>
+                              <div>
+                                <label style={lbl}>Rate</label>
+                                <input
+                                  type="number" inputMode="decimal" min="0" placeholder="Rate"
+                                  value={additionalItems[0]?.unitPrice || ""}
+                                  onChange={e => setAddItem(0, "unitPrice", e.target.value)}
+                                  style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(255,255,255,0.09)", borderRadius:10, padding:"9px 10px", color:"#fff", fontSize:13, textAlign:"right" }}
+                                />
+                              </div>
+                            </div>
+                            <p className="text-xs font-bold text-right"
+                              style={{ color: (Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0 ? "#f59e0b" : "#4b5563" }}>
+                              {(Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0
+                                ? `Total: ${formatRs((Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0))}`
+                                : "Total: —"}
                             </p>
                           </div>
                         </>
@@ -1197,7 +1404,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                       </p>
                     </div>
                     <div className="p-4 flex flex-col gap-2">
-                      <div className="grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
+                      <div className="hidden sm:grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
                         style={{ gridTemplateColumns: "1fr 80px 100px 90px" }}>
                         <span>Product</span>
                         <span className="text-center">Qty</span>
@@ -1205,23 +1412,38 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                         <span className="text-right">Amount</span>
                       </div>
                       {pastReturns.map((ret, i) => (
-                        <div key={i} className="grid gap-2 items-center"
-                          style={{ gridTemplateColumns: "1fr 80px 100px 90px" }}>
-                          <div className="px-3 py-2 rounded-xl text-xs truncate"
-                            style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(248,113,113,0.15)", color: "#9ca3af" }}>
-                            {ret.description || "—"}
+                        <div key={i}>
+                          {/* Desktop */}
+                          <div className="hidden sm:grid gap-2 items-center"
+                            style={{ gridTemplateColumns: "1fr 80px 100px 90px" }}>
+                            <div className="px-3 py-2 rounded-xl text-xs truncate"
+                              style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(248,113,113,0.15)", color: "#9ca3af" }}>
+                              {ret.description || "—"}
+                            </div>
+                            <div className="px-2 py-2 rounded-xl text-xs text-center"
+                              style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(248,113,113,0.15)", color: "#9ca3af" }}>
+                              {ret.qty}
+                            </div>
+                            <div className="px-2 py-2 rounded-xl text-xs text-right"
+                              style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(248,113,113,0.15)", color: "#9ca3af" }}>
+                              {formatRs(ret.rate)}
+                            </div>
+                            <p className="text-xs font-semibold text-right pr-1" style={{ color: "#f87171" }}>
+                              - {formatRs(ret.returnAmount)}
+                            </p>
                           </div>
-                          <div className="px-2 py-2 rounded-xl text-xs text-center"
-                            style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(248,113,113,0.15)", color: "#9ca3af" }}>
-                            {ret.qty}
+                          {/* Mobile */}
+                          <div className="sm:hidden flex flex-col gap-1 py-1 border-b border-white/5 last:border-0">
+                            <div className="px-3 py-1.5 rounded-xl text-xs truncate"
+                              style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(248,113,113,0.15)", color: "#9ca3af" }}>
+                              {ret.description || "—"}
+                            </div>
+                            <div className="flex justify-between text-xs px-1">
+                              <span className="text-gray-500">Qty: <span className="text-gray-400">{ret.qty}</span></span>
+                              <span className="text-gray-500">Rate: <span className="text-gray-400">{formatRs(ret.rate)}</span></span>
+                              <span className="font-semibold" style={{ color: "#f87171" }}>- {formatRs(ret.returnAmount)}</span>
+                            </div>
                           </div>
-                          <div className="px-2 py-2 rounded-xl text-xs text-right"
-                            style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(248,113,113,0.15)", color: "#9ca3af" }}>
-                            {formatRs(ret.rate)}
-                          </div>
-                          <p className="text-xs font-semibold text-right pr-1" style={{ color: "#f87171" }}>
-                            - {formatRs(ret.returnAmount)}
-                          </p>
                         </div>
                       ))}
                     </div>
@@ -1290,8 +1512,8 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
 
                       {returnItem.description && (
                         <>
-                          {/* Column headers */}
-                          <div className="grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
+                          {/* Column headers — desktop only */}
+                          <div className="hidden sm:grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
                             style={{ gridTemplateColumns: "1fr 100px 110px 90px" }}>
                             <span>Product</span>
                             <span className="text-center">
@@ -1303,7 +1525,8 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                             <span className="text-right">Return Amount</span>
                           </div>
 
-                          <div className="grid gap-2 items-start"
+                          {/* Desktop input grid */}
+                          <div className="hidden sm:grid gap-2 items-start"
                             style={{ gridTemplateColumns: "1fr 100px 110px 90px" }}>
                             {/* Product — read only */}
                             <div>
@@ -1362,6 +1585,55 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                             </p>
                           </div>
 
+                          {/* Mobile stacked inputs */}
+                          <div className="sm:hidden flex flex-col gap-2">
+                            <div>
+                              <div className="px-3 py-2 rounded-xl text-sm truncate"
+                                style={{ background: "rgba(255,255,255,0.03)", border: "1.5px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
+                                {returnItem.description}
+                              </div>
+                              {returnItem.variantLabel && (
+                                <p className="text-[10px] text-gray-500 mt-1 pl-1">
+                                  {returnItem.variantLabel} × qty units
+                                  {retVarMult !== 1 && Number(returnItem.qty) > 0 &&
+                                    ` = ${((Number(returnItem.qty) || 0) * retVarMult).toFixed(2).replace(/\.?0+$/, "")} ${returnItem.variantUnit} total`}
+                                </p>
+                              )}
+                            </div>
+                            <div className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                              <div>
+                                <label style={lbl}>Qty{returnItem.variantLabel ? " (units)" : ""}</label>
+                                <input type="number" inputMode="numeric"
+                                  min="1"
+                                  max={returnItem.maxQty || undefined}
+                                  placeholder="Qty"
+                                  value={returnItem.qty}
+                                  onChange={e => {
+                                    const val = Number(e.target.value);
+                                    const capped = returnItem.maxQty > 0 ? Math.min(val, returnItem.maxQty) : val;
+                                    setReturnItem(p => ({ ...p, qty: String(capped > 0 ? capped : e.target.value) }));
+                                  }}
+                                  style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(248,113,113,0.3)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" }}
+                                />
+                                {returnItem.maxQty > 0 && (
+                                  <p className="text-[10px] text-center mt-1" style={{ color: "#6b7280" }}>max {returnItem.maxQty}</p>
+                                )}
+                              </div>
+                              <div>
+                                <label style={lbl}>Rate{returnItem.variantUnit ? ` / ${returnItem.variantUnit}` : ""}</label>
+                                <input type="number" inputMode="decimal" min="0" placeholder="Rate"
+                                  value={returnItem.rate}
+                                  onChange={e => setReturnItem(p => ({ ...p, rate: e.target.value }))}
+                                  style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(248,113,113,0.3)", borderRadius:10, padding:"9px 10px", color:"#fff", fontSize:13, textAlign:"right" }}
+                                />
+                              </div>
+                            </div>
+                            <p className="text-xs font-bold text-right"
+                              style={{ color: returnTotal > 0 ? "#f87171" : "#4b5563" }}>
+                              {returnTotal > 0 ? `Return: - ${formatRs(returnTotal)}` : "Return: —"}
+                            </p>
+                          </div>
+
                           {hasReturn && (
                             <div className="mt-1 px-3 py-2 rounded-lg text-xs"
                               style={{ background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>
@@ -1383,7 +1655,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
           {/* ── Discount ── */}
           <div>
             <p className={sect} style={{ color: "#F59E0B" }}>Discount</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FInput label="Discount Type">
                 <StyledSelect value={form.discountType} onChange={set("discountType")}>
                   <option value="percent" style={{ background: "#0d1117" }}>Percentage (%)</option>
@@ -1401,7 +1673,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
           {/* ── Payment ── */}
           <div>
             <p className={sect} style={{ color: "#34d399" }}>Payment Details</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FInput label="Amount Already Paid (Rs.)">
                 <StyledInput type="number" inputMode="decimal" min="0" placeholder="0"
                   value={form.amountPaid} onChange={set("amountPaid")}
@@ -1490,7 +1762,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
           {/* ── Dates ── */}
           <div>
             <p className={sect} style={{ color: "#2563EB" }}>Dates & Terms</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FInput label="Invoice Date" req>
                 <StyledInput type="date" value={form.invoiceDate} onChange={set("invoiceDate")} req />
               </FInput>
@@ -1508,9 +1780,9 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                 <span className="ml-2 text-gray-600 normal-case tracking-normal font-normal">(optional - add new payment)</span>
               </p>
               <div className="p-4 rounded-xl" style={{ background: "rgba(16,185,129,0.05)", border: "1px solid rgba(16,185,129,0.2)" }}>
-                <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                   {/* Payer Info */}
-                  <div className="col-span-2">
+                  <div className="sm:col-span-2">
                     <p className="text-xs font-bold text-green-400 mb-2 uppercase tracking-wide">👤 Payment From (Payer)</p>
                   </div>
                   <FInput label="Payer Name" req>
@@ -1530,7 +1802,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                   </FInput>
                   
                   {/* Receiver Info */}
-                  <div className="col-span-2 mt-2">
+                  <div className="sm:col-span-2 mt-2">
                     <p className="text-xs font-bold text-blue-400 mb-2 uppercase tracking-wide">💵 Payment To (Receiver)</p>
                   </div>
                   <FInput label="Receiver Name" req>
@@ -1550,7 +1822,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                   </FInput>
                   
                   {/* Payment Amount */}
-                  <div className="col-span-2 mt-2">
+                  <div className="sm:col-span-2 mt-2">
                     <FInput label={`💸 Payment Amount (Max: ${formatRs(displayActualBalance)})`}>
                       <StyledInput type="number" inputMode="decimal" min="0" max={displayActualBalance} step="0.01"
                         placeholder="0" value={form.newPaymentAmount || ""}
@@ -1564,7 +1836,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                   </div>
 
                   {/* Payment Method selector */}
-                  <div className="col-span-2 mt-2">
+                  <div className="sm:col-span-2 mt-2">
                     <p className="text-xs font-bold uppercase tracking-wide mb-2" style={{ color: "#a78bfa" }}>💳 Payment Method</p>
                     <div className="flex gap-2 flex-wrap">
                       {[
@@ -1619,7 +1891,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
               <span className="ml-2 text-gray-600 normal-case tracking-normal font-normal">(optional)</span>
             </p>
             <p className="text-gray-600 text-xs mb-3">Pay within X days → get Y% extra discount</p>
-            <div className="grid grid-cols-2 gap-3">
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
               <FInput label="Pay within (days)">
                 <StyledInput type="number" inputMode="numeric" min="1" placeholder="e.g. 7"
                   value={form.earlyDiscountDays} onChange={set("earlyDiscountDays")} />

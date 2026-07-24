@@ -120,10 +120,11 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
   // filter — use effectiveStatus (recalculated from actualAmount) not stored status
   const filtered = directInvoices.filter(inv => {
     const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+    const getVarMult    = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
     const invActualAmt = inv.actualAmount != null
       ? Number(inv.actualAmount)
       : (inv.items || []).filter(it => !isPrevBalItem(it))
-          .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0)
+          .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0)
         || Number(inv.amount) || 0;
     const invAmtPaid = Number(inv.amountPaid) || 0;
     const invActualBalance = Math.max(0, invActualAmt - invAmtPaid);
@@ -769,10 +770,11 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
         ) : (
           filtered.map((inv) => {
             const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+            const getVarMult    = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
             const invActualAmt = inv.actualAmount != null
               ? Number(inv.actualAmount)
               : (inv.items || []).filter(it => !isPrevBalItem(it))
-                  .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0)
+                  .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0)
                 || Number(inv.amount) || 0;
             const invAmtPaid = Number(inv.amountPaid) || 0;
             const invActualBalance = Math.max(0, invActualAmt - invAmtPaid);
@@ -928,11 +930,12 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
       {deleteConf && (() => {
         const inv = invoices.find(i => i.id === deleteConf);
         const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+        const getVarMult    = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
         const invActualAmt = inv
           ? (inv.actualAmount != null
               ? Number(inv.actualAmount)
               : (inv.items || []).filter(it => !isPrevBalItem(it))
-                  .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0)
+                  .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0)
                 || Number(inv.amount) || 0)
           : 0;
         const invAmtPaid   = inv ? (Number(inv.amountPaid) || 0) : 0;

@@ -1315,9 +1315,9 @@ function DashboardContent() {
       <div className="flex-1 flex flex-col min-w-0">
 
         {/* topbar */}
-        <header className="sticky top-0 z-20 flex items-center justify-between px-5 py-4"
+        <header className="sticky top-0 z-20 flex items-center justify-between px-3 sm:px-5 py-3 sm:py-4"
           style={{ background: "rgba(8,13,20,0.95)", backdropFilter: "blur(12px)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
-          <div className="flex items-center gap-3">
+          <div className="flex items-center gap-2 sm:gap-3">
             <button className="lg:hidden p-2 rounded-lg hover:bg-white/10 transition-colors" onClick={() => setSidebarOpen(true)}>
               <div className="flex flex-col gap-1">
                 <span className="block w-5 h-0.5 bg-white" />
@@ -1326,21 +1326,21 @@ function DashboardContent() {
               </div>
             </button>
             <div>
-              <h1 className="text-white font-bold text-lg leading-none">
+              <h1 className="text-white font-bold text-base sm:text-lg leading-none">
                 {activeNav === "addons" ? "⚡ Add-ons" : navItems.find(n => n.id === activeNav)?.label ?? "Overview"}
               </h1>
               <p className="text-gray-500 text-xs mt-0.5">{todayStr()}</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            {/* Digital Clock */}
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Digital Clock — desktop only */}
             <div className="hidden sm:flex items-center gap-2 px-3 py-2 rounded-xl mr-1"
               style={{ background: "rgba(245,158,11,0.07)", border: "1px solid rgba(245,158,11,0.15)" }}>
               <DigitalClock />
             </div>
 
             {/* PWA Install Button */}
-            <PWAInstallButton style={{ padding: "6px 12px", fontSize: 12, borderRadius: 10 }} />
+            <PWAInstallButton style={{ padding: "6px 10px", fontSize: 11, borderRadius: 10 }} />
 
             {/* Refresh current view button */}
             <button
@@ -1351,9 +1351,9 @@ function DashboardContent() {
                 setTimeout(() => setRefreshing(false), 700);
               }}
               title="Refresh current view"
-              className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-all hover:bg-white/8 hover:scale-105 active:scale-95"
+              className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-all hover:bg-white/8 hover:scale-105 active:scale-95"
               style={{ border: "1px solid rgba(255,255,255,0.07)" }}>
-              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none"
+              <svg xmlns="http://www.w3.org/2000/svg" width="15" height="15" viewBox="0 0 24 24" fill="none"
                 stroke={refreshing ? "#60a5fa" : "#9ca3af"}
                 strokeWidth="2.2" strokeLinecap="round" strokeLinejoin="round"
                 style={{ transition: "stroke 0.2s", animation: refreshing ? "spin 0.7s linear" : "none" }}>
@@ -1363,7 +1363,7 @@ function DashboardContent() {
                 <path d="M8 16H3v5"/>
               </svg>
             </button>
-            <button className="relative w-9 h-9 rounded-xl flex items-center justify-center transition-colors hover:bg-white/8"
+            <button className="relative w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center transition-colors hover:bg-white/8"
               style={{ border: "1px solid rgba(255,255,255,0.07)" }}>
               <span className="text-base">🔔</span>
               {lowStockItems.length > 0 && (
@@ -1372,11 +1372,11 @@ function DashboardContent() {
             </button>
             {/* User Logo/Avatar */}
             {userDoc?.logoDataUrl ? (
-              <div className="w-9 h-9 rounded-xl overflow-hidden cursor-pointer" style={{ border: "1px solid rgba(255,255,255,0.1)" }}>
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl overflow-hidden cursor-pointer" style={{ border: "1px solid rgba(255,255,255,0.1)" }}>
                 <img src={userDoc.logoDataUrl} alt="Logo" className="w-full h-full object-cover" />
               </div>
             ) : (
-              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold cursor-pointer"
+              <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl flex items-center justify-center text-sm font-bold cursor-pointer"
                 style={{ background: "linear-gradient(135deg,#2563EB,#F59E0B)", color: "#fff" }}>{initials}</div>
             )}
           </div>
@@ -1508,10 +1508,10 @@ function DashboardContent() {
           ) : (
           <>
           {/* quick actions */}
-          <div className="flex flex-wrap gap-3 mb-7">
+          <div className="grid grid-cols-2 sm:flex sm:flex-wrap gap-3 mb-7">
             {quickActions.map((a) => (
               <button key={a.label} onClick={a.action}
-                className="group relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg">
+                className="group relative flex items-center justify-center sm:justify-start gap-2 px-4 py-3 sm:py-2.5 rounded-xl text-sm font-semibold transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg">
                 <div className={`absolute inset-0 bg-gradient-to-r ${a.color} opacity-90`} />
                 <div className={`absolute inset-0 bg-gradient-to-r ${a.color} opacity-0 group-hover:opacity-100 transition-opacity duration-300 brightness-110`} />
                 <span className="relative z-10 text-white">{a.icon}</span>

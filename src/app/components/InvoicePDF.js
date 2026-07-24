@@ -2,6 +2,13 @@
 import { useRef, useState, useEffect } from "react";
 import { formatRs } from "./InvoiceModal";
 
+// ── variant multiplier (e.g. "0.5 kg" → 0.5, "XL" → 1) ─────────────────────
+function getVariantMultiplier(variantLabel) {
+  if (!variantLabel) return 1;
+  const num = parseFloat(variantLabel);
+  return (!isNaN(num) && num > 0) ? num : 1;
+}
+
 // ── status color ──────────────────────────────────────────────────────────────
 const STATUS_COLOR = {
   Paid:    "#16a34a",
@@ -50,14 +57,20 @@ function InvoiceTemplate({ inv, userDoc, payments = [], customerTotalBalance = n
 
   // Subtotal only from items on the invoice (full, for display in items table)
   const subtotal = (inv.items || []).reduce(
-    (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0
+    (s, it) => {
+      const varMult = getVariantMultiplier(it.variantLabel);
+      return s + (Number(it.qty) || 0) * varMult * (Number(it.unitPrice) || 0);
+    }, 0
   );
 
   // Actual amounts — excluding previous balance carry-forward items
   // These are used for Balance Due calculation so this invoice can be fully paid
   // independently of older invoices' outstanding balances
   const actualSubtotal = originalItems.reduce(
-    (s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0
+    (s, it) => {
+      const varMult = getVariantMultiplier(it.variantLabel);
+      return s + (Number(it.qty) || 0) * varMult * (Number(it.unitPrice) || 0);
+    }, 0
   );
   const actualDiscount = inv.discountType === "percent"
     ? actualSubtotal * (Number(inv.discountValue) || 0) / 100
@@ -223,7 +236,8 @@ function InvoiceTemplate({ inv, userDoc, payments = [], customerTotalBalance = n
               return sum + (found ? Number(found.qty) || 0 : 0);
             }, 0);
             const originalQty = Math.max(1, (Number(it.qty) || 1) - additionalQty);
-            const lineTotal   = originalQty * (Number(it.unitPrice) || 0);
+            const varMult     = getVariantMultiplier(it.variantLabel);
+            const lineTotal   = originalQty * varMult * (Number(it.unitPrice) || 0);
             const rowNum      = prevBalItems.length + idx + 1;
 
             // Variant info — from inventory variant or custom variantLabel
@@ -251,7 +265,7 @@ function InvoiceTemplate({ inv, userDoc, payments = [], customerTotalBalance = n
           {/* Additional purchase rows */}
           {purchaseRecords.map((pr, prIdx) =>
             (pr.items || []).map((it, itIdx) => {
-              const lineTotal = (Number(it.qty) || 0) * (Number(it.unitPrice) || 0);
+              const lineTotal = (Number(it.qty) || 0) * getVariantMultiplier(it.variantLabel) * (Number(it.unitPrice) || 0);
               const rowNum    = prevBalItems.length + originalItems.length + prIdx + itIdx + 1;
               const variantLabel = it.variantLabel || "";
               const variantUnit  = it.variantUnit  || "";
