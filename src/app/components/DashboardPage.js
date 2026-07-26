@@ -826,7 +826,7 @@ function DashboardContent() {
 
         {/* nav */}
         <nav className="flex-1 px-3 py-4 flex flex-col gap-1 overflow-y-auto">
-          <p className="text-[10px] font-bold tracking-widest uppercase px-3 mb-2" style={{ color: "rgba(255,255,255,0.2)" }}>Main Menu</p>
+          <p className="text-[10px] font-bold tracking-widest uppercase px-3 mb-2" style={{ color: "white" }}>Main Menu</p>
           {navItems.map((item) => {
             const isActive  = activeNav === item.id;
             const userPlan  = userDoc?.plan || "starter";
@@ -854,7 +854,7 @@ function DashboardContent() {
                 className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full text-left transition-all duration-200"
                 style={{
                   background: isActive ? "rgba(37,99,235,0.12)" : "transparent",
-                  color: isActive ? "#fff" : "#6b7280",
+                  color: isActive ? "#fff" : "#FAFAFA",
                   borderLeft: isActive ? "2px solid #2563EB" : "2px solid transparent",
                 }}>
                 <span className="text-base">{item.icon}</span>
@@ -1648,7 +1648,7 @@ function DashboardContent() {
                         <div key={item.id} className="flex items-center justify-between gap-2">
                           <div className="min-w-0 flex-1">
                             <p className="text-gray-300 text-xs font-medium truncate">{item.name}</p>
-                            <p className="text-gray-600 text-[10px]">{stock} units</p>
+                            <p className="text-gray-300 text-[10px]">{stock} units</p>
                           </div>
                           <span className="text-[10px] font-bold px-2.5 py-0.5 rounded-lg flex-shrink-0 whitespace-nowrap"
                             style={{ background: `${color}18`, color, border: `1px solid ${color}40` }}>
@@ -1663,7 +1663,7 @@ function DashboardContent() {
                   <button
                     onClick={() => handleNavChange("inventory")}
                     className="mt-4 w-full py-2 rounded-lg text-xs font-semibold transition-all hover:bg-white/[0.08]"
-                    style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
+                    style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "white" }}>
                     See More →
                   </button>
                 )}
@@ -1679,7 +1679,7 @@ function DashboardContent() {
                   {/* Collected */}
                   <div>
                     <div className="flex justify-between mb-1.5">
-                      <span className="text-gray-400 text-xs">Collected</span>
+                      <span className="text-white text-xs">Collected</span>
                       <span className="text-white text-xs font-semibold">{formatRs(totalCollected)}</span>
                     </div>
                     <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
@@ -1690,7 +1690,7 @@ function DashboardContent() {
                   {/* Pending */}
                   <div>
                     <div className="flex justify-between mb-1.5">
-                      <span className="text-gray-400 text-xs">Pending</span>
+                      <span className="text-white text-xs">Pending</span>
                       <span className="text-white text-xs font-semibold">{formatRs(pendingAmount)}</span>
                     </div>
                     <div className="w-full h-1.5 rounded-full bg-white/[0.06] overflow-hidden">
@@ -1703,11 +1703,11 @@ function DashboardContent() {
                     <div className="mt-1 rounded-lg p-2.5 flex flex-col gap-1.5"
                       style={{ background: "rgba(251,191,36,0.05)", border: "1px solid rgba(251,191,36,0.1)" }}>
                       <div className="flex justify-between">
-                        <span className="text-gray-500 text-[11px]">↳ Customer pending</span>
+                        <span className="text-white text-[11px]">↳ Customer pending</span>
                         <span className="text-amber-400 text-[11px] font-semibold">{formatRs(customerBalance)}</span>
                       </div>
                       <div className="flex justify-between">
-                        <span className="text-gray-500 text-[11px]">↳ Other invoice pending</span>
+                        <span className="text-white text-[11px]">↳ Other invoice pending</span>
                         <span className="text-amber-400 text-[11px] font-semibold">{formatRs(otherBalance)}</span>
                       </div>
                     </div>
@@ -1720,7 +1720,7 @@ function DashboardContent() {
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2">
                     <span className="text-base">👥</span>
-                    <h3 className="text-white font-bold text-sm">Recent Customers</h3>
+                    <h5 className="text-white font-bold text-sm">Recent Customers</h5>
                   </div>
                   <button onClick={() => handleNavChange("customers")}
                     className="text-[11px] font-semibold" style={{ color: "#F59E0B" }}>
@@ -1745,7 +1745,7 @@ function DashboardContent() {
                           </div>
                           <div className="flex-1 min-w-0">
                             <p className="text-white text-xs font-semibold truncate">{c.name}</p>
-                            <p className="text-gray-500 text-[10px] truncate">{c.phone || c.email || "—"}</p>
+                            <p className="text-white text-[10px] truncate">{c.phone || c.email || "—"}</p>
                           </div>
                           {custBal > 0 && (
                             <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg flex-shrink-0"

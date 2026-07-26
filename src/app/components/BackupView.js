@@ -815,15 +815,15 @@ export default function BackupView({ uid }) {
                 style={{ background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.3)" }}>⏱️</div>
               <div>
                 <p className="text-white font-black text-sm">Auto-Backup Destination</p>
-                <p className="text-gray-500 text-xs">Where should auto-backups be saved?</p>
+                <p className="text-gray-200 text-xs">Where should auto-backups be saved?</p>
               </div>
-              <button onClick={() => setAutoDestModal(false)} className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+              <button onClick={() => setAutoDestModal(false)} className="ml-auto text-gray-200 hover:text-gray-200 text-lg">✕</button>
             </div>
             <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
               style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)" }}>
               <span className="text-2xl flex-shrink-0">🗂️</span>
               <div className="flex-1 min-w-0">
-                <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-0.5">Current Saved Folder</p>
+                <p className="text-[10px] text-gray-200 uppercase tracking-widest font-bold mb-0.5">Current Saved Folder</p>
                 <p className="text-amber-300 font-bold text-sm truncate">{savedFolderName}</p>
               </div>
             </div>
@@ -861,12 +861,12 @@ export default function BackupView({ uid }) {
                 style={{ background:"rgba(99,102,241,0.12)", border:"1px solid rgba(99,102,241,0.3)" }}>🔐</div>
               <div>
                 <p className="text-white font-black text-sm">Protect this backup?</p>
-                <p className="text-gray-500 text-xs">Encrypt with a password before saving</p>
+                <p className="text-gray-200 text-xs">Encrypt with a password before saving</p>
               </div>
               <button onClick={() => { setPwModal("idle"); pwPendingRef.current = null; }}
-                className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+                className="ml-auto text-gray-200 hover:text-gray-200 text-lg">✕</button>
             </div>
-            <div className="rounded-xl px-4 py-3 text-xs leading-relaxed text-gray-400"
+            <div className="rounded-xl px-4 py-3 text-xs leading-relaxed text-gray-200"
               style={{ background:"rgba(99,102,241,0.06)", border:"1px solid rgba(99,102,241,0.18)" }}>
               🔒 <span className="text-indigo-300 font-semibold">Encrypted (.novexa)</span> — password is asked when you restore from this dashboard, not when opening the file in Notepad.<br />
               📄 <span className="text-gray-300 font-semibold">Unencrypted (.json)</span> — plain readable JSON, anyone can open it.
@@ -901,13 +901,13 @@ export default function BackupView({ uid }) {
                 style={{ background:"rgba(99,102,241,0.12)", border:"1px solid rgba(99,102,241,0.3)" }}>🔑</div>
               <div>
                 <p className="text-white font-black text-sm">Set Backup Password</p>
-                <p className="text-gray-500 text-xs">AES-256 encryption — remember this password!</p>
+                <p className="text-gray-200 text-xs">AES-256 encryption — remember this password!</p>
               </div>
             </div>
 
             {/* Password input */}
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Password</label>
+              <label className="text-[10px] text-gray-200 uppercase tracking-widest font-bold">Password</label>
               <div className="relative">
                 <input
                   type={pwShow ? "text" : "password"}
@@ -920,7 +920,7 @@ export default function BackupView({ uid }) {
                   autoFocus
                 />
                 <button type="button" onClick={() => setPwShow(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs">
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-200 hover:text-gray-300 text-xs">
                   {pwShow ? "Hide" : "Show"}
                 </button>
               </div>
@@ -928,7 +928,7 @@ export default function BackupView({ uid }) {
 
             {/* Confirm input */}
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Confirm Password</label>
+              <label className="text-[10px] text-gray-200 uppercase tracking-widest font-bold">Confirm Password</label>
               <input
                 type={pwShow ? "text" : "password"}
                 value={pwConfirm}
@@ -977,16 +977,16 @@ export default function BackupView({ uid }) {
                 style={{ background:"rgba(245,158,11,0.12)", border:"1px solid rgba(245,158,11,0.3)" }}>🔐</div>
               <div>
                 <p className="text-white font-black text-sm">Encrypted Backup</p>
-                <p className="text-gray-500 text-xs truncate max-w-[180px]">{pwRestoreRef.current?.fileName}</p>
+                <p className="text-gray-200 text-xs truncate max-w-[180px]">{pwRestoreRef.current?.fileName}</p>
               </div>
               <button onClick={() => { setPwModal("idle"); pwRestoreRef.current = null; }}
-                className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+                className="ml-auto text-gray-200 hover:text-gray-200 text-lg">✕</button>
             </div>
 
-            <p className="text-gray-400 text-xs">Enter the password you used when creating this backup.</p>
+            <p className="text-gray-200 text-xs">Enter the password you used when creating this backup.</p>
 
             <div className="flex flex-col gap-1">
-              <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Password</label>
+              <label className="text-[10px] text-gray-200 uppercase tracking-widest font-bold">Password</label>
               <div className="relative">
                 <input
                   type={pwShow ? "text" : "password"}
@@ -999,7 +999,7 @@ export default function BackupView({ uid }) {
                   autoFocus
                 />
                 <button type="button" onClick={() => setPwShow(v => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs">
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-200 hover:text-gray-300 text-xs">
                   {pwShow ? "Hide" : "Show"}
                 </button>
               </div>
@@ -1032,20 +1032,20 @@ export default function BackupView({ uid }) {
                 style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)" }}>📁</div>
               <div>
                 <p className="text-white font-black text-sm">Where would you like to save?</p>
-                <p className="text-gray-500 text-xs">A previously saved folder exists</p>
+                <p className="text-gray-200 text-xs">A previously saved folder exists</p>
               </div>
               <button onClick={() => { setFolderPromptStep(null); pendingJsonRef.current = null; }}
-                className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+                className="ml-auto text-gray-200 hover:text-gray-200 text-lg">✕</button>
             </div>
             <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
               style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)" }}>
               <span className="text-2xl flex-shrink-0">🗂️</span>
               <div className="flex-1 min-w-0">
-                <p className="text-xs text-gray-500 uppercase tracking-widest font-bold mb-0.5">Saved Folder</p>
+                <p className="text-xs text-gray-200 uppercase tracking-widest font-bold mb-0.5">Saved Folder</p>
                 <p className="text-amber-300 font-bold text-sm truncate">{savedFolderName}</p>
               </div>
             </div>
-            <p className="text-gray-400 text-xs leading-relaxed text-center">The backup will be saved to this folder. Would you like to use it?</p>
+            <p className="text-gray-200 text-xs leading-relaxed text-center">The backup will be saved to this folder. Would you like to use it?</p>
             <div className="flex flex-col gap-2">
               <button onClick={handleUseSameFolder}
                 className="w-full py-3 rounded-xl text-sm font-black transition-all hover:scale-[1.02]"
@@ -1074,12 +1074,12 @@ export default function BackupView({ uid }) {
                 style={{ background:"rgba(52,211,153,0.12)", border:"1px solid rgba(52,211,153,0.3)" }}>📁</div>
               <div>
                 <p className="text-white font-black text-sm">Choose Save Folder</p>
-                <p className="text-gray-500 text-xs">Backup is ready — pick where to save it</p>
+                <p className="text-gray-200 text-xs">Backup is ready — pick where to save it</p>
               </div>
               <button onClick={() => { setFolderPromptStep(null); pendingJsonRef.current = null; }}
-                className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+                className="ml-auto text-gray-200 hover:text-gray-200 text-lg">✕</button>
             </div>
-            <p className="text-gray-400 text-xs leading-relaxed">
+            <p className="text-gray-200 text-xs leading-relaxed">
               Click the button below to choose a folder on your device. The backup file will be saved there.
             </p>
             <button onClick={handleChooseNewFolder}
@@ -1107,15 +1107,15 @@ export default function BackupView({ uid }) {
                 style={{ background: "rgba(59,130,246,0.12)", border: "1px solid rgba(59,130,246,0.3)" }}>♻️</div>
               <div>
                 <p className="text-white font-black text-sm">Choose Restore Mode</p>
-                <p className="text-gray-500 text-xs">How would you like to restore?</p>
+                <p className="text-gray-200 text-xs">How would you like to restore?</p>
               </div>
-              <button onClick={closeModal} className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+              <button onClick={closeModal} className="ml-auto text-gray-200 hover:text-gray-200 text-lg">✕</button>
             </div>
             <div className="rounded-xl px-4 py-3 flex flex-col gap-1.5"
               style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
-              <div className="flex gap-2 text-xs"><span className="text-gray-500 w-20 flex-shrink-0">File:</span><span className="text-white font-medium truncate">{fileInfo.name}</span>{fileInfo.encrypted && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0" style={{ background:"rgba(99,102,241,0.15)", color:"#818cf8", border:"1px solid rgba(99,102,241,0.3)" }}>🔐 Encrypted</span>}</div>
-              <div className="flex gap-2 text-xs"><span className="text-gray-500 w-20 flex-shrink-0">Backup Date:</span><span className="text-amber-300 font-medium">{fmtDate(fileInfo.exportedAt)}</span></div>
-              <div className="flex gap-2 text-xs"><span className="text-gray-500 w-20 flex-shrink-0">Records:</span><span className="text-green-400 font-bold">{fileInfo.docCount?.toLocaleString()}</span></div>
+              <div className="flex gap-2 text-xs"><span className="text-gray-200 w-20 flex-shrink-0">File:</span><span className="text-white font-medium truncate">{fileInfo.name}</span>{fileInfo.encrypted && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0" style={{ background:"rgba(99,102,241,0.15)", color:"#818cf8", border:"1px solid rgba(99,102,241,0.3)" }}>🔐 Encrypted</span>}</div>
+              <div className="flex gap-2 text-xs"><span className="text-gray-200 w-20 flex-shrink-0">Backup Date:</span><span className="text-amber-300 font-medium">{fmtDate(fileInfo.exportedAt)}</span></div>
+              <div className="flex gap-2 text-xs"><span className="text-gray-200 w-20 flex-shrink-0">Records:</span><span className="text-green-400 font-bold">{fileInfo.docCount?.toLocaleString()}</span></div>
             </div>
             <button onClick={() => setModalStep("confirm-merge")}
               className="w-full text-left rounded-2xl p-4 flex items-start gap-3 transition-all hover:scale-[1.01]"
@@ -1124,7 +1124,7 @@ export default function BackupView({ uid }) {
                 style={{ background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.3)" }}>🔀</div>
               <div className="flex flex-col gap-1">
                 <p className="text-white font-black text-sm">Smart Merge — Recommended</p>
-                <p className="text-gray-400 text-xs leading-relaxed">Backup data will be restored. Records created <span className="text-green-400 font-semibold">after</span> the backup date will <span className="text-green-400 font-semibold">remain safe</span>.</p>
+                <p className="text-gray-200 text-xs leading-relaxed">Backup data will be restored. Records created <span className="text-green-400 font-semibold">after</span> the backup date will <span className="text-green-400 font-semibold">remain safe</span>.</p>
                 <div className="flex flex-wrap gap-1.5 mt-1">
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background:"rgba(52,211,153,0.12)", color:"#34d399" }}>✅ New data safe</span>
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background:"rgba(52,211,153,0.12)", color:"#34d399" }}>✅ Backup restored</span>
@@ -1138,7 +1138,7 @@ export default function BackupView({ uid }) {
                 style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)" }}>🔄</div>
               <div className="flex flex-col gap-1">
                 <p className="text-white font-black text-sm">Full Replace</p>
-                <p className="text-gray-400 text-xs leading-relaxed">Your <span className="text-red-400 font-semibold">entire current data will be deleted</span> and only the backup data will remain. Any work done after the backup will be <span className="text-red-400 font-semibold">permanently lost</span>.</p>
+                <p className="text-gray-200 text-xs leading-relaxed">Your <span className="text-red-400 font-semibold">entire current data will be deleted</span> and only the backup data will remain. Any work done after the backup will be <span className="text-red-400 font-semibold">permanently lost</span>.</p>
                 <div className="flex flex-wrap gap-1.5 mt-1">
                   <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background:"rgba(239,68,68,0.12)", color:"#f87171" }}>⚠️ New data will be deleted</span>
                 </div>
@@ -1162,10 +1162,10 @@ export default function BackupView({ uid }) {
                 style={{ background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.3)" }}>🔀</div>
               <div>
                 <p className="text-white font-black text-sm">Confirm Smart Merge</p>
-                <p className="text-gray-500 text-xs">Today&apos;s work will be kept safe</p>
+                <p className="text-gray-200 text-xs">Today&apos;s work will be kept safe</p>
               </div>
             </div>
-            <div className="rounded-xl px-4 py-3 text-xs leading-relaxed text-gray-400"
+            <div className="rounded-xl px-4 py-3 text-xs leading-relaxed text-gray-200"
               style={{ background: "rgba(52,211,153,0.05)", border: "1px solid rgba(52,211,153,0.2)" }}>
               📅 Backup date: <span className="text-amber-300 font-semibold">{fmtDate(fileInfo.exportedAt)}</span><br />
               Records created <span className="text-green-400 font-medium">after this date</span> will be kept safe.<br />
@@ -1195,7 +1195,7 @@ export default function BackupView({ uid }) {
                 style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)" }}>⚠️</div>
               <div>
                 <p className="text-white font-black text-sm">Full Replace — Danger!</p>
-                <p className="text-gray-500 text-xs">This action cannot be undone</p>
+                <p className="text-gray-200 text-xs">This action cannot be undone</p>
               </div>
             </div>
             <div className="rounded-xl px-4 py-3 text-xs leading-relaxed"
@@ -1231,7 +1231,7 @@ export default function BackupView({ uid }) {
                 <p className="text-gray-300 text-sm leading-relaxed">
                   Download your entire Novexa data as a <span className="text-green-400 font-semibold">JSON file</span> — invoices, customers, inventory, payments, suppliers, and everything else.
                 </p>
-                <p className="text-gray-500 text-xs">
+                <p className="text-gray-200 text-xs">
                   ✅ Only <span className="text-white font-medium">your own data</span> — no other user&apos;s data.<br />
                   ✅ File stays on your device only — never uploaded to the cloud.
                 </p>
@@ -1241,12 +1241,12 @@ export default function BackupView({ uid }) {
                 {FLAT_COLLECTIONS.map(c => (
                   <div key={c.id} className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs"
                     style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)" }}>
-                    <span>{c.icon}</span><span className="text-gray-400">{c.label}</span>
+                    <span>{c.icon}</span><span className="text-gray-200">{c.label}</span>
                   </div>
                 ))}
                 <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs"
                   style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)" }}>
-                  <span>🔗</span><span className="text-gray-400">Nested Data</span>
+                  <span>🔗</span><span className="text-gray-200">Nested Data</span>
                 </div>
               </div>
 
@@ -1255,18 +1255,18 @@ export default function BackupView({ uid }) {
                   style={{ background: "rgba(245,158,11,0.05)", border: "1px solid rgba(245,158,11,0.2)" }}>
                   <span className="text-lg flex-shrink-0">🗂️</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-0.5">Saved Folder</p>
+                    <p className="text-[10px] text-gray-200 uppercase tracking-widest font-bold mb-0.5">Saved Folder</p>
                     <p className="text-amber-300 font-semibold text-xs truncate">{savedFolderName}</p>
                   </div>
                   <button onClick={handleForgetFolder} title="Forget this folder"
-                    className="text-gray-600 hover:text-red-400 transition-colors text-sm flex-shrink-0">✕</button>
+                    className="text-gray-200 hover:text-red-400 transition-colors text-sm flex-shrink-0">✕</button>
                 </div>
               )}
 
               {exporting && (
                 <div className="flex flex-col gap-2">
                   <div className="flex justify-between text-xs">
-                    <span className="text-gray-400">{exportLabel}</span>
+                    <span className="text-gray-200">{exportLabel}</span>
                     <span className="text-green-400 font-bold">{exportProg}%</span>
                   </div>
                   <div className="h-2 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.07)" }}>
@@ -1320,7 +1320,7 @@ export default function BackupView({ uid }) {
                     <span className="text-lg flex-shrink-0">🔀</span>
                     <div>
                       <p className="text-green-400 font-bold">Smart Merge</p>
-                      <p className="text-gray-500 leading-relaxed">Backup restored. New work done <span className="text-green-400">after</span> the backup date stays safe.</p>
+                      <p className="text-gray-200 leading-relaxed">Backup restored. New work done <span className="text-green-400">after</span> the backup date stays safe.</p>
                     </div>
                   </div>
                   <div className="flex items-start gap-2 px-3 py-2.5 rounded-xl text-xs"
@@ -1328,7 +1328,7 @@ export default function BackupView({ uid }) {
                     <span className="text-lg flex-shrink-0">🔄</span>
                     <div>
                       <p className="text-red-400 font-bold">Full Replace</p>
-                      <p className="text-gray-500 leading-relaxed">All current data deleted and replaced entirely with the backup.</p>
+                      <p className="text-gray-200 leading-relaxed">All current data deleted and replaced entirely with the backup.</p>
                     </div>
                   </div>
                 </div>
@@ -1337,7 +1337,7 @@ export default function BackupView({ uid }) {
               {restoring && (
                 <div className="flex flex-col gap-2">
                   <div className="flex justify-between text-xs">
-                    <span className="text-gray-400">{restoreLabel}</span>
+                    <span className="text-gray-200">{restoreLabel}</span>
                     <span className="text-amber-400 font-bold">{restoreProg}%</span>
                   </div>
                   <div className="h-2 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.07)" }}>
@@ -1387,7 +1387,7 @@ export default function BackupView({ uid }) {
                 "Only a backup from this account can be restored here.",
                 "Refresh the page after restoring to see the updated data.",
               ].map((tip, i) => (
-                <li key={i} className="flex items-start gap-2 text-xs text-gray-500">
+                <li key={i} className="flex items-start gap-2 text-xs text-gray-200">
                   <span className="text-blue-500 mt-0.5 flex-shrink-0">•</span>{tip}
                 </li>
               ))}
@@ -1404,7 +1404,7 @@ export default function BackupView({ uid }) {
             <p className="text-gray-300 text-sm leading-relaxed">
               Let Novexa automatically back up your data at a set interval. Each backup is saved as a <span className="text-purple-400 font-semibold">new file</span> in your chosen folder — nothing gets overwritten.
             </p>
-            <p className="text-gray-500 text-xs">
+            <p className="text-gray-200 text-xs">
               ✅ Requires a folder destination to be set.<br />
               ✅ Works only while this browser tab is open.
             </p>
@@ -1412,7 +1412,7 @@ export default function BackupView({ uid }) {
 
           {/* Interval selector */}
           <div className="flex flex-col gap-2">
-            <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Backup Frequency</p>
+            <p className="text-xs text-gray-200 font-semibold uppercase tracking-wider">Backup Frequency</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {AUTO_INTERVALS.map(opt => (
                 <button key={opt.id}
@@ -1439,7 +1439,7 @@ export default function BackupView({ uid }) {
               <span className="text-xl flex-shrink-0">🟣</span>
               <div className="flex-1">
                 <p className="text-purple-300 font-black text-xs uppercase tracking-wider">Auto-Backup Active</p>
-                <p className="text-gray-400 text-xs mt-0.5">
+                <p className="text-gray-200 text-xs mt-0.5">
                   Next backup in <span className="text-purple-200 font-bold">{countdown || "…"}</span>
                   {savedFolderName && <> → <span className="text-amber-300 font-semibold">{savedFolderName}</span></>}
                 </p>
@@ -1482,8 +1482,8 @@ export default function BackupView({ uid }) {
           {history.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-8 text-center">
               <span className="text-4xl opacity-30">🗂️</span>
-              <p className="text-gray-600 text-sm">No backups yet</p>
-              <p className="text-gray-700 text-xs">Every backup you create (manual or auto) will appear here.</p>
+              <p className="text-gray-200 text-sm">No backups yet</p>
+              <p className="text-gray-200 text-xs">Every backup you create (manual or auto) will appear here.</p>
             </div>
           ) : (
             <>
@@ -1508,19 +1508,19 @@ export default function BackupView({ uid }) {
                     {/* Info */}
                     <div className="flex-1 min-w-0">
                       <p className="text-white text-xs font-semibold truncate">{entry.fileName}</p>
-                      <p className="text-gray-500 text-[11px] mt-0.5">{fmtDate(entry.at)}</p>
+                      <p className="text-gray-200 text-[11px] mt-0.5">{fmtDate(entry.at)}</p>
                     </div>
                     {/* Doc count */}
                     <div className="flex-shrink-0 text-right">
                       <p className="text-green-400 text-xs font-bold">{entry.docCount?.toLocaleString()}</p>
-                      <p className="text-gray-600 text-[10px]">records</p>
+                      <p className="text-gray-200 text-[10px]">records</p>
                     </div>
                   </div>
                 ))}
               </div>
               {history.length > 0 && (
                 <button onClick={async () => { await clearHistory(); setHistory([]); }}
-                  className="self-end text-xs text-gray-600 hover:text-red-400 transition-colors underline underline-offset-2">
+                  className="self-end text-xs text-gray-200 hover:text-red-400 transition-colors underline underline-offset-2">
                   Clear history
                 </button>
               )}

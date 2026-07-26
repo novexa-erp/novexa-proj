@@ -422,7 +422,7 @@ export default function PaymentsView({ uid, onNavigate }) {
             <h2 className="text-2xl font-bold mb-1 bg-gradient-to-r from-green-400 via-blue-500 to-purple-500 bg-clip-text text-transparent">
               Payment Management
             </h2>
-            <p className="text-gray-400 text-xs">Track all your transactions and financial flows</p>
+            <p className="text-gray-200 text-xs">Track all your transactions and financial flows</p>
           </div>
           
 
@@ -445,7 +445,7 @@ export default function PaymentsView({ uid, onNavigate }) {
                   Live
                 </div>
               </div>
-              <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide mb-1">{stat.label}</p>
+              <p className="text-gray-300 text-[10px] font-semibold uppercase tracking-wide mb-1">{stat.label}</p>
               <p className={`font-bold text-2xl mb-1 ${stat.isNetFlow ? (stat.value >= 0 ? "text-green-400" : "text-red-400") : "text-white"}`}>
                 {typeof stat.value === "number"
                   ? stat.isNetFlow
@@ -453,7 +453,7 @@ export default function PaymentsView({ uid, onNavigate }) {
                     : `Rs. ${stat.value.toLocaleString()}`
                   : stat.value}
               </p>
-              <p className="text-gray-600 text-[10px]">{stat.trend}</p>
+              <p className="text-gray-300 text-[10px]">{stat.trend}</p>
             </div>
             <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${stat.color} opacity-50`} />
           </div>
@@ -476,7 +476,7 @@ export default function PaymentsView({ uid, onNavigate }) {
                   Live
                 </div>
               </div>
-              <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide mb-1">{stat.label}</p>
+              <p className="text-gray-300 text-[10px] font-semibold uppercase tracking-wide mb-1">{stat.label}</p>
               <p className="text-white font-bold text-2xl mb-1">
                 {typeof stat.value === "number" 
                   ? stat.isNetFlow 
@@ -484,7 +484,7 @@ export default function PaymentsView({ uid, onNavigate }) {
                     : `Rs. ${stat.value.toLocaleString()}` 
                   : stat.value}
               </p>
-              <p className="text-gray-600 text-[10px]">{stat.trend}</p>
+              <p className="text-gray-300 text-[10px]">{stat.trend}</p>
             </div>
             <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${stat.color} opacity-50`} />
           </div>
@@ -496,7 +496,7 @@ export default function PaymentsView({ uid, onNavigate }) {
         
         {/* Pie Chart */}
         <div className="rounded-xl p-6" style={cardStyle}>
-          <h3 className="text-white font-bold text-base mb-4">Payment Distribution</h3>
+          <h4 className="text-white font-bold text-base mb-4">Payment Distribution</h4>
           <div className="flex flex-col items-center gap-4">
             <div className="relative w-48 h-48">
               <svg viewBox="0 0 200 200" className="transform -rotate-90">
@@ -563,11 +563,11 @@ export default function PaymentsView({ uid, onNavigate }) {
                   <div key={i} className="flex items-center justify-between">
                     <div className="flex items-center gap-2">
                       <div className="w-3 h-3 rounded-sm" style={{ background: segment.color }} />
-                      <span className="text-gray-400 text-xs">{segment.label}</span>
+                      <span className="text-gray-300 text-xs">{segment.label}</span>
                     </div>
                     <div className="flex items-center gap-2">
                       <span className="text-white text-xs font-semibold">Rs. {segment.value.toLocaleString()}</span>
-                      <span className="text-gray-600 text-[10px]">({percentage}%)</span>
+                      <span className="text-gray-300 text-[10px]">({percentage}%)</span>
                     </div>
                   </div>
                 );
@@ -583,7 +583,7 @@ export default function PaymentsView({ uid, onNavigate }) {
           <div className="flex items-center justify-between">
             <div>
               <h3 className="text-white font-bold text-base">🚨 Action Required</h3>
-              <p className="text-gray-500 text-[11px] mt-0.5">Invoices needing your attention</p>
+              <p className="text-gray-300 text-[11px] mt-0.5">Invoices needing your attention</p>
             </div>
             <div className="px-2 py-1 rounded-lg text-[10px] font-bold text-green-400 border border-green-500/30"
               style={{ background: "rgba(16,185,129,0.1)" }}>
@@ -626,9 +626,9 @@ export default function PaymentsView({ uid, onNavigate }) {
                 onClick={() => m.nav && onNavigate?.(m.nav)}
                 className={`rounded-lg p-3 text-center ${m.nav ? "cursor-pointer hover:scale-105 transition-transform" : ""}`}
                 style={{ background: m.bg, border: `1px solid ${m.border}` }}>
-                <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide mb-1">{m.label}</p>
+                <p className="text-gray-200 text-[10px] font-semibold uppercase tracking-wide mb-1">{m.label}</p>
                 <p className="font-bold text-sm mb-0.5" style={{ color: m.color }}>{m.value}</p>
-                <p className="text-gray-600 text-[10px]">{m.sub}</p>
+                <p className="text-gray-200 text-[10px]">{m.sub}</p>
               </div>
             ))}
           </div>
@@ -710,7 +710,7 @@ export default function PaymentsView({ uid, onNavigate }) {
                         </div>
                         <div className="min-w-0">
                           <p className="text-white text-xs font-semibold truncate">{name}</p>
-                          <p className="text-gray-500 text-[10px]">{invRef} · Due {inv.due.toLocaleDateString("en-PK", { day: "numeric", month: "short" })}</p>
+                          <p className="text-gray-300 text-[10px]">{invRef} · Due {inv.due.toLocaleDateString("en-PK", { day: "numeric", month: "short" })}</p>
                         </div>
                       </div>
                       <div className="text-right shrink-0 ml-2">

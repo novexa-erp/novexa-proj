@@ -735,7 +735,7 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
       <div className="rounded-xl overflow-hidden" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
 
         {/* list header — same grid as rows */}
-        <div className="hidden md:grid px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-gray-600 border-b border-white/[0.05]"
+        <div className="hidden md:grid px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-white border-b border-white/[0.05]"
           style={{ gridTemplateColumns: "minmax(0,1fr) 110px 110px 110px 90px 160px" }}>
           <span>Customer</span>
           <span className="text-right">Amount</span>

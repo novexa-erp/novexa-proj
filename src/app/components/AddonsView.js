@@ -132,7 +132,7 @@ function RightPanel({ userDoc, myRequests, addonPrices }) {
           </div>
           <div>
             <p className="text-white font-bold text-base">No Add-ons Yet</p>
-            <p className="text-gray-500 text-xs mt-1 leading-relaxed">
+            <p className="text-gray-200 text-xs mt-1 leading-relaxed">
               You haven't purchased any add-ons yet. Pick a package from the left to expand your limits.
             </p>
           </div>
@@ -144,7 +144,7 @@ function RightPanel({ userDoc, myRequests, addonPrices }) {
 
         {/* Placeholder charts */}
         <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
-          <p className="text-gray-600 text-xs font-bold uppercase tracking-widest mb-3">Quota Overview</p>
+          <p className="text-gray-200 text-xs font-bold uppercase tracking-widest mb-3">Quota Overview</p>
           <div className="flex items-end justify-around gap-2 h-20">
             {[...ADDON_CATEGORIES, { limitKey: "extraUsers", icon: "👤", color: "#6366f1" }].map((cat, i) => (
               <div key={cat.limitKey} className="flex flex-col items-center gap-1 flex-1">
@@ -153,7 +153,7 @@ function RightPanel({ userDoc, myRequests, addonPrices }) {
               </div>
             ))}
           </div>
-          <p className="text-center text-gray-700 text-[10px] mt-2">No data yet</p>
+          <p className="text-center text-gray-300 text-[10px] mt-2">No data yet</p>
         </div>
       </div>
     );
@@ -210,19 +210,19 @@ function RightPanel({ userDoc, myRequests, addonPrices }) {
               </div>
             )}
             <div className="flex items-center justify-between mt-1 pt-2" style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}>
-              <span className="text-gray-600 text-[10px] uppercase tracking-widest">Expires</span>
+              <span className="text-gray-200 text-[10px] uppercase tracking-widest">Expires</span>
               <span className="text-xs font-semibold" style={{ color: expired ? "#f87171" : "#d1d5db" }}>{fmtDate(expAt)}</span>
             </div>
           </div>
         ) : (
-          <div className="px-4 py-3 text-gray-600 text-xs">No active quota.</div>
+          <div className="px-4 py-3 text-gray-200 text-xs">No active quota.</div>
         )}
       </div>
 
       {/* ── Bar chart — quota by category ── */}
       {hasAny && (
         <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}>
-          <p className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-4">📊 Active Quota</p>
+          <p className="text-gray-200 text-xs font-bold uppercase tracking-widest mb-4">📊 Active Quota</p>
           <div className="flex items-end justify-around gap-2" style={{ height: 90 }}>
             {ADDON_CATEGORIES.map(cat => {
               const qty = Number(extras?.[cat.limitKey]) || 0;
@@ -263,7 +263,7 @@ function RightPanel({ userDoc, myRequests, addonPrices }) {
       {/* ── Pie chart — spend distribution ── */}
       {pieData.length > 0 && (
         <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}>
-          <p className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-4">🥧 Spend Distribution</p>
+          <p className="text-gray-200 text-xs font-bold uppercase tracking-widest mb-4">🥧 Spend Distribution</p>
           <div className="flex items-center gap-4">
             {/* SVG Pie */}
             <svg width="80" height="80" viewBox="0 0 80 80" className="flex-shrink-0">
@@ -296,7 +296,7 @@ function RightPanel({ userDoc, myRequests, addonPrices }) {
               {pieData.map(d => (
                 <div key={d.label} className="flex items-center gap-2">
                   <div className="w-2 h-2 rounded-full flex-shrink-0" style={{ background: d.color }} />
-                  <span className="text-[10px] text-gray-400 truncate flex-1">{d.icon} {d.label.replace(" / Month","").replace("Extra ","")}</span>
+                  <span className="text-[10px] text-gray-200 truncate flex-1">{d.icon} {d.label.replace(" / Month","").replace("Extra ","")}</span>
                   <span className="text-[10px] font-bold flex-shrink-0" style={{ color: d.color }}>
                     {Math.round((d.value / pieTotal) * 100)}%
                   </span>
@@ -310,7 +310,7 @@ function RightPanel({ userDoc, myRequests, addonPrices }) {
       {/* ── Line chart — monthly spend ── */}
       {myRequests.length > 0 && (
         <div className="rounded-2xl p-4" style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}>
-          <p className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-3">📈 Monthly Spend</p>
+          <p className="text-gray-200 text-xs font-bold uppercase tracking-widest mb-3">📈 Monthly Spend</p>
           <svg width="100%" height={H} viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" style={{ overflow: "visible" }}>
             <defs>
               <linearGradient id="lineGrad" x1="0" y1="0" x2="0" y2="1">
@@ -352,7 +352,7 @@ function RightPanel({ userDoc, myRequests, addonPrices }) {
               <span className="text-base">{s.icon}</span>
               <div className="min-w-0">
                 <p className="font-black text-sm leading-tight truncate" style={{ color: s.color }}>{s.value}</p>
-                <p className="text-gray-600 text-[10px] font-semibold">{s.label}</p>
+                <p className="text-gray-200 text-[10px] font-semibold">{s.label}</p>
               </div>
             </div>
           ))}
@@ -503,7 +503,7 @@ function AddonInvoiceModal({ req, onClose }) {
               {/* Table header */}
               <div style={{ display: "grid", gridTemplateColumns: "2fr 1fr 1fr", padding: "10px 16px", background: "rgba(99,102,241,0.12)", borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
                 {["Add-on", "Qty Added", "Amount"].map((h, i) => (
-                  <p key={h} style={{ color: "#6b7280", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", textAlign: i > 0 ? "center" : "left" }}>{h}</p>
+                  <p key={h} style={{ color: "#fff", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.1em", textAlign: i > 0 ? "center" : "left" }}>{h}</p>
                 ))}
               </div>
               {(req.lineItems || []).map((item, i, arr) => (
@@ -612,7 +612,7 @@ function PurchaseHistory({ myRequests }) {
           <span className="text-xl">🧾</span>
           <div className="flex-1">
             <p className="text-white font-black text-sm">Add-on Purchase History</p>
-            <p className="text-gray-500 text-[11px] mt-0.5">All your add-on requests — click View to see invoice</p>
+            <p className="text-gray-200 text-[11px] mt-0.5">All your add-on requests — click View to see invoice</p>
           </div>
           <span className="px-2.5 py-1 rounded-full text-[10px] font-black"
             style={{ background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc" }}>
@@ -673,19 +673,19 @@ function PurchaseHistory({ myRequests }) {
                   <p key={si} className="text-gray-300 text-xs truncate">{s}</p>
                 ))}
                 {summary.length > 3 && (
-                  <p className="text-gray-600 text-[10px]">+{summary.length - 3} more</p>
+                  <p className="text-gray-200 text-[10px]">+{summary.length - 3} more</p>
                 )}
               </div>
 
               {/* Purchased on */}
               <div className="flex flex-col justify-center">
-                <p className="text-gray-400 text-xs">{fmtDT(ts)}</p>
+                <p className="text-gray-200 text-xs">{fmtDT(ts)}</p>
               </div>
 
               {/* Amount */}
               <div className="flex flex-col justify-center">
                 <p className="text-amber-300 font-black text-sm">{fmtRs(req.grandTotal)}</p>
-                <p className="text-gray-600 text-[10px] capitalize">{req.paymentMethod || "—"}</p>
+                <p className="text-gray-200 text-[10px] capitalize">{req.paymentMethod || "—"}</p>
               </div>
 
               {/* Expires */}
@@ -696,12 +696,12 @@ function PurchaseHistory({ myRequests }) {
                     {(() => {
                       const dl = Math.ceil((new Date(expiryDate) - new Date()) / 86400000);
                       return dl > 0
-                        ? <p className="text-gray-600 text-[10px]">{dl}d left</p>
+                        ? <p className="text-gray-200 text-[10px]">{dl}d left</p>
                         : <p className="text-red-400 text-[10px] font-bold">Expired</p>;
                     })()}
                   </>
                 ) : (
-                  <p className="text-gray-600 text-xs">—</p>
+                  <p className="text-gray-200 text-xs">—</p>
                 )}
               </div>
 
@@ -752,7 +752,7 @@ function PkgCard({ pkg, cat, addonPrices, selected, onSelect }) {
         +{pkg.qty >= 1000 ? `${pkg.qty / 1000}K` : pkg.qty}
       </div>
       <div className="font-black text-sm" style={{ color: isSel ? "#fbbf24" : "#d1d5db" }}>{fmtRs(price)}</div>
-      <div className="text-[9px] mt-0.5" style={{ color: "#6b7280" }}>~{fmtRs(perUnitStr)}/ea</div>
+      <div className="text-[9px] mt-0.5" style={{ color: "#fff" }}>~{fmtRs(perUnitStr)}/ea</div>
     </button>
   );
 }
@@ -1056,7 +1056,7 @@ export default function AddonsView({ uid, userDoc, user }) {
             </div>
             <div>
               <h1 className="text-white font-black text-2xl leading-none">Add-ons</h1>
-              <p className="text-gray-500 text-sm mt-0.5">Supercharge your plan with extra quota</p>
+              <p className="text-gray-200 text-sm mt-0.5">Supercharge your plan with extra quota</p>
             </div>
           </div>
           {/* Mobile: show requests button */}
@@ -1095,7 +1095,7 @@ export default function AddonsView({ uid, userDoc, user }) {
                           style={{ background: `${cat.color}15`, border: `1px solid ${cat.color}30` }}>{cat.icon}</div>
                         <div className="flex-1 min-w-0">
                           <p className="text-white font-bold text-sm">{cat.label}</p>
-                          <p className="text-gray-500 text-xs truncate">{cat.sublabel}</p>
+                          <p className="text-gray-200 text-xs truncate">{cat.sublabel}</p>
                         </div>
                         {sel > 0 && (
                           <div className="text-right flex-shrink-0 px-3 py-1.5 rounded-xl"
@@ -1114,7 +1114,7 @@ export default function AddonsView({ uid, userDoc, user }) {
                       <div className="px-3 pb-3">
                         <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
                           style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                          <span className="text-gray-600 text-xs flex-shrink-0">Custom qty:</span>
+                          <span className="text-gray-200 text-xs flex-shrink-0">Custom qty:</span>
                           <input type="number" min="1" placeholder="Enter any amount..."
                             value={isCustom ? sel : ""}
                             onChange={e => setSelections(p => ({ ...p, [cat.limitKey]: parseInt(e.target.value) || 0 }))}
@@ -1147,7 +1147,7 @@ export default function AddonsView({ uid, userDoc, user }) {
                               Rs. {userPrice.toLocaleString("en-PK")}/user
                             </span>
                           </div>
-                          <p className="text-gray-500 text-xs mt-0.5">Add more login seats to your account — flat rate per user per month</p>
+                          <p className="text-gray-200 text-xs mt-0.5">Add more login seats to your account — flat rate per user per month</p>
                         </div>
                         {isSel && (
                           <div className="text-right flex-shrink-0 px-3 py-1.5 rounded-xl"
@@ -1184,7 +1184,7 @@ export default function AddonsView({ uid, userDoc, user }) {
                         {/* Custom input */}
                         <div className="flex items-center gap-2 px-3 py-2 rounded-xl"
                           style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
-                          <span className="text-gray-600 text-xs flex-shrink-0">Custom:</span>
+                          <span className="text-gray-200 text-xs flex-shrink-0">Custom:</span>
                           <input type="number" min="1" max="100" placeholder="Enter number of users..."
                             value={![0,1,2,3,5,10].includes(userQty) && userQty > 0 ? userQty : ""}
                             onChange={e => setSelections(p => ({ ...p, extraUsers: parseInt(e.target.value) || 0 }))}
@@ -1212,7 +1212,7 @@ export default function AddonsView({ uid, userDoc, user }) {
                     style={{ background: "rgba(8,10,20,0.96)", border: hasSelections ? "1px solid rgba(99,102,241,0.45)" : "1px solid rgba(255,255,255,0.06)", backdropFilter: "blur(20px)", boxShadow: hasSelections ? "0 -2px 40px rgba(99,102,241,0.18), 0 8px 32px rgba(0,0,0,0.5)" : "0 8px 32px rgba(0,0,0,0.4)" }}>
                     <div className="flex-1 min-w-0">
                       {!hasSelections ? (
-                        <p className="text-gray-600 text-sm">Select packages above to get started</p>
+                        <p className="text-gray-200 text-sm">Select packages above to get started</p>
                       ) : (
                         <>
                           <div className="flex flex-wrap gap-1.5 mb-1">
@@ -1247,7 +1247,7 @@ export default function AddonsView({ uid, userDoc, user }) {
                   style={{ background: "rgba(99,102,241,0.07)", border: "1px solid rgba(99,102,241,0.25)" }}>
                   <div className="flex items-center justify-between px-5 py-3.5 border-b" style={{ borderColor: "rgba(99,102,241,0.15)" }}>
                     <p className="text-indigo-300 font-bold text-sm">🧾 Order Summary</p>
-                    <button onClick={() => setStep(1)} className="text-xs text-gray-500 hover:text-gray-300 transition-colors">← Edit</button>
+                    <button onClick={() => setStep(1)} className="text-xs text-gray-200 hover:text-gray-300 transition-colors">← Edit</button>
                   </div>
                   {lineItems.map((item, i) => (
                     <div key={i} className="flex items-center justify-between px-5 py-3"
@@ -1256,7 +1256,7 @@ export default function AddonsView({ uid, userDoc, user }) {
                         <div className="w-8 h-8 rounded-lg flex items-center justify-center text-base" style={{ background: `${item.color}15`, border: `1px solid ${item.color}25` }}>{item.icon}</div>
                         <div>
                           <p className="text-white text-sm font-semibold">{item.label}</p>
-                          <p className="text-gray-500 text-xs">+{item.qty.toLocaleString()} units · 1 month</p>
+                          <p className="text-gray-200 text-xs">+{item.qty.toLocaleString()} units · 1 month</p>
                         </div>
                       </div>
                       <span className="font-black text-sm" style={{ color: item.color }}>{fmtRs(item.total)}</span>
@@ -1270,7 +1270,7 @@ export default function AddonsView({ uid, userDoc, user }) {
 
                 {/* Payment methods */}
                 <div>
-                  <p className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-3">Choose Payment Method</p>
+                  <p className="text-gray-200 text-xs font-bold uppercase tracking-widest mb-3">Choose Payment Method</p>
                   <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                     {PAYMENT_ACCOUNTS.map(acc => {
                       const isSel = selectedPay === acc.id;
@@ -1282,7 +1282,7 @@ export default function AddonsView({ uid, userDoc, user }) {
                           <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xl mb-2.5" style={{ background: `${acc.color}15`, border: `1px solid ${acc.color}28` }}>{acc.emoji}</div>
                           <p className="font-bold text-sm mb-1" style={{ color: isSel ? acc.color : "#d1d5db" }}>{acc.name}</p>
                           <p className="font-mono font-black text-sm" style={{ color: acc.color }}>{acc.accountNo}</p>
-                          <p className="text-gray-500 text-xs mt-0.5">{acc.accountName}</p>
+                          <p className="text-gray-200 text-xs mt-0.5">{acc.accountName}</p>
                         </button>
                       );
                     })}
@@ -1311,7 +1311,7 @@ export default function AddonsView({ uid, userDoc, user }) {
 
                 {/* Screenshot */}
                 <div>
-                  <p className="text-gray-500 text-xs font-bold uppercase tracking-widest mb-3">📸 Upload Payment Screenshot</p>
+                  <p className="text-gray-200 text-xs font-bold uppercase tracking-widest mb-3">📸 Upload Payment Screenshot</p>
                   <label className="flex flex-col items-center justify-center gap-4 p-7 rounded-2xl cursor-pointer transition-all duration-300 group"
                     style={{
                       background: screenshotUrl ? "rgba(16,185,129,0.07)" : screenshotUploading ? "rgba(99,102,241,0.07)" : "rgba(255,255,255,0.02)",
@@ -1328,7 +1328,7 @@ export default function AddonsView({ uid, userDoc, user }) {
                           <div className="w-7 h-7 rounded-full border-[3px] border-t-indigo-400 border-transparent animate-spin" />
                         </div>
                         <p className="text-indigo-300 font-bold text-sm">Uploading your image...</p>
-                        <p className="text-gray-600 text-xs">{screenshotName}</p>
+                        <p className="text-gray-200 text-xs">{screenshotName}</p>
                       </>
                     ) : screenshotUrl ? (
                       /* Upload done */
@@ -1338,14 +1338,14 @@ export default function AddonsView({ uid, userDoc, user }) {
                           <span className="text-emerald-400 text-lg">✓</span>
                           <p className="text-emerald-400 font-black text-sm">{screenshotName}</p>
                         </div>
-                        <p className="text-gray-600 text-xs">Uploaded — click to replace</p>
+                        <p className="text-gray-200 text-xs">Uploaded — click to replace</p>
                       </>
                     ) : (
                       /* Empty state */
                       <>
                         <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl transition-transform group-hover:scale-110" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>📱</div>
                         <p className="text-gray-300 font-bold text-sm">Click to upload payment screenshot</p>
-                        <p className="text-gray-600 text-xs text-center">Take a screenshot after payment and upload it here (max 5MB)</p>
+                        <p className="text-gray-200 text-xs text-center">Take a screenshot after payment and upload it here (max 5MB)</p>
                       </>
                     )}
                   </label>
@@ -1388,8 +1388,8 @@ export default function AddonsView({ uid, userDoc, user }) {
             {/* Mobile: collapsible */}
             <div className={`${showReqPanel ? "block" : "hidden"} lg:block`}>
               <div className="mb-3 flex items-center justify-between">
-                <p className="text-gray-500 text-xs font-bold uppercase tracking-widest">My Add-on Status</p>
-                <button onClick={() => setShowReqPanel(false)} className="lg:hidden text-gray-600 hover:text-gray-400 text-xs">✕</button>
+                <p className="text-gray-200 text-xs font-bold uppercase tracking-widest">My Add-on Status</p>
+                <button onClick={() => setShowReqPanel(false)} className="lg:hidden text-gray-200 hover:text-gray-200 text-xs">✕</button>
               </div>
               {reqLoading ? (
                 <div className="flex items-center justify-center py-12">

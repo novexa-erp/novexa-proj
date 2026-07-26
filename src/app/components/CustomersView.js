@@ -1193,7 +1193,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
               border: `1px solid ${customer.status === "inactive" ? "rgba(248,113,113,0.25)" : "rgba(52,211,153,0.25)"}` }}>
             {customer.status === "inactive" ? "Inactive" : "Active"}
           </span>
-          <p className="text-gray-600 text-[10px] mt-1">Since {fmtDate(customer.createdAt)}</p>
+          <p className=" text-[10px] mt-1">Since {fmtDate(customer.createdAt)}</p>
         </div>
       </div>
 
@@ -1209,7 +1209,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
           <div key={s.label} className="rounded-2xl p-4" style={cardS}>
             <div className="flex items-center gap-2 mb-2">
               <span>{s.icon}</span>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{s.label}</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-300">{s.label}</p>
             </div>
             <p className="font-black text-base" style={{ color: s.color }}>{s.val}</p>
           </div>
@@ -1355,9 +1355,9 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
                             style={{ background: "rgba(248,113,113,0.12)", color: "#f87171" }}>OVERDUE</span>
                         )}
                       </div>
-                      <p className="text-gray-500 text-xs whitespace-nowrap">{dateStr}{inv.dueDate ? ` · Due ${inv.dueDate}` : ""}</p>
+                      <p className="text-gray-300 text-xs whitespace-nowrap">{dateStr}{inv.dueDate ? ` · Due ${inv.dueDate}` : ""}</p>
                       {realItems.length > 0 && (
-                        <p className="text-gray-600 text-[10px] mt-0.5 truncate">
+                        <p className="text-gray-300 text-[10px] mt-0.5 truncate">
                           📦 {realItems.map(it => it.description).join(", ")}
                         </p>
                       )}
@@ -2462,7 +2462,7 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
                     Live
                   </div>
                 </div>
-                <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide mb-1">{stat.label}</p>
+                <p className="text-gray-300 text-[10px] font-semibold uppercase tracking-wide mb-1">{stat.label}</p>
                 <p className="text-white font-bold text-2xl">{typeof stat.value === 'number' ? stat.value : stat.value}</p>
               </div>
               <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${stat.color} opacity-50`} />
@@ -2627,18 +2627,18 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
 
                   {/* Contact Info */}
                   <div className="flex flex-col gap-1 text-center">
-                    {c.phone && <p className="text-gray-400 text-xs">📞 {c.phone}</p>}
-                    {c.city && <p className="text-gray-400 text-xs">📍 {c.city}</p>}
+                    {c.phone && <p className="text-gray-300 text-xs">📞 {c.phone}</p>}
+                    {c.city && <p className="text-gray-300 text-xs">📍 {c.city}</p>}
                   </div>
 
                   {/* Stats */}
                   <div className="flex items-center justify-between pt-3 border-t border-white/5">
                     <div className="text-left">
-                      <p className="text-[10px] text-gray-500 uppercase font-semibold tracking-wide">Invoices</p>
+                      <p className="text-[10px] text-gray-300 uppercase font-semibold tracking-wide">Invoices</p>
                       <p className="text-white font-bold text-sm">{custInvLen}</p>
                     </div>
                     <div className="text-right">
-                      <p className="text-[10px] text-gray-500 uppercase font-semibold tracking-wide">Balance</p>
+                      <p className="text-[10px] text-gray-300 uppercase font-semibold tracking-wide">Balance</p>
                       {custBal > 0 ? (
                         <p className="text-rose-400 font-bold text-sm">{formatRs(custBal).replace('Rs. ', '₨')}</p>
                       ) : custInvLen > 0 ? (

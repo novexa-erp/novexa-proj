@@ -194,21 +194,21 @@ function SupplierCard({ supplier, onClick, onEdit, onDelete, index }) {
         {supplier.city && <p className="text-gray-500 text-xs">📍 {supplier.city}{supplier.address ? ` · ${supplier.address}` : ""}</p>}
         <div className="pt-2 border-t border-white/5 space-y-1.5">
           <div className="flex justify-between items-center">
-            <span className="text-gray-500 text-xs">Total Business</span>
+            <span className="text-gray-200 text-xs">Total Business</span>
             <span className="text-white font-bold text-sm">{formatRs(totalBusiness)}</span>
           </div>
           {Number(supplier.totalReturns) > 0 && (
             <div className="flex justify-between items-center">
-              <span className="text-gray-500 text-xs">Goods Return</span>
+              <span className="text-gray-200 text-xs">Goods Return</span>
               <span className="text-red-400 font-semibold text-sm">- {formatRs(Number(supplier.totalReturns))}</span>
             </div>
           )}
           <div className="flex justify-between items-center">
-            <span className="text-gray-500 text-xs">Total Paid</span>
+            <span className="text-gray-200 text-xs">Total Paid</span>
             <span className="text-green-400 font-semibold text-sm">{formatRs(totalPaid)}</span>
           </div>
           <div className="flex justify-between items-center">
-            <span className="text-gray-500 text-xs">Balance</span>
+            <span className="text-gray-200 text-xs">Balance</span>
             <span className={`font-bold text-sm ${balance > 0 ? "text-red-400" : "text-green-400"}`}>{formatRs(balance)}</span>
           </div>
           <div className="w-full h-1.5 rounded-full bg-white/10 overflow-hidden">
@@ -441,7 +441,7 @@ export default function PurchasesView({ uid, userDoc }) {
               <h2 className="text-2xl font-bold mb-1 bg-gradient-to-r from-blue-400 via-purple-500 to-pink-500 bg-clip-text text-transparent">
                 Purchase Management
               </h2>
-              <p className="text-gray-400 text-xs">Manage suppliers and track all purchases</p>
+              <p className="text-gray-300 text-xs">Manage suppliers and track all purchases</p>
             </div>
             <button onClick={() => { setEditSupplier(null); setShowSupplierModal(true); }}
               className="group relative px-5 py-2.5 rounded-lg font-semibold text-sm hover:scale-105 transition-all overflow-hidden shadow-lg">
@@ -471,7 +471,7 @@ export default function PurchasesView({ uid, userDoc }) {
                   <span className="text-2xl font-bold group-hover:scale-110 transition-all">{stat.icon}</span>
                   <span className={`px-2 py-0.5 rounded-md text-[10px] font-semibold bg-gradient-to-r ${stat.color} text-white`}>Live</span>
                 </div>
-                <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide mb-1">{stat.label}</p>
+                <p className="text-gray-300 text-[10px] font-semibold uppercase tracking-wide mb-1">{stat.label}</p>
                 <p className="text-white font-bold text-2xl">{stat.value}</p>
               </div>
               <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${stat.color} opacity-50`} />
@@ -558,7 +558,7 @@ export default function PurchasesView({ uid, userDoc }) {
                         </span>
                       )}
                     </div>
-                    <div className="text-gray-400 text-xs mt-0.5">
+                    <div className="text-gray-300 text-xs mt-0.5">
                       {allowed
                         ? "Print & fill by hand · Multi-page · Standard & Variant layouts"
                         : "Not included in your current plan — upgrade to access"}
@@ -569,7 +569,7 @@ export default function PurchasesView({ uid, userDoc }) {
                   {allowed ? (
                     <>
                       <div className="flex items-center gap-1.5">
-                        <span className="text-gray-500 text-xs">Quick:</span>
+                        <span className="text-gray-300 text-xs">Quick:</span>
                         {[5, 10, 25].map(pg => (
                           <button key={pg} onClick={() => setShowOrderForm(true)}
                             className="px-3 py-1 rounded-lg text-xs font-bold transition-all hover:scale-105"
@@ -660,7 +660,7 @@ export default function PurchasesView({ uid, userDoc }) {
               <h3 className="text-white font-bold text-xl mb-2">
                 {searchQuery ? "No suppliers found" : "No suppliers yet"}
               </h3>
-              <p className="text-gray-400 text-sm mb-6">
+              <p className="text-gray-200 text-sm mb-6">
                 {searchQuery ? `No match for "${searchQuery}"` : "Add your first supplier to get started"}
               </p>
               {!searchQuery && (

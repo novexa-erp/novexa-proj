@@ -481,7 +481,7 @@ function ContactForm({ userDoc, user }) {
             onFocus={() => setFocused("message")}
             onBlur={() => setFocused(null)}
           />
-          <p className="text-gray-600 text-[10px] mt-1 text-right">{form.message.length} characters</p>
+          <p className="text-gray-200 text-[10px] mt-1 text-right">{form.message.length} characters</p>
         </div>
 
         {/* Submit */}
@@ -530,7 +530,7 @@ export default function ContactView({ userDoc, user }) {
       icon:     "💬",
       label:    "WhatsApp",
       sublabel: "Fastest response",
-      value:    "+92 332 0262457",
+      value:    "+92 325 1507557",
       color:    "from-green-500 to-emerald-600",
       border:   "rgba(52,211,153,0.25)",
       bg:       "rgba(52,211,153,0.06)",
@@ -543,12 +543,12 @@ export default function ContactView({ userDoc, user }) {
       icon:     "📧",
       label:    "Email",
       sublabel: "Response within 24 hours",
-      value:    "support@novexa.pk",
+      value:    "novexaerp@gmail.com",
       color:    "from-blue-500 to-cyan-600",
       border:   "rgba(96,165,250,0.25)",
       bg:       "rgba(96,165,250,0.06)",
       badge:    null,
-      action: () => window.open(`mailto:support@novexa.pk?subject=Support Request - ${userName}&body=Hello Novexa Support,%0A%0AMy name is ${userName} and my email is ${userEmail}.%0A%0AI need help with: `, "_blank"),
+      action: () => window.open(`mailto:novexaerp@gmail.com?subject=Support Request - ${userName}&body=Hello Novexa Support,%0A%0AMy name is ${userName} and my email is ${userEmail}.%0A%0AI need help with: `, "_blank"),
       actionLabel: "Send Email →",
     },
     {
@@ -556,7 +556,7 @@ export default function ContactView({ userDoc, user }) {
       icon:     "📞",
       label:    "Phone Call",
       sublabel: "Mon – Sat, 9 AM – 8 PM",
-      value:    "+92 332 0262457",
+      value:    "+92 325 1507557",
       color:    "from-purple-500 to-violet-600",
       border:   "rgba(139,92,246,0.25)",
       bg:       "rgba(139,92,246,0.06)",
@@ -597,7 +597,7 @@ export default function ContactView({ userDoc, user }) {
       {/* Header */}
       <div className="flex flex-col gap-1">
         <h2 className="text-white font-black text-2xl">Contact Support</h2>
-        <p className="text-gray-500 text-sm">We are here to help. Reach out through any channel below.</p>
+        <p className="text-gray-200 text-sm">We are here to help. Reach out through any channel below.</p>
       </div>
 
       {/* Contact cards */}
@@ -622,7 +622,7 @@ export default function ContactView({ userDoc, user }) {
             {/* Info */}
             <div>
               <p className="text-white font-bold text-sm">{c.label}</p>
-              <p className="text-gray-500 text-xs mt-0.5">{c.sublabel}</p>
+              <p className="text-gray-200 text-xs mt-0.5">{c.sublabel}</p>
             </div>
 
             {/* Value + copy */}
@@ -630,7 +630,7 @@ export default function ContactView({ userDoc, user }) {
               style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
               <span className="text-gray-300 text-xs font-mono">{c.value}</span>
               <button onClick={() => copyToClipboard(c.value, c.id)}
-                className="text-gray-500 hover:text-white transition-colors text-xs ml-2">
+                className="text-gray-200 hover:text-white transition-colors text-xs ml-2">
                 {copied === c.id ? "✓" : "⎘"}
               </button>
             </div>
@@ -663,7 +663,7 @@ export default function ContactView({ userDoc, user }) {
           ].map((h) => (
             <div key={h.day} className="rounded-xl px-3 py-2.5"
               style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.06)" }}>
-              <p className="text-gray-500 text-[10px] uppercase tracking-wide font-bold mb-1">{h.day}</p>
+              <p className="text-gray-200 text-[10px] uppercase tracking-wide font-bold mb-1">{h.day}</p>
               <p className={`text-xs font-semibold ${h.status === "open" ? "text-green-400" : "text-red-400"}`}>
                 {h.hours}
               </p>
@@ -685,12 +685,12 @@ export default function ContactView({ userDoc, user }) {
               <button className="w-full flex items-center justify-between px-4 py-3.5 text-left"
                 onClick={() => setOpenFaq(openFaq === i ? null : i)}>
                 <span className="text-white text-sm font-semibold pr-4">{faq.q}</span>
-                <span className="text-gray-500 text-xs flex-shrink-0 transition-transform duration-200"
+                <span className="text-gray-200 text-xs flex-shrink-0 transition-transform duration-200"
                   style={{ transform: openFaq === i ? "rotate(180deg)" : "rotate(0deg)" }}>▼</span>
               </button>
               {openFaq === i && (
                 <div className="px-4 pb-4">
-                  <p className="text-gray-400 text-sm leading-relaxed">{faq.a}</p>
+                  <p className="text-gray-200 text-sm leading-relaxed">{faq.a}</p>
                 </div>
               )}
             </div>
@@ -702,7 +702,7 @@ export default function ContactView({ userDoc, user }) {
       <div className="rounded-2xl p-4 flex items-start gap-3"
         style={{ background: "rgba(37,99,235,0.05)", border: "1px solid rgba(37,99,235,0.12)" }}>
         <span className="text-blue-400 text-lg flex-shrink-0">ℹ️</span>
-        <p className="text-gray-400 text-xs leading-relaxed">
+        <p className="text-gray-200 text-xs leading-relaxed">
           For urgent issues, WhatsApp is the fastest way to reach us. Please include your registered email address and a brief description of your issue so we can help you quickly.
         </p>
       </div>

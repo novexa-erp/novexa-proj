@@ -77,8 +77,8 @@ function TicketDetail({ ticket, onBack }) {
               <p className="text-white font-bold text-base">{ticket.subject}</p>
             </div>
             <div className="text-right flex-shrink-0">
-              <p className="text-gray-600 text-[10px] uppercase tracking-widest font-bold mb-1">Submitted</p>
-              <p className="text-gray-400 text-xs font-semibold">{fmtDT(ticket.createdAt)}</p>
+              <p className="text-gray-200 text-[10px] uppercase tracking-widest font-bold mb-1">Submitted</p>
+              <p className="text-gray-200 text-xs font-semibold">{fmtDT(ticket.createdAt)}</p>
             </div>
           </div>
 
@@ -92,7 +92,7 @@ function TicketDetail({ ticket, onBack }) {
             ].map(r => (
               <div key={r.label} className="rounded-xl px-3 py-2.5"
                 style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)" }}>
-                <p className="text-gray-600 text-[9px] uppercase tracking-widest font-bold mb-1">{r.label}</p>
+                <p className="text-gray-200 text-[9px] uppercase tracking-widest font-bold mb-1">{r.label}</p>
                 <p className="text-white text-xs font-semibold">{r.value}</p>
               </div>
             ))}
@@ -121,7 +121,7 @@ function TicketDetail({ ticket, onBack }) {
         <div className="px-5 py-3.5 flex items-center gap-2"
           style={{ borderBottom:"1px solid rgba(255,255,255,0.06)", background:"rgba(255,255,255,0.02)" }}>
           <span className="text-sm">💬</span>
-          <p className="text-xs font-black uppercase tracking-widest text-gray-400">Conversation</p>
+          <p className="text-xs font-black uppercase tracking-widest text-gray-200">Conversation</p>
           <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full font-bold"
             style={{ background:"rgba(37,99,235,0.15)", color:"#60a5fa", border:"1px solid rgba(37,99,235,0.25)" }}>
             {(ticket.messages||[]).length} messages
@@ -132,7 +132,7 @@ function TicketDetail({ ticket, onBack }) {
           {(ticket.messages || []).length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-8 text-center">
               <span className="text-4xl opacity-30">💬</span>
-              <p className="text-gray-600 text-sm">No messages yet</p>
+              <p className="text-gray-200 text-sm">No messages yet</p>
             </div>
           ) : (
             (ticket.messages || []).map((msg, i) => {
@@ -165,7 +165,7 @@ function TicketDetail({ ticket, onBack }) {
                       </span>
                     </div>
                     <p className="text-sm text-white leading-relaxed" style={{ whiteSpace:"pre-wrap" }}>{msg.text}</p>
-                    <p className="text-[10px] mt-2 text-right" style={{ color: isAdmin ? "rgba(96,165,250,0.6)" : "#4b5563" }}>
+                    <p className="text-[10px] mt-2 text-right" style={{ color: isAdmin ? "rgba(96,165,250,0.6)" : "#fff" }}>
                       {fmtDT(msg.createdAt)}
                     </p>
                   </div>
@@ -180,7 +180,7 @@ function TicketDetail({ ticket, onBack }) {
       <div className="rounded-2xl p-4 flex flex-wrap gap-3 items-center"
         style={{ background:"rgba(37,99,235,0.05)", border:"1px solid rgba(37,99,235,0.15)" }}>
         <span className="text-blue-400 text-sm">💡</span>
-        <p className="text-gray-400 text-xs flex-1">Need faster help? Reach us directly.</p>
+        <p className="text-gray-200 text-xs flex-1">Need faster help? Reach us directly.</p>
         <a href="https://wa.me/923320262457" target="_blank" rel="noopener noreferrer"
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all hover:scale-105"
           style={{ background:"rgba(22,163,74,0.15)", border:"1px solid rgba(22,163,74,0.3)", color:"#34d399" }}>
@@ -228,7 +228,7 @@ export default function MyTicketsView({ uid, userDoc, user, onNewTicket }) {
       <div className="flex items-start justify-between flex-wrap gap-4">
         <div>
           <h2 className="text-white font-black text-2xl tracking-tight">My Support Tickets</h2>
-          <p className="text-gray-500 text-sm mt-1">Track and manage your support requests</p>
+          <p className="text-gray-200 text-sm mt-1">Track and manage your support requests</p>
         </div>
         <button onClick={onNewTicket}
           className="flex items-center gap-2 px-5 py-2.5 rounded-xl text-sm font-bold transition-all hover:scale-[1.02] hover:brightness-110"
@@ -287,7 +287,7 @@ export default function MyTicketsView({ uid, userDoc, user, onNewTicket }) {
             style={{ background:"rgba(37,99,235,0.08)", border:"1px solid rgba(37,99,235,0.15)" }}>📭</div>
           <div>
             <p className="text-white font-bold text-lg mb-1">No tickets yet</p>
-            <p className="text-gray-500 text-sm">Submit a support request and track it right here.</p>
+            <p className="text-gray-200 text-sm">Submit a support request and track it right here.</p>
           </div>
           <button onClick={onNewTicket}
             className="px-6 py-2.5 rounded-xl text-sm font-bold transition-all hover:scale-[1.02]"
@@ -337,7 +337,7 @@ export default function MyTicketsView({ uid, userDoc, user, onNewTicket }) {
                       </div>
                       <p className="text-white font-bold text-sm truncate mb-1">{t.subject}</p>
                       {lastMsg && (
-                        <p className="text-gray-500 text-xs truncate">
+                        <p className="text-gray-200 text-xs truncate">
                           <span style={{ color: lastMsg.from==="admin" ? "#60a5fa" : "#9ca3af" }}>
                             {lastMsg.from==="admin" ? "Support: " : "You: "}
                           </span>
@@ -348,7 +348,7 @@ export default function MyTicketsView({ uid, userDoc, user, onNewTicket }) {
 
                     {/* Right: date + arrow */}
                     <div className="flex flex-col items-end gap-2 flex-shrink-0">
-                      <p className="text-gray-400 text-xs font-semibold">
+                      <p className="text-gray-200 text-xs font-semibold">
                         {t.createdAt ? new Date(t.createdAt).toLocaleDateString("en-PK",{day:"2-digit",month:"short"}) : "—"}
                       </p>
                       {t.messages?.length > 1 && (
@@ -357,7 +357,7 @@ export default function MyTicketsView({ uid, userDoc, user, onNewTicket }) {
                           {t.messages.length}
                         </span>
                       )}
-                      <span className="text-gray-600 text-sm transition-transform group-hover:translate-x-1">→</span>
+                      <span className="text-gray-200 text-sm transition-transform group-hover:translate-x-1">→</span>
                     </div>
                   </div>
                 </div>

@@ -3074,7 +3074,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
               style={{ background: "rgba(52,211,153,0.1)", color: "#34d399", border: "1px solid rgba(52,211,153,0.25)" }}>
               Active Supplier
             </span>
-            <p className="text-gray-600 text-[10px] mt-1">Since {fmtDate(supplier.createdAt)}</p>
+            <p className="text-gray-200 text-[10px] mt-1">Since {fmtDate(supplier.createdAt)}</p>
           </div>
         </div>
 
@@ -3090,7 +3090,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
             <div key={s.label} className="rounded-2xl p-4" style={cardS}>
               <div className="flex items-center gap-2 mb-2">
                 <span>{s.icon}</span>
-                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">{s.label}</p>
+                <p className="text-[10px] font-bold uppercase tracking-widest text-gray-200">{s.label}</p>
               </div>
               <p className="font-black text-base" style={{ color: s.color }}>{s.val}</p>
             </div>
@@ -3213,9 +3213,9 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
                               style={{ background: "rgba(248,113,113,0.12)", color: "#f87171" }}>OVERDUE</span>
                           )}
                         </div>
-                        <p className="text-gray-500 text-xs whitespace-nowrap">{fmtDate(o.createdAt)}{o.dueDate ? ` · Due ${o.dueDate}` : ""}</p>
+                        <p className="text-gray-200 text-xs whitespace-nowrap">{fmtDate(o.createdAt)}{o.dueDate ? ` · Due ${o.dueDate}` : ""}</p>
                         {o.items?.length > 0 && (
-                          <p className="text-gray-600 text-[10px] mt-0.5 truncate">
+                          <p className="text-gray-200 text-[10px] mt-0.5 truncate">
                             📦 {o.items.map(it => it.description).join(", ")}
                           </p>
                         )}

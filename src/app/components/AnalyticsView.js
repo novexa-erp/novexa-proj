@@ -865,9 +865,9 @@ export default function AnalyticsView({ uid }) {
             </div>
           )}
         </div>
-        <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide mb-1">{label}</p>
+        <p className="text-gray-200 text-[10px] font-semibold uppercase tracking-wide mb-1">{label}</p>
         <p className="text-white font-bold text-xl mb-0.5">{value}</p>
-        {subtitle && <p className="text-gray-600 text-xs">{subtitle}</p>}
+        {subtitle && <p className="text-gray-200 text-xs">{subtitle}</p>}
       </div>
       <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${color} opacity-50`} />
     </div>
@@ -885,7 +885,7 @@ export default function AnalyticsView({ uid }) {
             return (
               <div key={key}>
                 <div className="flex justify-between text-xs mb-1">
-                  <span className="text-gray-400 truncate max-w-[150px]">{key}</span>
+                  <span className="text-gray-200 truncate max-w-[150px]">{key}</span>
                   <span className="text-white font-semibold">Rs. {Number(value).toLocaleString()}</span>
                 </div>
                 <div className="w-full h-2.5 rounded-full bg-white/10 overflow-hidden">
@@ -921,10 +921,10 @@ export default function AnalyticsView({ uid }) {
               <div className={`w-3 h-3 rounded-full bg-gradient-to-r ${seg.color} flex-shrink-0`} />
               <div className="flex-1 min-w-0">
                 <div className="flex justify-between items-center">
-                  <span className="text-gray-300 text-sm truncate">{seg.key}</span>
+                  <span className="text-gray-200 text-sm truncate">{seg.key}</span>
                   <span className="text-white text-sm font-semibold ml-2">{seg.percentage}%</span>
                 </div>
-                <p className="text-gray-500 text-xs">Rs. {Number(seg.value).toLocaleString()}</p>
+                <p className="text-gray-200 text-xs">Rs. {Number(seg.value).toLocaleString()}</p>
               </div>
             </div>
           ))}
@@ -940,7 +940,7 @@ export default function AnalyticsView({ uid }) {
         {icon} {title}
       </h3>
       {items.length === 0 ? (
-        <p className="text-gray-500 text-sm text-center py-8">No data available</p>
+        <p className="text-gray-200 text-sm text-center py-8">No data available</p>
       ) : (
         <div className="space-y-3">
           {items.map(([name, value], index) => (
@@ -951,7 +951,7 @@ export default function AnalyticsView({ uid }) {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-white text-sm font-semibold truncate">{name}</p>
-                <p className="text-gray-500 text-xs">{valuePrefix}{typeof value === 'number' ? value.toLocaleString() : value}</p>
+                <p className="text-gray-200 text-xs">{valuePrefix}{typeof value === 'number' ? value.toLocaleString() : value}</p>
               </div>
             </div>
           ))}
@@ -1014,7 +1014,7 @@ export default function AnalyticsView({ uid }) {
               </span>
             </div>
             {skippedItemCount > 0 && (
-              <p className="text-gray-600 text-[10px] text-center">
+              <p className="text-gray-200 text-[10px] text-center">
                 ⚠️ {skippedItemCount} item{skippedItemCount > 1 ? "s" : ""} skipped (not linked to inventory)
               </p>
             )}
@@ -1320,7 +1320,7 @@ export default function AnalyticsView({ uid }) {
           //     <p className="text-white">Total Revenue (computed): <b>Rs. {Math.round(totalRevenue).toLocaleString()}</b></p>
           //     <p className="text-cyan-400">Direct Invoices total: Rs. {Math.round(directTotal).toLocaleString()} ({activeInvoices.filter(i=>!i.customerId).length} invoices)</p>
           //     <p className="text-green-400">Customer Invoices total: Rs. {Math.round(customerTotal).toLocaleString()} ({activeInvoices.filter(i=>i.customerId).length} invoices)</p>
-          //     <p className="text-gray-400">  ↳ with actualAmount field: {withActual}</p>
+          //     <p className="text-gray-200">  ↳ with actualAmount field: {withActual}</p>
           //     <p className="text-orange-400">  ↳ WITHOUT actualAmount: {withoutActual} (prev-bal stripped from items)</p>
           //     <p className="text-red-400">  ↳ prev-balance amount in those invoices: Rs. {Math.round(prevBalSum).toLocaleString()}</p>
           //     <p className="text-purple-400 mt-2">Invoice count: {activeInvoices.length} active, {invoices.filter(i=>i.deleted).length} soft-deleted</p>
@@ -1330,7 +1330,7 @@ export default function AnalyticsView({ uid }) {
           //       const computed = getInvActualAmount(inv);
           //       const returned = returnsByInvoiceId[inv.id] || 0;
           //       return (
-          //         <p key={inv.id} className="text-gray-300 text-[10px] pl-2">
+          //         <p key={inv.id} className="text-gray-200 text-[10px] pl-2">
           //           {custName} | stored: Rs.{Math.round(Number(inv.amount)||0).toLocaleString()} | 
           //           actual: {inv.actualAmount != null ? `Rs.${Math.round(inv.actualAmount).toLocaleString()}` : "null"} | 
           //           returned: Rs.{Math.round(returned).toLocaleString()} |
@@ -1357,9 +1357,9 @@ export default function AnalyticsView({ uid }) {
         {/* ══════════════════ 📈 REVENUE TREND MAIN CHART ══════════════════ */}
         <div className="rounded-xl p-5" style={cardStyle}>
           <h3 className="text-white font-bold text-base mb-1">📈 Revenue Trend</h3>
-          <p className="text-gray-500 text-xs mb-4">Monthly revenue overview</p>
+          <p className="text-gray-200 text-xs mb-4">Monthly revenue overview</p>
           {monthlyRevChartData.length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-12">No revenue data yet</p>
+            <p className="text-gray-200 text-sm text-center py-12">No revenue data yet</p>
           ) : (
             <ResponsiveContainer width="100%" height={280}>
               <LineChart data={monthlyRevChartData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
@@ -1379,9 +1379,9 @@ export default function AnalyticsView({ uid }) {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-sm sm:text-base mb-1">📊 Revenue by Category</h3>
-            <p className="text-gray-500 text-xs mb-4">Total sales value per product category</p>
+            <p className="text-gray-200 text-xs mb-4">Total sales value per product category</p>
             {revByCatData.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">No category data. Add categories to products.</p>
+              <p className="text-gray-200 text-sm text-center py-10">No category data. Add categories to products.</p>
             ) : (
               <div className="flex flex-col gap-4">
                 <ResponsiveContainer width="100%" height={180}>
@@ -1400,9 +1400,9 @@ export default function AnalyticsView({ uid }) {
                     return (
                       <div key={entry.name} className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: CHART_COLORS_R[i % CHART_COLORS_R.length] }} />
-                        <span className="text-gray-300 text-xs flex-1 truncate">{entry.name}</span>
+                        <span className="text-gray-200 text-xs flex-1 truncate">{entry.name}</span>
                         <span className="text-white text-xs font-semibold">Rs. {entry.value >= 1000 ? (entry.value / 1000).toFixed(0) + "k" : entry.value}</span>
-                        <span className="text-gray-500 text-[10px] w-10 text-right">{pct}%</span>
+                        <span className="text-gray-200 text-[10px] w-10 text-right">{pct}%</span>
                       </div>
                     );
                   })}
@@ -1417,11 +1417,11 @@ export default function AnalyticsView({ uid }) {
               <h3 className="text-white font-bold text-base">🏆 Top Revenue Products</h3>
             </div>
             {topRevProducts.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">No product sales data</p>
+              <p className="text-gray-200 text-sm text-center py-10">No product sales data</p>
             ) : (
               <table className="w-full text-sm">
                 <thead>
-                  <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.05]">
+                  <tr className="text-[10px] uppercase tracking-widest text-gray-200 border-b border-white/[0.05]">
                     <th className="px-5 py-2 text-left">#</th>
                     <th className="px-5 py-2 text-left">Product</th>
                     <th className="px-5 py-2 text-right">Revenue</th>
@@ -1431,10 +1431,10 @@ export default function AnalyticsView({ uid }) {
                 <tbody>
                   {topRevProducts.map((p, i) => (
                     <tr key={i} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
-                      <td className="px-5 py-3 text-gray-500">{i + 1}</td>
+                      <td className="px-5 py-3 text-gray-200">{i + 1}</td>
                       <td className="px-5 py-3 text-white font-semibold truncate max-w-[180px]">{p.name}</td>
                       <td className="px-5 py-3 text-amber-400 font-bold text-right">Rs. {p.revenue.toLocaleString()}</td>
-                      <td className="px-5 py-3 text-gray-300 text-right">{p.qty}</td>
+                      <td className="px-5 py-3 text-gray-200 text-right">{p.qty}</td>
                     </tr>
                   ))}
                 </tbody>
@@ -1449,11 +1449,11 @@ export default function AnalyticsView({ uid }) {
             <h3 className="text-white font-bold text-base">👥 Top Revenue Customers</h3>
           </div>
           {topRevCustomers.length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-10">No customer data</p>
+            <p className="text-gray-200 text-sm text-center py-10">No customer data</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.05]">
+                <tr className="text-[10px] uppercase tracking-widest text-gray-200 border-b border-white/[0.05]">
                   <th className="px-5 py-2 text-left">#</th>
                   <th className="px-5 py-2 text-left">Customer</th>
                   <th className="px-5 py-2 text-right">Revenue</th>
@@ -1462,7 +1462,7 @@ export default function AnalyticsView({ uid }) {
               <tbody>
                 {topRevCustomers.map((c, i) => (
                   <tr key={i} className="border-b border-white/[0.04] hover:bg-white/[0.02]">
-                    <td className="px-5 py-3 text-gray-500">{i + 1}</td>
+                    <td className="px-5 py-3 text-gray-200">{i + 1}</td>
                     <td className="px-5 py-3 text-white font-semibold">{c.name}</td>
                     <td className="px-5 py-3 text-amber-400 font-bold text-right">Rs. {c.value.toLocaleString()}</td>
                   </tr>
@@ -1484,7 +1484,7 @@ export default function AnalyticsView({ uid }) {
               <div className={`absolute inset-0 bg-gradient-to-br ${c.color} opacity-5 group-hover:opacity-10 transition-opacity`} />
               <div className="relative z-10">
                 <div className="text-2xl mb-2">{c.icon}</div>
-                <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide mb-1">{c.label}</p>
+                <p className="text-gray-200 text-[10px] font-semibold uppercase tracking-wide mb-1">{c.label}</p>
                 <p className="text-white font-bold text-lg">Rs. {Math.round(c.value).toLocaleString()}</p>
               </div>
               <div className={`absolute bottom-0 left-0 right-0 h-1 bg-gradient-to-r ${c.color} opacity-50`} />
@@ -1507,10 +1507,10 @@ export default function AnalyticsView({ uid }) {
               return (
                 <div key={i} className="flex items-center justify-between p-3 rounded-xl" style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.06)" }}>
                   <div>
-                    <p className="text-gray-400 text-xs font-semibold mb-1">{row.label}</p>
+                    <p className="text-gray-200 text-xs font-semibold mb-1">{row.label}</p>
                     <div className="flex items-center gap-2 flex-wrap">
                       <span className="text-white font-bold text-sm">Rs. {Math.round(row.curr).toLocaleString()}</span>
-                      <span className="text-gray-600 text-xs">vs Rs. {Math.round(row.prev).toLocaleString()}</span>
+                      <span className="text-gray-200 text-xs">vs Rs. {Math.round(row.prev).toLocaleString()}</span>
                     </div>
                   </div>
                   <span className={`px-2.5 py-1 rounded-lg text-xs font-black flex-shrink-0 ${isPos ? "bg-green-500/20 text-green-400" : "bg-red-500/20 text-red-400"}`}>
@@ -1539,7 +1539,7 @@ export default function AnalyticsView({ uid }) {
                   {ins.icon}
                 </div>
                 <div className="min-w-0">
-                  <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide mb-0.5">{ins.label}</p>
+                  <p className="text-gray-200 text-[10px] font-semibold uppercase tracking-wide mb-0.5">{ins.label}</p>
                   <p className="text-white text-sm font-semibold truncate">{ins.value}</p>
                 </div>
               </div>
@@ -1608,9 +1608,9 @@ export default function AnalyticsView({ uid }) {
           {/* Stock by Category — Donut with clean legend */}
           <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-sm sm:text-base mb-1">🥧 Stock by Category</h3>
-            <p className="text-gray-500 text-xs mb-3">Units in stock per category</p>
+            <p className="text-gray-200 text-xs mb-3">Units in stock per category</p>
             {stockByCategoryData.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">No category data</p>
+              <p className="text-gray-200 text-sm text-center py-10">No category data</p>
             ) : (
               <div className="flex flex-col gap-4">
                 <ResponsiveContainer width="100%" height={180}>
@@ -1647,9 +1647,9 @@ export default function AnalyticsView({ uid }) {
                       <div key={entry.name} className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0"
                           style={{ background: CHART_COLORS[i % CHART_COLORS.length] }} />
-                        <span className="text-gray-300 text-xs flex-1 truncate">{entry.name}</span>
+                        <span className="text-gray-200 text-xs flex-1 truncate">{entry.name}</span>
                         <span className="text-white text-xs font-semibold">{entry.value}</span>
-                        <span className="text-gray-500 text-[10px] w-10 text-right">{pct}%</span>
+                        <span className="text-gray-200 text-[10px] w-10 text-right">{pct}%</span>
                       </div>
                     );
                   })}
@@ -1661,9 +1661,9 @@ export default function AnalyticsView({ uid }) {
           {/* Inventory Value by Category — Horizontal bar chart */}
           <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-sm sm:text-base mb-1">💰 Inventory Value by Category</h3>
-            <p className="text-gray-500 text-xs mb-3">Capital invested per category (cost price)</p>
+            <p className="text-gray-200 text-xs mb-3">Capital invested per category (cost price)</p>
             {invValueByCategoryData.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">No data — set cost prices on products</p>
+              <p className="text-gray-200 text-sm text-center py-10">No data — set cost prices on products</p>
             ) : (
               <ResponsiveContainer width="100%" height={invValueByCategoryData.length * 44 + 20}>
                 <BarChart
@@ -1744,11 +1744,11 @@ export default function AnalyticsView({ uid }) {
               <h3 className="text-white font-bold text-base">🏆 Top Selling Products</h3>
             </div>
             {topSellingInvProducts.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">No sales data</p>
+              <p className="text-gray-200 text-sm text-center py-10">No sales data</p>
             ) : (
               <table className="w-full">
                 <thead>
-                  <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.05]">
+                  <tr className="text-[10px] uppercase tracking-widest text-gray-200 border-b border-white/[0.05]">
                     <th className="px-5 py-2 text-left">#</th>
                     <th className="px-5 py-2 text-left">Product</th>
                     <th className="px-5 py-2 text-right">Units Sold</th>
@@ -1757,7 +1757,7 @@ export default function AnalyticsView({ uid }) {
                 <tbody>
                   {topSellingInvProducts.map((p, i) => (
                     <tr key={i} className="border-b border-white/[0.04] hover:bg-white/[0.025]">
-                      <td className="px-5 py-2.5 text-gray-500 text-sm">{i + 1}</td>
+                      <td className="px-5 py-2.5 text-gray-200 text-sm">{i + 1}</td>
                       <td className="px-5 py-2.5 text-white text-sm font-semibold truncate max-w-[180px]">{p.name}</td>
                       <td className="px-5 py-2.5 text-amber-400 text-sm font-bold text-right">{p.sold}</td>
                     </tr>
@@ -1776,7 +1776,7 @@ export default function AnalyticsView({ uid }) {
               {[30, 60, 90].map(d => (
                 <button key={d}
                   onClick={() => { }}
-                  className="flex-1 py-1.5 text-xs font-semibold text-gray-400 hover:text-white transition-colors">
+                  className="flex-1 py-1.5 text-xs font-semibold text-gray-200 hover:text-white transition-colors">
                   Not sold in {d}d
                 </button>
               ))}
@@ -1798,7 +1798,7 @@ export default function AnalyticsView({ uid }) {
                 );
               })}
               {slowMoving30.length === 0 && slowMoving60.length === 0 && slowMoving90.length === 0 && (
-                <p className="text-gray-500 text-sm text-center py-8">All products sold recently ✅</p>
+                <p className="text-gray-200 text-sm text-center py-8">All products sold recently ✅</p>
               )}
             </div>
           </div>
@@ -1814,10 +1814,10 @@ export default function AnalyticsView({ uid }) {
               <span className="ml-auto px-2 py-0.5 rounded-full bg-yellow-500/20 text-yellow-400 text-xs font-bold">{lowStockItems.length}</span>
             </div>
             {lowStockItems.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">All items well stocked ✅</p>
+              <p className="text-gray-200 text-sm text-center py-10">All items well stocked ✅</p>
             ) : (
               <div className="divide-y divide-white/[0.04] max-h-64 overflow-y-auto">
-                <div className="grid px-5 py-2 text-[10px] uppercase tracking-widest text-gray-600" style={{ gridTemplateColumns: "1fr auto auto" }}>
+                <div className="grid px-5 py-2 text-[10px] uppercase tracking-widest text-gray-200" style={{ gridTemplateColumns: "1fr auto auto" }}>
                   <span>Product</span><span className="text-right mr-4">Stock</span><span className="text-right">Threshold</span>
                 </div>
                 {lowStockItems.map(p => {
@@ -1827,7 +1827,7 @@ export default function AnalyticsView({ uid }) {
                     <div key={p.id} className="grid px-5 py-2.5 hover:bg-yellow-500/5 items-center" style={{ gridTemplateColumns: "1fr auto auto" }}>
                       <span className="text-white text-sm truncate max-w-[160px]">{p.name}</span>
                       <span className="text-yellow-400 font-bold text-sm mr-4 text-right">{stock}</span>
-                      <span className="text-gray-500 text-xs text-right">/{threshold}</span>
+                      <span className="text-gray-200 text-xs text-right">/{threshold}</span>
                     </div>
                   );
                 })}
@@ -1843,7 +1843,7 @@ export default function AnalyticsView({ uid }) {
               <span className="ml-auto px-2 py-0.5 rounded-full bg-red-500/20 text-red-400 text-xs font-bold">{outOfStockProducts.length}</span>
             </div>
             {outOfStockProducts.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">No stock issues ✅</p>
+              <p className="text-gray-200 text-sm text-center py-10">No stock issues ✅</p>
             ) : (
               <div className="divide-y divide-white/[0.04] max-h-64 overflow-y-auto">
                 {outOfStockProducts.map(p => (
@@ -1864,14 +1864,14 @@ export default function AnalyticsView({ uid }) {
           <div className="rounded-xl overflow-hidden" style={cardStyle}>
             <div className="px-5 py-3 border-b border-white/[0.07]">
               <h3 className="text-white font-bold text-base">💎 Most Profitable Products</h3>
-              <p className="text-gray-500 text-xs mt-0.5">Based on sales in selected period</p>
+              <p className="text-gray-200 text-xs mt-0.5">Based on sales in selected period</p>
             </div>
             {mostProfitableInvProducts.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">No profit data yet</p>
+              <p className="text-gray-200 text-sm text-center py-10">No profit data yet</p>
             ) : (
               <table className="w-full">
                 <thead>
-                  <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.05]">
+                  <tr className="text-[10px] uppercase tracking-widest text-gray-200 border-b border-white/[0.05]">
                     <th className="px-5 py-2 text-left">#</th>
                     <th className="px-5 py-2 text-left">Product</th>
                     <th className="px-5 py-2 text-right">Profit</th>
@@ -1880,7 +1880,7 @@ export default function AnalyticsView({ uid }) {
                 <tbody>
                   {mostProfitableInvProducts.map((p, i) => (
                     <tr key={i} className="border-b border-white/[0.04] hover:bg-white/[0.025]">
-                      <td className="px-5 py-2.5 text-gray-500 text-sm">{i + 1}</td>
+                      <td className="px-5 py-2.5 text-gray-200 text-sm">{i + 1}</td>
                       <td className="px-5 py-2.5 text-white text-sm font-semibold truncate max-w-[150px]">{p.name}</td>
                       <td className="px-5 py-2.5 text-right">
                         <span className={`text-sm font-bold ${p.profit >= 0 ? "text-green-400" : "text-red-400"}`}>
@@ -1898,14 +1898,14 @@ export default function AnalyticsView({ uid }) {
           <div className="rounded-xl overflow-hidden" style={cardStyle}>
             <div className="px-5 py-3 border-b border-white/[0.07]">
               <h3 className="text-white font-bold text-base">💼 Highest Inventory Value</h3>
-              <p className="text-gray-500 text-xs mt-0.5">Products with most capital invested</p>
+              <p className="text-gray-200 text-xs mt-0.5">Products with most capital invested</p>
             </div>
             {highestInvValueProducts.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">Set cost prices to see this</p>
+              <p className="text-gray-200 text-sm text-center py-10">Set cost prices to see this</p>
             ) : (
               <table className="w-full">
                 <thead>
-                  <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.05]">
+                  <tr className="text-[10px] uppercase tracking-widest text-gray-200 border-b border-white/[0.05]">
                     <th className="px-5 py-2 text-left">#</th>
                     <th className="px-5 py-2 text-left">Product</th>
                     <th className="px-5 py-2 text-right">Value</th>
@@ -1914,7 +1914,7 @@ export default function AnalyticsView({ uid }) {
                 <tbody>
                   {highestInvValueProducts.map((p, i) => (
                     <tr key={i} className="border-b border-white/[0.04] hover:bg-white/[0.025]">
-                      <td className="px-5 py-2.5 text-gray-500 text-sm">{i + 1}</td>
+                      <td className="px-5 py-2.5 text-gray-200 text-sm">{i + 1}</td>
                       <td className="px-5 py-2.5 text-white text-sm font-semibold truncate max-w-[150px]">{p.name}</td>
                       <td className="px-5 py-2.5 text-amber-400 text-sm font-bold text-right">Rs. {Math.round(p.value).toLocaleString()}</td>
                     </tr>
@@ -1929,7 +1929,7 @@ export default function AnalyticsView({ uid }) {
         <div className="rounded-xl overflow-hidden" style={cardStyle}>
           <div className="px-5 py-4 border-b border-white/[0.07]">
             <h3 className="text-white font-bold text-base">⏳ Stock Aging</h3>
-            <p className="text-gray-500 text-xs mt-0.5">Based on product creation date in inventory</p>
+            <p className="text-gray-200 text-xs mt-0.5">Based on product creation date in inventory</p>
           </div>
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-0">
             {/* Aging bar chart */}
@@ -1960,7 +1960,7 @@ export default function AnalyticsView({ uid }) {
                     <span className="text-white text-sm font-semibold">{b.emoji} {b.label}</span>
                     <span className={`${b.color} font-bold text-sm`}>{invAgingBuckets[b.key]} units</span>
                   </div>
-                  <p className="text-gray-600 text-xs">{invAgingProducts[b.key].length} product{invAgingProducts[b.key].length !== 1 ? "s" : ""}</p>
+                  <p className="text-gray-200 text-xs">{invAgingProducts[b.key].length} product{invAgingProducts[b.key].length !== 1 ? "s" : ""}</p>
                   {b.key === "90+ Days" && invAgingProducts[b.key].length > 0 && (
                     <p className="text-red-400 text-xs mt-1">⚠️ Consider discounting or clearing old stock</p>
                   )}
@@ -1974,7 +1974,7 @@ export default function AnalyticsView({ uid }) {
         <div className="rounded-xl overflow-hidden" style={cardStyle}>
           <div className="px-5 py-4 border-b border-white/[0.07]">
             <h3 className="text-white font-bold text-lg">📋 Inventory Reports</h3>
-            <p className="text-gray-500 text-xs mt-0.5">Detailed reports for analysis and decision-making</p>
+            <p className="text-gray-200 text-xs mt-0.5">Detailed reports for analysis and decision-making</p>
           </div>
           {/* Report tabs */}
           <div className="flex flex-wrap gap-2 p-4 border-b border-white/[0.07]">
@@ -2001,7 +2001,7 @@ export default function AnalyticsView({ uid }) {
             {/* Inventory Valuation Report */}
             {invReportTab === "valuation" && (
               <div>
-                <p className="text-gray-400 text-xs mb-3">Complete inventory valuation at cost and selling price.</p>
+                <p className="text-gray-200 text-xs mb-3">Complete inventory valuation at cost and selling price.</p>
                 <div className="grid grid-cols-3 gap-3 mb-4">
                   <div className="rounded-lg p-3 text-center" style={{ background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.2)" }}>
                     <p className="text-indigo-400 text-xs mb-1">Total Products</p>
@@ -2019,7 +2019,7 @@ export default function AnalyticsView({ uid }) {
                 <div className="overflow-x-auto">
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.07]">
+                      <tr className="text-[10px] uppercase tracking-widest text-gray-200 border-b border-white/[0.07]">
                         <th className="py-2 text-left">Product</th>
                         <th className="py-2 text-right">Stock</th>
                         <th className="py-2 text-right">Cost/Unit</th>
@@ -2036,9 +2036,9 @@ export default function AnalyticsView({ uid }) {
                         return (
                           <tr key={p.id} className="border-b border-white/[0.04] hover:bg-white/[0.025]">
                             <td className="py-2.5 text-white font-semibold truncate max-w-[140px]">{p.name}</td>
-                            <td className="py-2.5 text-gray-400 text-right">{stock}</td>
-                            <td className="py-2.5 text-gray-400 text-right">Rs. {cost.toLocaleString()}</td>
-                            <td className="py-2.5 text-gray-400 text-right">Rs. {sell.toLocaleString()}</td>
+                            <td className="py-2.5 text-gray-200 text-right">{stock}</td>
+                            <td className="py-2.5 text-gray-200 text-right">Rs. {cost.toLocaleString()}</td>
+                            <td className="py-2.5 text-gray-200 text-right">Rs. {sell.toLocaleString()}</td>
                             <td className="py-2.5 text-amber-400 text-right">Rs. {(stock * cost).toLocaleString()}</td>
                             <td className="py-2.5 text-green-400 text-right">Rs. {(stock * sell).toLocaleString()}</td>
                           </tr>
@@ -2046,7 +2046,7 @@ export default function AnalyticsView({ uid }) {
                       })}
                     </tbody>
                   </table>
-                  {activeProducts.length > 20 && <p className="text-gray-600 text-xs text-center mt-3">Showing 20 of {activeProducts.length} products</p>}
+                  {activeProducts.length > 20 && <p className="text-gray-200 text-xs text-center mt-3">Showing 20 of {activeProducts.length} products</p>}
                 </div>
               </div>
             )}
@@ -2054,14 +2054,14 @@ export default function AnalyticsView({ uid }) {
             {/* Product Profitability Report */}
             {invReportTab === "profitability" && (
               <div>
-                <p className="text-gray-400 text-xs mb-3">Profit breakdown per product from sales in the selected period.</p>
+                <p className="text-gray-200 text-xs mb-3">Profit breakdown per product from sales in the selected period.</p>
                 {Object.values(profitByProduct).length === 0 ? (
-                  <p className="text-gray-500 text-sm text-center py-8">No inventory-linked sales data</p>
+                  <p className="text-gray-200 text-sm text-center py-8">No inventory-linked sales data</p>
                 ) : (
                   <div className="overflow-x-auto">
                     <table className="w-full text-sm">
                       <thead>
-                        <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.07]">
+                        <tr className="text-[10px] uppercase tracking-widest text-gray-200 border-b border-white/[0.07]">
                           <th className="py-2 text-left">Product</th>
                           <th className="py-2 text-right">Qty Sold</th>
                           <th className="py-2 text-right">Revenue</th>
@@ -2076,7 +2076,7 @@ export default function AnalyticsView({ uid }) {
                           return (
                             <tr key={i} className="border-b border-white/[0.04] hover:bg-white/[0.025]">
                               <td className="py-2.5 text-white font-semibold truncate max-w-[130px]">{p.name}</td>
-                              <td className="py-2.5 text-gray-400 text-right">{p.qty.toFixed(p.qty % 1 !== 0 ? 1 : 0)}</td>
+                              <td className="py-2.5 text-gray-200 text-right">{p.qty.toFixed(p.qty % 1 !== 0 ? 1 : 0)}</td>
                               <td className="py-2.5 text-amber-400 text-right">Rs. {Math.round(p.revenue).toLocaleString()}</td>
                               <td className="py-2.5 text-red-400 text-right">Rs. {Math.round(p.cost).toLocaleString()}</td>
                               <td className={`py-2.5 text-right font-bold ${p.profit >= 0 ? "text-green-400" : "text-red-400"}`}>
@@ -2098,13 +2098,13 @@ export default function AnalyticsView({ uid }) {
             {/* Low Stock Report */}
             {invReportTab === "lowstock" && (
               <div>
-                <p className="text-gray-400 text-xs mb-3">{lowStockItems.length} product(s) below reorder threshold.</p>
+                <p className="text-gray-200 text-xs mb-3">{lowStockItems.length} product(s) below reorder threshold.</p>
                 {lowStockItems.length === 0 ? (
-                  <p className="text-gray-500 text-sm text-center py-8">All products well stocked ✅</p>
+                  <p className="text-gray-200 text-sm text-center py-8">All products well stocked ✅</p>
                 ) : (
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.07]">
+                      <tr className="text-[10px] uppercase tracking-widest text-gray-200 border-b border-white/[0.07]">
                         <th className="py-2 text-left">Product</th>
                         <th className="py-2 text-right">Current Stock</th>
                         <th className="py-2 text-right">Threshold</th>
@@ -2119,7 +2119,7 @@ export default function AnalyticsView({ uid }) {
                           <tr key={p.id} className="border-b border-white/[0.04] hover:bg-yellow-500/5">
                             <td className="py-2.5 text-white font-semibold">{p.name}</td>
                             <td className="py-2.5 text-yellow-400 font-bold text-right">{stock}</td>
-                            <td className="py-2.5 text-gray-400 text-right">{threshold}</td>
+                            <td className="py-2.5 text-gray-200 text-right">{threshold}</td>
                             <td className="py-2.5 text-red-400 text-right">-{threshold - stock}</td>
                           </tr>
                         );
@@ -2133,13 +2133,13 @@ export default function AnalyticsView({ uid }) {
             {/* Out of Stock Report */}
             {invReportTab === "outofstock" && (
               <div>
-                <p className="text-gray-400 text-xs mb-3">{outOfStockProducts.length} product(s) have zero stock.</p>
+                <p className="text-gray-200 text-xs mb-3">{outOfStockProducts.length} product(s) have zero stock.</p>
                 {outOfStockProducts.length === 0 ? (
-                  <p className="text-gray-500 text-sm text-center py-8">No stock issues ✅</p>
+                  <p className="text-gray-200 text-sm text-center py-8">No stock issues ✅</p>
                 ) : (
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.07]">
+                      <tr className="text-[10px] uppercase tracking-widest text-gray-200 border-b border-white/[0.07]">
                         <th className="py-2 text-left">Product</th>
                         <th className="py-2 text-right">Category</th>
                         <th className="py-2 text-right">Last Price</th>
@@ -2149,7 +2149,7 @@ export default function AnalyticsView({ uid }) {
                       {outOfStockProducts.map(p => (
                         <tr key={p.id} className="border-b border-white/[0.04] hover:bg-red-500/5">
                           <td className="py-2.5 text-white font-semibold">{p.name}</td>
-                          <td className="py-2.5 text-gray-400 text-right">{p.category || "—"}</td>
+                          <td className="py-2.5 text-gray-200 text-right">{p.category || "—"}</td>
                           <td className="py-2.5 text-amber-400 text-right">Rs. {getProductPrice(p).toLocaleString()}</td>
                         </tr>
                       ))}
@@ -2162,15 +2162,15 @@ export default function AnalyticsView({ uid }) {
             {/* Dead Stock Report */}
             {invReportTab === "deadstock" && (
               <div>
-                <p className="text-gray-400 text-xs mb-3">
+                <p className="text-gray-200 text-xs mb-3">
                   Products where less than 20% of stock sold in 90 days — high remaining stock, low turnover.
                 </p>
                 {slowMoving90.length === 0 ? (
-                  <p className="text-gray-500 text-sm text-center py-8">No dead stock found ✅</p>
+                  <p className="text-gray-200 text-sm text-center py-8">No dead stock found ✅</p>
                 ) : (
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.07]">
+                      <tr className="text-[10px] uppercase tracking-widest text-gray-200 border-b border-white/[0.07]">
                         <th className="py-2 text-left">Product</th>
                         <th className="py-2 text-right">Remaining</th>
                         <th className="py-2 text-right">Sold (90d)</th>
@@ -2188,7 +2188,7 @@ export default function AnalyticsView({ uid }) {
                         return (
                           <tr key={p.id} className="border-b border-white/[0.04] hover:bg-red-500/5">
                             <td className="py-2.5 text-white font-semibold truncate max-w-[140px]">{p.name}</td>
-                            <td className="py-2.5 text-gray-300 text-right font-semibold">{stock}</td>
+                            <td className="py-2.5 text-gray-200 text-right font-semibold">{stock}</td>
                             <td className="py-2.5 text-amber-400 text-right">{sold}</td>
                             <td className="py-2.5 text-right">
                               <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${Number(pct) === 0
@@ -2209,13 +2209,13 @@ export default function AnalyticsView({ uid }) {
             {/* Category Performance Report */}
             {invReportTab === "category" && (
               <div>
-                <p className="text-gray-400 text-xs mb-3">Performance breakdown by product category.</p>
+                <p className="text-gray-200 text-xs mb-3">Performance breakdown by product category.</p>
                 {Object.keys(stockByCategory).length === 0 ? (
-                  <p className="text-gray-500 text-sm text-center py-8">No category data. Add categories to products.</p>
+                  <p className="text-gray-200 text-sm text-center py-8">No category data. Add categories to products.</p>
                 ) : (
                   <table className="w-full text-sm">
                     <thead>
-                      <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.07]">
+                      <tr className="text-[10px] uppercase tracking-widest text-gray-200 border-b border-white/[0.07]">
                         <th className="py-2 text-left">Category</th>
                         <th className="py-2 text-right">Products</th>
                         <th className="py-2 text-right">Total Stock</th>
@@ -2231,7 +2231,7 @@ export default function AnalyticsView({ uid }) {
                         return (
                           <tr key={cat} className="border-b border-white/[0.04] hover:bg-white/[0.025]">
                             <td className="py-2.5 text-white font-semibold">{cat}</td>
-                            <td className="py-2.5 text-gray-400 text-right">{prods.length}</td>
+                            <td className="py-2.5 text-gray-200 text-right">{prods.length}</td>
                             <td className="py-2.5 text-blue-400 text-right">{stock}</td>
                             <td className="py-2.5 text-amber-400 text-right">Rs. {Math.round(costVal).toLocaleString()}</td>
                             <td className="py-2.5 text-green-400 text-right">Rs. {Math.round(sellVal).toLocaleString()}</td>
@@ -2507,9 +2507,9 @@ export default function AnalyticsView({ uid }) {
           {/* Customer Growth Line Chart */}
           <div className="rounded-xl p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-base mb-1">📈 Customer Growth</h3>
-            <p className="text-gray-500 text-xs mb-4">New customers added over time</p>
+            <p className="text-gray-200 text-xs mb-4">New customers added over time</p>
             {growthData.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">No data yet</p>
+              <p className="text-gray-200 text-sm text-center py-10">No data yet</p>
             ) : (
               <ResponsiveContainer width="100%" height={220}>
                 <LineChart data={growthData} margin={{ top: 5, right: 10, left: 0, bottom: 5 }}>
@@ -2526,9 +2526,9 @@ export default function AnalyticsView({ uid }) {
           {/* Revenue by Customer Horizontal Bar */}
           <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-sm sm:text-base mb-1">💰 Revenue by Customer</h3>
-            <p className="text-gray-500 text-xs mb-4">Top 10 customers by total purchases</p>
+            <p className="text-gray-200 text-xs mb-4">Top 10 customers by total purchases</p>
             {revByCust.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">No customer invoices yet</p>
+              <p className="text-gray-200 text-sm text-center py-10">No customer invoices yet</p>
             ) : (
               <ResponsiveContainer width="100%" height={revByCust.length * 36 + 20}>
                 <BarChart data={revByCust} layout="vertical" margin={{ top: 0, right: 45, left: 0, bottom: 0 }} barCategoryGap="15%">
@@ -2568,9 +2568,9 @@ export default function AnalyticsView({ uid }) {
           {/* Customer Segmentation Donut */}
           <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-sm sm:text-base mb-1">🎯 Customer Segmentation</h3>
-            <p className="text-gray-500 text-xs mb-3">Based on activity and spending</p>
+            <p className="text-gray-200 text-xs mb-3">Based on activity and spending</p>
             {segData.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">No customers yet</p>
+              <p className="text-gray-200 text-sm text-center py-10">No customers yet</p>
             ) : (
               <div className="flex flex-col gap-4">
                 <ResponsiveContainer width="100%" height={180}>
@@ -2587,9 +2587,9 @@ export default function AnalyticsView({ uid }) {
                     return (
                       <div key={s.name} className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: s.color }} />
-                        <span className="text-gray-300 text-xs flex-1">{s.name}</span>
+                        <span className="text-gray-200 text-xs flex-1">{s.name}</span>
                         <span className="text-white text-xs font-semibold">{s.value}</span>
-                        <span className="text-gray-500 text-[10px] w-9 text-right">{pct}%</span>
+                        <span className="text-gray-200 text-[10px] w-9 text-right">{pct}%</span>
                       </div>
                     );
                   })}
@@ -2601,9 +2601,9 @@ export default function AnalyticsView({ uid }) {
           {/* Monthly Revenue Trend Line */}
           <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-sm sm:text-base mb-1">📅 Monthly Revenue Trend</h3>
-            <p className="text-gray-500 text-xs mb-4">Revenue from customers month by month</p>
+            <p className="text-gray-200 text-xs mb-4">Revenue from customers month by month</p>
             {monthRevChart.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">No revenue data</p>
+              <p className="text-gray-200 text-sm text-center py-10">No revenue data</p>
             ) : (
               <ResponsiveContainer width="100%" height={200}>
                 <LineChart data={monthRevChart} margin={{ top: 5, right: 5, left: -20, bottom: 5 }}>
@@ -2623,9 +2623,9 @@ export default function AnalyticsView({ uid }) {
           {/* Payment Status Pie */}
           <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-sm sm:text-base mb-1">💳 Payment Status</h3>
-            <p className="text-gray-500 text-xs mb-3">Invoice payment breakdown for customers</p>
+            <p className="text-gray-200 text-xs mb-3">Invoice payment breakdown for customers</p>
             {payStatusData.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">No customer invoices</p>
+              <p className="text-gray-200 text-sm text-center py-10">No customer invoices</p>
             ) : (
               <div className="flex flex-col gap-4">
                 <ResponsiveContainer width="100%" height={180}>
@@ -2643,9 +2643,9 @@ export default function AnalyticsView({ uid }) {
                     return (
                       <div key={s.name} className="flex items-center gap-2">
                         <span className="w-2.5 h-2.5 rounded-sm flex-shrink-0" style={{ background: s.color }} />
-                        <span className="text-gray-300 text-xs flex-1">{s.name}</span>
+                        <span className="text-gray-200 text-xs flex-1">{s.name}</span>
                         <span className="text-white text-xs font-semibold">{s.value}</span>
-                        <span className="text-gray-500 text-[10px] w-9 text-right">{pct}%</span>
+                        <span className="text-gray-200 text-[10px] w-9 text-right">{pct}%</span>
                       </div>
                     );
                   })}
@@ -2657,9 +2657,9 @@ export default function AnalyticsView({ uid }) {
           {/* Customer by City */}
           <div className="rounded-xl p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-base mb-1">🌍 Customer Location</h3>
-            <p className="text-gray-500 text-xs mb-4">Customers by city</p>
+            <p className="text-gray-200 text-xs mb-4">Customers by city</p>
             {!hasCityData ? (
-              <p className="text-gray-500 text-sm text-center py-10">No city data — add city when creating customers</p>
+              <p className="text-gray-200 text-sm text-center py-10">No city data — add city when creating customers</p>
             ) : (
               <div className="space-y-2.5">
                 {cityData.filter(c => c.name !== "Unknown").slice(0, 8).map((c, i) => {
@@ -2667,7 +2667,7 @@ export default function AnalyticsView({ uid }) {
                   return (
                     <div key={c.name}>
                       <div className="flex justify-between text-xs mb-1">
-                        <span className="text-gray-300">{c.name}</span>
+                        <span className="text-gray-200">{c.name}</span>
                         <span className="text-white font-semibold">{c.value} ({pct}%)</span>
                       </div>
                       <div className="w-full h-2 rounded-full bg-white/10 overflow-hidden">
@@ -2686,14 +2686,14 @@ export default function AnalyticsView({ uid }) {
         <div className="rounded-xl overflow-hidden" style={cardStyle}>
           <div className="px-5 py-4 border-b border-white/[0.07]">
             <h3 className="text-white font-bold text-base">🏆 Top 10 Customers</h3>
-            <p className="text-gray-500 text-xs mt-0.5">Ranked by total revenue</p>
+            <p className="text-gray-200 text-xs mt-0.5">Ranked by total revenue</p>
           </div>
           {custList.filter(c => c.orders > 0).length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-10">No customer purchases yet</p>
+            <p className="text-gray-200 text-sm text-center py-10">No customer purchases yet</p>
           ) : (
             <table className="w-full text-sm">
               <thead>
-                <tr className="text-[10px] uppercase tracking-widest text-gray-600 border-b border-white/[0.05]">
+                <tr className="text-[10px] uppercase tracking-widest text-gray-200 border-b border-white/[0.05]">
                   <th className="px-5 py-2 text-left">#</th>
                   <th className="px-5 py-2 text-left">Customer</th>
                   <th className="px-5 py-2 text-right">Revenue</th>
@@ -2705,18 +2705,18 @@ export default function AnalyticsView({ uid }) {
               <tbody>
                 {[...custList].filter(c => c.orders > 0).sort((a, b) => b.revenue - a.revenue).slice(0, 10).map((c, i) => (
                   <tr key={c.id} className="border-b border-white/[0.04] hover:bg-white/[0.025]">
-                    <td className="px-5 py-3 text-gray-500 text-sm">{i + 1}</td>
+                    <td className="px-5 py-3 text-gray-200 text-sm">{i + 1}</td>
                     <td className="px-5 py-3">
                       <p className="text-white font-semibold text-sm truncate max-w-[140px]">{c.name}</p>
                     </td>
                     <td className="px-5 py-3 text-amber-400 font-bold text-right">Rs. {Math.round(c.revenue).toLocaleString()}</td>
-                    <td className="px-5 py-3 text-gray-300 text-right">{c.orders}</td>
+                    <td className="px-5 py-3 text-gray-200 text-right">{c.orders}</td>
                     <td className="px-5 py-3 text-right">
                       {c.balance > 0
                         ? <span className="text-red-400 font-semibold">Rs. {Math.round(c.balance).toLocaleString()}</span>
                         : <span className="text-green-400 text-xs">✓ Clear</span>}
                     </td>
-                    <td className="px-5 py-3 text-gray-500 text-right text-xs">
+                    <td className="px-5 py-3 text-gray-200 text-right text-xs">
                       {c.lastDate ? c.lastDate.toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
                     </td>
                   </tr>
@@ -2729,9 +2729,9 @@ export default function AnalyticsView({ uid }) {
         {/* ===== MOST PURCHASED PRODUCTS ===== */}
         <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
           <h3 className="text-white font-bold text-sm sm:text-base mb-1">🛍️ Most Purchased Products</h3>
-          <p className="text-gray-500 text-xs mb-4">Products most frequently bought by customers</p>
+          <p className="text-gray-200 text-xs mb-4">Products most frequently bought by customers</p>
           {topProducts.length === 0 ? (
-            <p className="text-gray-500 text-sm text-center py-8">No product data</p>
+            <p className="text-gray-200 text-sm text-center py-8">No product data</p>
           ) : (
             <ResponsiveContainer width="100%" height={topProducts.length * 38 + 20}>
               <BarChart data={topProducts} layout="vertical" margin={{ top: 0, right: 40, left: 0, bottom: 0 }} barCategoryGap="15%">
@@ -2791,10 +2791,10 @@ export default function AnalyticsView({ uid }) {
               </span>
             </div>
             {outstandingList.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">No outstanding balances ✅</p>
+              <p className="text-gray-200 text-sm text-center py-10">No outstanding balances ✅</p>
             ) : (
               <div className="divide-y divide-white/[0.04] max-h-72 overflow-y-auto">
-                <div className="grid px-5 py-2 text-[10px] uppercase tracking-widest text-gray-600"
+                <div className="grid px-5 py-2 text-[10px] uppercase tracking-widest text-gray-200"
                   style={{ gridTemplateColumns: "1fr auto" }}>
                   <span>Customer</span><span className="text-right">Outstanding</span>
                 </div>
@@ -2803,7 +2803,7 @@ export default function AnalyticsView({ uid }) {
                     style={{ gridTemplateColumns: "1fr auto" }}>
                     <div>
                       <p className="text-white text-sm font-semibold">{c.name}</p>
-                      <p className="text-gray-600 text-xs">{c.orders} orders</p>
+                      <p className="text-gray-200 text-xs">{c.orders} orders</p>
                     </div>
                     <span className="text-red-400 font-bold text-sm">Rs. {Math.round(c.balance).toLocaleString()}</span>
                   </div>
@@ -2847,10 +2847,10 @@ export default function AnalyticsView({ uid }) {
                 style={{ background: `rgba(255,255,255,0.03)`, border: `1px solid rgba(255,255,255,0.08)` }}>
                 <div className="flex items-center gap-2 mb-2">
                   <span className="text-xl">{ins.icon}</span>
-                  <p className="text-gray-500 text-[10px] uppercase tracking-wide font-semibold">{ins.label}</p>
+                  <p className="text-gray-200 text-[10px] uppercase tracking-wide font-semibold">{ins.label}</p>
                 </div>
                 <p className="text-white font-bold text-sm truncate" style={{ color: ins.color }}>{ins.value}</p>
-                {ins.sub && <p className="text-gray-600 text-xs mt-0.5">{ins.sub}</p>}
+                {ins.sub && <p className="text-gray-200 text-xs mt-0.5">{ins.sub}</p>}
               </div>
             ))}
           </div>
@@ -3066,7 +3066,7 @@ export default function AnalyticsView({ uid }) {
           {/* Collection Trend */}
           <div className="rounded-xl p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-base mb-1">📈 Payment Collection Trend</h3>
-            <p className="text-gray-500 text-xs mb-4">Monthly payments received (last 6 months)</p>
+            <p className="text-gray-200 text-xs mb-4">Monthly payments received (last 6 months)</p>
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={monthLabels.map((m,i)=>({ name:m, received: Math.round(monthRecvArr[i]) }))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" />
@@ -3081,9 +3081,9 @@ export default function AnalyticsView({ uid }) {
           {/* Payment Methods Pie */}
           <div className="rounded-xl p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-sm sm:text-base mb-1">💰 Payment Methods</h3>
-            <p className="text-gray-500 text-xs mb-4">Which method brings most payments</p>
+            <p className="text-gray-200 text-xs mb-4">Which method brings most payments</p>
             {Object.keys(methodMap).length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">No payment method data yet</p>
+              <p className="text-gray-200 text-sm text-center py-10">No payment method data yet</p>
             ) : (
               <div className="flex flex-col gap-3">
                 <ResponsiveContainer width="100%" height={160}>
@@ -3102,9 +3102,9 @@ export default function AnalyticsView({ uid }) {
                     return (
                       <div key={name} className="flex items-center gap-2">
                         <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background:COLORS_P[i%COLORS_P.length]}}/>
-                        <span className="text-gray-300 text-xs flex-1">{name}</span>
+                        <span className="text-gray-200 text-xs flex-1">{name}</span>
                         <span className="text-white text-xs font-semibold">Rs. {Math.round(val).toLocaleString()}</span>
-                        <span className="text-gray-500 text-xs w-10 text-right">{pct}%</span>
+                        <span className="text-gray-200 text-xs w-10 text-right">{pct}%</span>
                       </div>
                     );
                   })}
@@ -3120,11 +3120,11 @@ export default function AnalyticsView({ uid }) {
           <div className="rounded-xl p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-base mb-4">👑 Top Paying Customers</h3>
             {topPayers.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-8">No payment data</p>
+              <p className="text-gray-200 text-sm text-center py-8">No payment data</p>
             ) : (
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-gray-500 uppercase text-[10px] tracking-wide border-b border-white/10">
+                  <tr className="text-gray-200 uppercase text-[10px] tracking-wide border-b border-white/10">
                     <th className="text-left pb-2">Customer</th>
                     <th className="text-right pb-2">Paid Amount</th>
                   </tr>
@@ -3132,7 +3132,7 @@ export default function AnalyticsView({ uid }) {
                 <tbody className="divide-y divide-white/[0.04]">
                   {topPayers.map(([name,data],i)=>(
                     <tr key={name} className="hover:bg-white/[0.02]">
-                      <td className="py-2.5 text-gray-300 flex items-center gap-2">
+                      <td className="py-2.5 text-gray-200 flex items-center gap-2">
                         <span className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black flex-shrink-0"
                           style={{background:COLORS_P[i%COLORS_P.length]+"33",color:COLORS_P[i%COLORS_P.length]}}>
                           {i+1}
@@ -3151,11 +3151,11 @@ export default function AnalyticsView({ uid }) {
           <div className="rounded-xl p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-base mb-4">📄 Outstanding Invoices</h3>
             {outstandingInvList.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-8">No outstanding invoices ✅</p>
+              <p className="text-gray-200 text-sm text-center py-8">No outstanding invoices ✅</p>
             ) : (
               <table className="w-full text-xs">
                 <thead>
-                  <tr className="text-gray-500 uppercase text-[10px] tracking-wide border-b border-white/10">
+                  <tr className="text-gray-200 uppercase text-[10px] tracking-wide border-b border-white/10">
                     <th className="text-left pb-2">Invoice</th>
                     <th className="text-left pb-2">Customer</th>
                     <th className="text-right pb-2">Pending</th>
@@ -3168,9 +3168,9 @@ export default function AnalyticsView({ uid }) {
                     return (
                       <tr key={inv.id} className="hover:bg-white/[0.02]">
                         <td className="py-2 text-blue-400 font-mono text-[10px]">INV-{(inv.id||"").slice(-4).toUpperCase()}</td>
-                        <td className="py-2 text-gray-300 truncate max-w-[100px]">{inv.customerName||inv.customer||"Direct"}</td>
+                        <td className="py-2 text-gray-200 truncate max-w-[100px]">{inv.customerName||inv.customer||"Direct"}</td>
                         <td className="py-2 text-right font-semibold text-amber-400">Rs. {Math.round(Number(inv.balance)||0).toLocaleString()}</td>
-                        <td className={`py-2 text-right text-[10px] ${isOverdue?"text-red-400 font-bold":"text-gray-500"}`}>
+                        <td className={`py-2 text-right text-[10px] ${isOverdue?"text-red-400 font-bold":"text-gray-200"}`}>
                           {inv.dueDate ? new Date(inv.dueDate).toLocaleDateString("en-PK",{day:"2-digit",month:"short"}) : "—"}
                           {isOverdue && " ⚠️"}
                         </td>
@@ -3188,9 +3188,9 @@ export default function AnalyticsView({ uid }) {
           {/* Payment Status Donut */}
           <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-sm sm:text-base mb-1">📊 Payment Status</h3>
-            <p className="text-gray-500 text-xs mb-4">Invoice status at a glance</p>
+            <p className="text-gray-200 text-xs mb-4">Invoice status at a glance</p>
             {statusData.length === 0 ? (
-              <p className="text-gray-500 text-sm text-center py-10">No invoice data</p>
+              <p className="text-gray-200 text-sm text-center py-10">No invoice data</p>
             ) : (
               <div className="flex flex-col sm:flex-row gap-4 items-center">
                 <ResponsiveContainer width="100%" height={160} className="sm:w-40">
@@ -3205,7 +3205,7 @@ export default function AnalyticsView({ uid }) {
                   {statusData.map(d=>(
                     <div key={d.name} className="flex items-center gap-2">
                       <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background:d.color}}/>
-                      <span className="text-gray-300 text-xs flex-1">{d.name}</span>
+                      <span className="text-gray-200 text-xs flex-1">{d.name}</span>
                       <span className="text-white text-xs font-bold">{d.value}</span>
                     </div>
                   ))}
@@ -3228,19 +3228,19 @@ export default function AnalyticsView({ uid }) {
                 return (
                   <div key={row.label} className="p-3 rounded-xl" style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)"}}>
                     <div className="flex items-center justify-between mb-2">
-                      <span className="text-gray-400 text-xs font-semibold">{row.label}</span>
+                      <span className="text-gray-200 text-xs font-semibold">{row.label}</span>
                       <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${isUp?"bg-green-500/20 text-green-400":"bg-red-500/20 text-red-400"}`}>
                         {isUp?"↑":"↓"} {Math.abs(Number(pct))}%
                       </span>
                     </div>
                     <div className="flex justify-between">
                       <div>
-                        <p className="text-[10px] text-gray-500">{row.currLabel}</p>
+                        <p className="text-[10px] text-gray-200">{row.currLabel}</p>
                         <p className="text-white font-bold text-sm">Rs. {Math.round(row.curr).toLocaleString()}</p>
                       </div>
                       <div className="text-right">
-                        <p className="text-[10px] text-gray-500">{row.prevLabel}</p>
-                        <p className="text-gray-400 font-semibold text-sm">Rs. {Math.round(row.prev).toLocaleString()}</p>
+                        <p className="text-[10px] text-gray-200">{row.prevLabel}</p>
+                        <p className="text-gray-200 font-semibold text-sm">Rs. {Math.round(row.prev).toLocaleString()}</p>
                       </div>
                     </div>
                   </div>
@@ -3264,7 +3264,7 @@ export default function AnalyticsView({ uid }) {
               <div key={i} className="flex items-start gap-3 p-3 rounded-xl" style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.06)"}}>
                 <span className="text-xl mt-0.5">{ins.icon}</span>
                 <div className="min-w-0">
-                  <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide leading-tight mb-1">{ins.label}</p>
+                  <p className="text-gray-200 text-[10px] font-semibold uppercase tracking-wide leading-tight mb-1">{ins.label}</p>
                   <p className="text-white text-xs font-bold leading-snug break-words">{ins.value}</p>
                 </div>
               </div>
@@ -3324,17 +3324,17 @@ export default function AnalyticsView({ uid }) {
               <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
                 <div className="rounded-xl p-5" style={cardStyle}>
                   <h3 className="text-white font-bold text-base mb-4">🏭 Supplier Balance</h3>
-                  {supplierList.length === 0 ? <p className="text-gray-500 text-sm text-center py-8">No supplier orders</p> : (
+                  {supplierList.length === 0 ? <p className="text-gray-200 text-sm text-center py-8">No supplier orders</p> : (
                     <table className="w-full text-xs">
-                      <thead><tr className="text-gray-500 uppercase text-[10px] tracking-wide border-b border-white/10">
+                      <thead><tr className="text-gray-200 uppercase text-[10px] tracking-wide border-b border-white/10">
                         <th className="text-left pb-2">Supplier</th><th className="text-right pb-2">Total</th>
                         <th className="text-right pb-2">Paid</th><th className="text-right pb-2">Balance</th>
                       </tr></thead>
                       <tbody className="divide-y divide-white/[0.04]">
                         {supplierList.map(([name,d])=>(
                           <tr key={name} className="hover:bg-white/[0.02]">
-                            <td className="py-2.5 text-gray-300">{name}</td>
-                            <td className="py-2.5 text-right text-gray-400">Rs. {Math.round(d.net).toLocaleString()}</td>
+                            <td className="py-2.5 text-gray-200">{name}</td>
+                            <td className="py-2.5 text-right text-gray-200">Rs. {Math.round(d.net).toLocaleString()}</td>
                             <td className="py-2.5 text-right text-green-400 font-semibold">Rs. {Math.round(d.paid).toLocaleString()}</td>
                             <td className={`py-2.5 text-right font-bold ${d.balance>0?"text-red-400":"text-green-400"}`}>
                               {d.balance>0?`Rs. ${Math.round(d.balance).toLocaleString()}`:"Cleared ✓"}
@@ -3347,9 +3347,9 @@ export default function AnalyticsView({ uid }) {
                 </div>
                 <div className="rounded-xl p-5" style={cardStyle}>
                   <h3 className="text-white font-bold text-base mb-4">📄 Pending Orders</h3>
-                  {pendingOrders.length === 0 ? <p className="text-gray-500 text-sm text-center py-8">All orders cleared ✅</p> : (
+                  {pendingOrders.length === 0 ? <p className="text-gray-200 text-sm text-center py-8">All orders cleared ✅</p> : (
                     <table className="w-full text-xs">
-                      <thead><tr className="text-gray-500 uppercase text-[10px] tracking-wide border-b border-white/10">
+                      <thead><tr className="text-gray-200 uppercase text-[10px] tracking-wide border-b border-white/10">
                         <th className="text-left pb-2">Order</th><th className="text-left pb-2">Supplier</th>
                         <th className="text-right pb-2">Balance</th><th className="text-right pb-2">Due</th>
                       </tr></thead>
@@ -3359,9 +3359,9 @@ export default function AnalyticsView({ uid }) {
                           return (
                             <tr key={o.id} className="hover:bg-white/[0.02]">
                               <td className="py-2 text-purple-400 font-mono text-[10px]">PO-{(o.id||"").slice(-4).toUpperCase()}</td>
-                              <td className="py-2 text-gray-300 truncate max-w-[90px]">{o.supplierName||"—"}</td>
+                              <td className="py-2 text-gray-200 truncate max-w-[90px]">{o.supplierName||"—"}</td>
                               <td className="py-2 text-right font-semibold text-amber-400">Rs. {Math.round(Number(o.balance)||0).toLocaleString()}</td>
-                              <td className={`py-2 text-right text-[10px] ${isOD?"text-red-400 font-bold":"text-gray-500"}`}>
+                              <td className={`py-2 text-right text-[10px] ${isOD?"text-red-400 font-bold":"text-gray-200"}`}>
                                 {o.dueDate?new Date(o.dueDate).toLocaleDateString("en-PK",{day:"2-digit",month:"short"}):"—"}{isOD&&" ⚠️"}
                               </td>
                             </tr>
@@ -3461,7 +3461,7 @@ export default function AnalyticsView({ uid }) {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div className="rounded-xl p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-base mb-1">📈 Invoice Creation Trend</h3>
-            <p className="text-gray-500 text-xs mb-4">Invoices per month (last 6 months)</p>
+            <p className="text-gray-200 text-xs mb-4">Invoices per month (last 6 months)</p>
             <ResponsiveContainer width="100%" height={200}>
               <LineChart data={trendLabels.map((m,idx)=>({name:m,invoices:trendCounts[idx]}))}>
                 <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)"/>
@@ -3474,8 +3474,8 @@ export default function AnalyticsView({ uid }) {
           </div>
           <div className="rounded-xl p-3 sm:p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-sm sm:text-base mb-1">📊 Invoice Status</h3>
-            <p className="text-gray-500 text-xs mb-4">Distribution at a glance</p>
-            {statusData_i.length===0?<p className="text-gray-500 text-sm text-center py-10">No data</p>:(
+            <p className="text-gray-200 text-xs mb-4">Distribution at a glance</p>
+            {statusData_i.length===0?<p className="text-gray-200 text-sm text-center py-10">No data</p>:(
               <div className="flex flex-col sm:flex-row gap-4 items-center">
                 <ResponsiveContainer width="100%" height={160} className="sm:w-40">
                   <PieChart><Pie data={statusData_i} cx="50%" cy="50%" innerRadius={40} outerRadius={65} paddingAngle={3} dataKey="value" label={false}>
@@ -3485,9 +3485,9 @@ export default function AnalyticsView({ uid }) {
                 <div className="flex-1 w-full space-y-2">{statusData_i.map(d=>(
                   <div key={d.name} className="flex items-center gap-2">
                     <div className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{background:d.color}}/>
-                    <span className="text-gray-300 text-xs flex-1">{d.name}</span>
+                    <span className="text-gray-200 text-xs flex-1">{d.name}</span>
                     <span className="text-white text-xs font-bold">{d.value}</span>
-                    <span className="text-gray-500 text-[10px]">{totalInv>0?((d.value/totalInv)*100).toFixed(1):0}%</span>
+                    <span className="text-gray-200 text-[10px]">{totalInv>0?((d.value/totalInv)*100).toFixed(1):0}%</span>
                   </div>
                 ))}</div>
               </div>
@@ -3497,14 +3497,14 @@ export default function AnalyticsView({ uid }) {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div className="rounded-xl p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-base mb-4">🧾 Top Customers by Invoice Count</h3>
-            {topCustByCount.length===0?<p className="text-gray-500 text-sm text-center py-8">No data</p>:(
+            {topCustByCount.length===0?<p className="text-gray-200 text-sm text-center py-8">No data</p>:(
               <table className="w-full text-xs">
-                <thead><tr className="text-gray-500 uppercase text-[10px] tracking-wide border-b border-white/10">
+                <thead><tr className="text-gray-200 uppercase text-[10px] tracking-wide border-b border-white/10">
                   <th className="text-left pb-2">Customer</th><th className="text-right pb-2">Invoices</th><th className="text-right pb-2">Total Amount</th>
                 </tr></thead>
                 <tbody className="divide-y divide-white/[0.04]">{topCustByCount.map(([name,d],i)=>(
                   <tr key={name} className="hover:bg-white/[0.02]">
-                    <td className="py-2.5 text-gray-300 flex items-center gap-2">
+                    <td className="py-2.5 text-gray-200 flex items-center gap-2">
                       <span className="w-5 h-5 rounded-full flex items-center justify-center text-[9px] font-black flex-shrink-0" style={{background:COLORS_I[i%COLORS_I.length]+"33",color:COLORS_I[i%COLORS_I.length]}}>{i+1}</span>{name}
                     </td>
                     <td className="py-2.5 text-right text-blue-400 font-bold">{d.count}</td>
@@ -3516,17 +3516,17 @@ export default function AnalyticsView({ uid }) {
           </div>
           <div className="rounded-xl p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-base mb-4">📋 Largest Invoices</h3>
-            {largestInvoices.length===0?<p className="text-gray-500 text-sm text-center py-8">No invoices</p>:(
+            {largestInvoices.length===0?<p className="text-gray-200 text-sm text-center py-8">No invoices</p>:(
               <table className="w-full text-xs">
-                <thead><tr className="text-gray-500 uppercase text-[10px] tracking-wide border-b border-white/10">
+                <thead><tr className="text-gray-200 uppercase text-[10px] tracking-wide border-b border-white/10">
                   <th className="text-left pb-2">Invoice</th><th className="text-left pb-2">Customer</th><th className="text-right pb-2">Amount</th><th className="text-right pb-2">Status</th>
                 </tr></thead>
                 <tbody className="divide-y divide-white/[0.04]">{largestInvoices.map(inv=>(
                   <tr key={inv.id} className="hover:bg-white/[0.02]">
                     <td className="py-2 text-blue-400 font-mono text-[10px]">INV-{(inv.id||"").slice(-4).toUpperCase()}</td>
-                    <td className="py-2 text-gray-300 truncate max-w-[90px]">{inv.customerName||inv.customer||"Direct"}</td>
+                    <td className="py-2 text-gray-200 truncate max-w-[90px]">{inv.customerName||inv.customer||"Direct"}</td>
                     <td className="py-2 text-right font-bold text-white">Rs. {Math.round(getInvActualAmount(inv)).toLocaleString()}</td>
-                    <td className={`py-2 text-right text-[10px] font-bold ${SC[inv.status]||"text-gray-400"}`}>{inv.status||"—"}</td>
+                    <td className={`py-2 text-right text-[10px] font-bold ${SC[inv.status]||"text-gray-200"}`}>{inv.status||"—"}</td>
                   </tr>
                 ))}</tbody>
               </table>
@@ -3536,8 +3536,8 @@ export default function AnalyticsView({ uid }) {
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-5">
           <div className="rounded-xl p-5" style={cardStyle}>
             <h3 className="text-white font-bold text-base mb-1">⏰ Invoice Aging</h3>
-            <p className="text-gray-500 text-xs mb-4">Overdue invoices by age</p>
-            {agingData.every(d=>d.value===0)?<p className="text-gray-500 text-sm text-center py-10">No overdue invoices ✅</p>:(
+            <p className="text-gray-200 text-xs mb-4">Overdue invoices by age</p>
+            {agingData.every(d=>d.value===0)?<p className="text-gray-200 text-sm text-center py-10">No overdue invoices ✅</p>:(
               <ResponsiveContainer width="100%" height={180}>
                 <BarChart data={agingData} barSize={36}>
                   <CartesianGrid strokeDasharray="3 3" stroke="rgba(255,255,255,0.05)" vertical={false}/>
@@ -3561,12 +3561,12 @@ export default function AnalyticsView({ uid }) {
               return(
                 <div key={row.label} className="p-3 rounded-xl" style={{background:"rgba(255,255,255,0.03)",border:"1px solid rgba(255,255,255,0.07)"}}>
                   <div className="flex items-center justify-between mb-2">
-                    <span className="text-gray-400 text-xs font-semibold">{row.label}</span>
+                    <span className="text-gray-200 text-xs font-semibold">{row.label}</span>
                     <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${isUp?"bg-green-500/20 text-green-400":"bg-red-500/20 text-red-400"}`}>{isUp?"↑":"↓"} {Math.abs(Number(pct))}%</span>
                   </div>
                   <div className="flex justify-between">
-                    <div><p className="text-[10px] text-gray-500">{row.cL}</p><p className="text-white font-bold text-sm">{row.curr} invoices</p></div>
-                    <div className="text-right"><p className="text-[10px] text-gray-500">{row.pL}</p><p className="text-gray-400 font-semibold text-sm">{row.prev} invoices</p></div>
+                    <div><p className="text-[10px] text-gray-200">{row.cL}</p><p className="text-white font-bold text-sm">{row.curr} invoices</p></div>
+                    <div className="text-right"><p className="text-[10px] text-gray-200">{row.pL}</p><p className="text-gray-200 font-semibold text-sm">{row.prev} invoices</p></div>
                   </div>
                 </div>
               );
@@ -3589,9 +3589,9 @@ export default function AnalyticsView({ uid }) {
               <div key={i} className="flex items-start gap-2 p-3 rounded-xl" style={{background:"rgba(255,255,255,0.04)",border:"1px solid rgba(255,255,255,0.06)"}}>
                 <span className="text-lg mt-0.5 flex-shrink-0">{ins.icon}</span>
                 <div className="min-w-0">
-                  <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide leading-tight mb-1">{ins.label}</p>
+                  <p className="text-gray-200 text-[10px] font-semibold uppercase tracking-wide leading-tight mb-1">{ins.label}</p>
                   <p className="text-white text-xs font-bold leading-snug break-words">{ins.value}</p>
-                  {ins.extra && <p className="text-gray-600 text-[10px] mt-0.5">{ins.extra}</p>}
+                  {ins.extra && <p className="text-gray-200 text-[10px] mt-0.5">{ins.extra}</p>}
                 </div>
               </div>
             ))}
@@ -3634,8 +3634,8 @@ export default function AnalyticsView({ uid }) {
           <div className="flex flex-col md:flex-row items-start md:items-center gap-6">
             {/* Title */}
             <div className="flex-shrink-0">
-              <p className="text-gray-400 text-xs font-bold uppercase tracking-widest mb-1">💵 Profit Summary</p>
-              <p className="text-gray-500 text-xs">Inventory-linked invoice items only</p>
+              <p className="text-gray-200 text-xs font-bold uppercase tracking-widest mb-1">💵 Profit Summary</p>
+              <p className="text-gray-200 text-xs">Inventory-linked invoice items only</p>
             </div>
 
             {/* Numbers */}
@@ -3644,14 +3644,14 @@ export default function AnalyticsView({ uid }) {
               <div className="rounded-xl px-5 py-4" style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }}>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-amber-500 mb-1">Total Sales</p>
                 <p className="text-white font-black text-2xl">Rs. {totalInventoryRevenue.toLocaleString()}</p>
-                <p className="text-gray-500 text-[10px] mt-0.5">{inventoryItemCount} item{inventoryItemCount !== 1 ? "s" : ""} sold</p>
+                <p className="text-gray-200 text-[10px] mt-0.5">{inventoryItemCount} item{inventoryItemCount !== 1 ? "s" : ""} sold</p>
               </div>
 
               {/* Total Cost */}
               <div className="rounded-xl px-5 py-4" style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.2)" }}>
                 <p className="text-[10px] font-bold uppercase tracking-widest text-red-400 mb-1">Total Cost</p>
                 <p className="text-white font-black text-2xl">Rs. {totalInventoryCost.toLocaleString()}</p>
-                <p className="text-gray-500 text-[10px] mt-0.5">Sum of cost prices</p>
+                <p className="text-gray-200 text-[10px] mt-0.5">Sum of cost prices</p>
               </div>
 
               {/* Profit */}
@@ -3665,7 +3665,7 @@ export default function AnalyticsView({ uid }) {
                 <p className={`font-black text-2xl ${netProfit >= 0 ? "text-green-400" : "text-red-400"}`}>
                   Rs. {Math.abs(netProfit).toLocaleString()}
                 </p>
-                <p className="text-gray-500 text-[10px] mt-0.5">Margin: {profitMargin}%</p>
+                <p className="text-gray-200 text-[10px] mt-0.5">Margin: {profitMargin}%</p>
               </div>
             </div>
           </div>
@@ -3683,7 +3683,7 @@ export default function AnalyticsView({ uid }) {
           )}
 
           {skippedItemCount > 0 && (
-            <p className="mt-3 text-gray-600 text-[10px] text-center">
+            <p className="mt-3 text-gray-200 text-[10px] text-center">
               ℹ️ {skippedItemCount} invoice item{skippedItemCount > 1 ? "s" : ""} not counted — not linked to inventory
             </p>
           )}
@@ -3743,13 +3743,13 @@ export default function AnalyticsView({ uid }) {
         <div className="rounded-xl overflow-hidden" style={cardStyle}>
           <div className="px-5 py-4 border-b border-white/[0.07]">
             <h3 className="text-white font-bold text-base">📦 Product-wise Sales & Profit</h3>
-            <p className="text-gray-500 text-xs mt-0.5">Only inventory-linked products shown</p>
+            <p className="text-gray-200 text-xs mt-0.5">Only inventory-linked products shown</p>
           </div>
 
           {Object.values(profitByProduct).length === 0 ? (
             <div className="py-12 text-center">
-              <p className="text-gray-500 text-sm">No inventory-linked sales in this period</p>
-              <p className="text-gray-600 text-xs mt-1">Invoices need products from your inventory to calculate profit</p>
+              <p className="text-gray-200 text-sm">No inventory-linked sales in this period</p>
+              <p className="text-gray-200 text-xs mt-1">Invoices need products from your inventory to calculate profit</p>
             </div>
           ) : (
             <div className="overflow-x-auto">
@@ -3779,10 +3779,10 @@ export default function AnalyticsView({ uid }) {
                       </div>
                       <p className="text-white text-xs sm:text-sm font-semibold truncate">{p.name}</p>
                     </div>
-                    <p className="text-gray-400 text-xs sm:text-sm text-right tabular-nums">{p.qty.toFixed(p.qty % 1 !== 0 ? 2 : 0)}</p>
+                    <p className="text-gray-200 text-xs sm:text-sm text-right tabular-nums">{p.qty.toFixed(p.qty % 1 !== 0 ? 2 : 0)}</p>
                     <p className="text-amber-400 text-xs sm:text-sm font-semibold text-right tabular-nums whitespace-nowrap">Rs. {Math.round(p.revenue).toLocaleString()}</p>
                     <p className="text-red-400 text-xs sm:text-sm text-right tabular-nums whitespace-nowrap">Rs. {Math.round(p.cost).toLocaleString()}</p>
-                    <p className={`text-xs sm:text-sm font-black text-right tabular-nums whitespace-nowrap ${p.profit > 0 ? "text-green-400" : p.profit < 0 ? "text-red-400" : "text-gray-500"}`}>
+                    <p className={`text-xs sm:text-sm font-black text-right tabular-nums whitespace-nowrap ${p.profit > 0 ? "text-green-400" : p.profit < 0 ? "text-red-400" : "text-gray-200"}`}>
                       {p.profit > 0 ? "+" : ""}Rs. {Math.round(p.profit).toLocaleString()}
                     </p>
                   </div>
@@ -3791,7 +3791,7 @@ export default function AnalyticsView({ uid }) {
               {/* Footer total row */}
               <div className="grid px-3 sm:px-5 py-3 sm:py-3.5 items-center font-black min-w-[600px]"
                 style={{ gridTemplateColumns: "2fr 1fr 1.2fr 1.2fr 1.2fr", background: "rgba(255,255,255,0.02)", borderTop: "1px solid rgba(255,255,255,0.08)" }}>
-                <span className="text-gray-400 text-[10px] sm:text-xs uppercase tracking-wide sm:tracking-widest">Total</span>
+                <span className="text-gray-200 text-[10px] sm:text-xs uppercase tracking-wide sm:tracking-widest">Total</span>
                 <span />
                 <span className="text-amber-400 text-xs sm:text-sm text-right tabular-nums whitespace-nowrap">Rs. {Math.round(totalInventoryRevenue).toLocaleString()}</span>
                 <span className="text-red-400 text-xs sm:text-sm text-right tabular-nums whitespace-nowrap">Rs. {Math.round(totalInventoryCost).toLocaleString()}</span>
@@ -3824,7 +3824,7 @@ export default function AnalyticsView({ uid }) {
                 Business Analytics
               </h2>
             </div>
-            <p className="text-gray-400 text-xs ml-10 sm:ml-13 hidden sm:block">Comprehensive insights and performance metrics for your business</p>
+            <p className="text-gray-200 text-xs ml-10 sm:ml-13 hidden sm:block">Comprehensive insights and performance metrics for your business</p>
           </div>
 
           {/* Date Filters */}

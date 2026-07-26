@@ -395,7 +395,7 @@ function ProductCard({ product, onEdit, onDelete, index }) {
         <div>
           <div className="flex items-center gap-1.5 mb-1">
             <span className="text-sm">{variantTypeInfo.icon}</span>
-            <span className="text-[9px] font-semibold text-gray-500 uppercase tracking-wide">
+            <span className="text-[9px] font-semibold text-gray-300 uppercase tracking-wide">
               {variantTypeInfo.label}
             </span>
           </div>
@@ -423,7 +423,7 @@ function ProductCard({ product, onEdit, onDelete, index }) {
             </div>
             <div className="flex flex-wrap gap-1.5">
               {product.variants.slice(0, 3).map((v, i) => (
-                <div key={i} className="px-2 py-1 rounded text-[10px] font-medium bg-white/5 text-gray-400 border border-white/10">
+                <div key={i} className="px-2 py-1 rounded text-[10px] font-medium bg-white/5 text-gray-300 border border-white/10">
                   {v.label}: <span className="text-amber-400 font-semibold">Rs. {v.sellingPrice || v.price}</span>
                 </div>
               ))}
@@ -625,7 +625,7 @@ function AddProductModal({ product, onSave, onClose }) {
 
           {/* Product Name */}
           <div>
-            <label className="text-gray-400 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
+            <label className="text-gray-300 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
               ▣ Product Name *
             </label>
             <input
@@ -641,7 +641,7 @@ function AddProductModal({ product, onSave, onClose }) {
 
           {/* Description */}
           <div>
-            <label className="text-gray-400 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
+            <label className="text-gray-300 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
               ≡ Description (Optional)
             </label>
             <textarea
@@ -656,7 +656,7 @@ function AddProductModal({ product, onSave, onClose }) {
 
           {/* Category */}
           <div>
-            <label className="text-gray-400 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
+            <label className="text-gray-300 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
               🗂️ Category
             </label>
             <div className="flex gap-2">
@@ -686,7 +686,7 @@ function AddProductModal({ product, onSave, onClose }) {
 
           {/* Variant Type */}
           <div>
-            <label className="text-gray-400 text-[10px] font-semibold uppercase tracking-wide mb-2 block">
+            <label className="text-gray-300 text-[10px] font-semibold uppercase tracking-wide mb-2 block">
               ⚙ Product Type *
             </label>
             <div className="grid grid-cols-2 md:grid-cols-3 gap-2">
@@ -720,7 +720,7 @@ function AddProductModal({ product, onSave, onClose }) {
           {!hasVariants && (
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-gray-400 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
+                <label className="text-gray-300 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
                   💰 Cost Price (Rs.) *
                 </label>
                 <input
@@ -735,7 +735,7 @@ function AddProductModal({ product, onSave, onClose }) {
                 />
               </div>
               <div>
-                <label className="text-gray-400 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
+                <label className="text-gray-300 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
                   ₨ Selling Price (Rs.) *
                 </label>
                 <input
@@ -750,7 +750,7 @@ function AddProductModal({ product, onSave, onClose }) {
                 />
               </div>
               <div>
-                <label className="text-gray-400 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
+                <label className="text-gray-300 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
                   ▦ Stock
                 </label>
                 <input

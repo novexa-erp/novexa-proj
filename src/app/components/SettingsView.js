@@ -96,7 +96,7 @@ function OTPModal({ onClose, onVerified, userEmail, isResendAllowed, onResend, r
             </div>
             <div>
               <p className="text-white font-bold text-sm">Enter OTP</p>
-              <p className="text-gray-500 text-xs">Sent to <span className="text-blue-400 font-mono">{userEmail}</span></p>
+              <p className="text-gray-200 text-xs">Sent to <span className="text-blue-400 font-mono">{userEmail}</span></p>
             </div>
           </div>
         </div>
@@ -187,7 +187,7 @@ function ConfirmModal({ title, message, onConfirm, onCancel, confirmLabel = "Yes
           </div>
           <div className="flex flex-col gap-1.5">
             <p className="text-white font-bold text-sm">{title}</p>
-            <p className="text-gray-400 text-xs leading-relaxed">{message}</p>
+            <p className="text-gray-200 text-xs leading-relaxed">{message}</p>
           </div>
         </div>
         <div className="flex gap-3">
@@ -220,7 +220,7 @@ function OTPSuccessModal({ onClose }) {
             ✅
           </div>
           <p className="text-white font-bold text-base">OTP Verified!</p>
-          <p className="text-gray-400 text-sm leading-relaxed">
+          <p className="text-gray-200 text-sm leading-relaxed">
             Now you can change your <span className="text-green-400 font-semibold">email</span> and <span className="text-green-400 font-semibold">password</span> below.
           </p>
         </div>
@@ -549,7 +549,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
             </div>
             <div className="flex flex-col gap-2 w-full">
               <p className="text-white text-sm font-semibold">Business Logo</p>
-              <p className="text-gray-500 text-xs leading-relaxed">
+              <p className="text-gray-200 text-xs leading-relaxed">
                 This logo will be used automatically on all invoices. PNG or JPG, max 1 MB.
               </p>
               <div className="flex flex-wrap gap-2 mt-1">
@@ -605,7 +605,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
                   onChange={set("email")} disabled={!credUnlocked} />
               )}
               {!credUnlocked && (
-                <p className="text-gray-500 text-[10px] mt-1.5 flex items-center gap-1">
+                <p className="text-gray-200 text-[10px] mt-1.5 flex items-center gap-1">
                   {gmailConnected
                     ? <><span>🔒</span> Click &quot;Change Email&quot; to verify via OTP first</>
                     : <><span>🔒</span> Connect Gmail first to enable email/password changes</>
@@ -640,8 +640,8 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
                 </option>
               ))}
             </SSelect>
-            <p className="text-gray-600 text-xs mt-2">
-              Selected: <span className="text-gray-400 font-semibold">
+            <p className="text-gray-200 text-xs mt-2">
+              Selected: <span className="text-gray-200 font-semibold">
                 {CURRENCIES.find(c => c.code === profile.currency)?.symbol} ({profile.currency})
               </span>
             </p>
@@ -699,7 +699,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
                     style={{ ...base, paddingRight: 42, opacity: (gmailConnected && !credUnlocked) ? 0.4 : 1, cursor: (gmailConnected && !credUnlocked) ? "not-allowed" : "text" }} />
                   <button type="button"
                     onClick={() => setShowPw(p => ({ ...p, [f.key]: !p[f.key] }))}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors text-sm">
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-200 hover:text-gray-300 transition-colors text-sm">
                     {showPw[f.key] ? "🙈" : "👁"}
                   </button>
                 </div>
@@ -748,7 +748,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
                   </div>
                   <div className="flex flex-col gap-1">
                     <p className="text-white font-bold text-sm">Email Feature Disabled</p>
-                    <p className="text-gray-400 text-xs leading-relaxed">
+                    <p className="text-gray-200 text-xs leading-relaxed">
                       This feature has been disabled by your administrator. Invoice email sending is currently not available for your account.
                     </p>
                   </div>
@@ -761,7 +761,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
                   <span className="text-lg">💡</span>
                   <p className="text-amber-400 text-xs font-bold uppercase tracking-wider">What does this mean?</p>
                 </div>
-                <ul className="text-gray-400 text-xs flex flex-col gap-1.5 leading-relaxed">
+                <ul className="text-gray-200 text-xs flex flex-col gap-1.5 leading-relaxed">
                   <li className="flex items-start gap-2"><span className="text-amber-500 mt-0.5">•</span> You cannot connect a Gmail account at this time</li>
                   <li className="flex items-start gap-2"><span className="text-amber-500 mt-0.5">•</span> Invoice emails will not be sent automatically</li>
                   <li className="flex items-start gap-2"><span className="text-amber-500 mt-0.5">•</span> All other features (PDF, WhatsApp, Print) still work normally</li>
@@ -795,7 +795,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
                     <span className="text-xl">✅</span>
                     <div>
                       <p className="text-green-400 text-sm font-bold">Gmail Connected</p>
-                      <p className="text-gray-400 text-xs mt-0.5">
+                      <p className="text-gray-200 text-xs mt-0.5">
                         Invoices will be sent from <span className="text-green-300 font-mono">{gmailForm.gmailSender || userDoc?.gmailSender}</span>
                       </p>
                     </div>
@@ -819,7 +819,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
               <div className="rounded-xl p-4 flex flex-col gap-2"
                 style={{ background: "rgba(37,99,235,0.06)", border: "1px solid rgba(37,99,235,0.15)" }}>
                 <p className="text-blue-400 text-xs font-bold uppercase tracking-wider">How to get Gmail App Password</p>
-                <ol className="text-gray-400 text-xs flex flex-col gap-1.5 list-decimal list-inside leading-relaxed">
+                <ol className="text-gray-200 text-xs flex flex-col gap-1.5 list-decimal list-inside leading-relaxed">
                   <li>Go to <span className="text-blue-400 font-semibold">myaccount.google.com</span> → Security</li>
                   <li>Enable <span className="text-white font-semibold">2-Step Verification</span> (required)</li>
                   <li>Search <span className="text-white font-semibold">"App passwords"</span> in search bar</li>
@@ -849,11 +849,11 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
                         cursor: (gmailConnected && !credUnlocked) ? "not-allowed" : "text" }}
                     />
                     <button type="button" onClick={() => setShowGmailPass(v => !v)}
-                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 transition-colors text-sm">
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-200 hover:text-gray-300 transition-colors text-sm">
                       {showGmailPass ? "🙈" : "👁"}
                     </button>
                   </div>
-                  <p className="text-gray-600 text-[10px] mt-1.5">
+                  <p className="text-gray-200 text-[10px] mt-1.5">
                     Stored securely — only used to send invoice emails on your behalf.
                   </p>
                 </div>
@@ -904,7 +904,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
             ].map((tip, i) => (
               <div key={i} className="flex items-start gap-3 text-xs">
                 <span className="text-lg leading-none mt-0.5">{tip.icon}</span>
-                <p className="text-gray-400 leading-relaxed">{tip.text}</p>
+                <p className="text-gray-200 leading-relaxed">{tip.text}</p>
               </div>
             ))}
           </div>
@@ -921,18 +921,18 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
           </div>
           <div className="flex flex-col gap-2">
             <div className="flex justify-between items-center py-2 border-b border-white/5">
-              <span className="text-gray-500 text-xs">Account Status</span>
+              <span className="text-gray-200 text-xs">Account Status</span>
               <span className="px-2 py-1 rounded-lg text-xs font-semibold"
                 style={{ background: "rgba(52,211,153,0.12)", color: "#34d399" }}>
                 Active
               </span>
             </div>
             <div className="flex justify-between items-center py-2 border-b border-white/5">
-              <span className="text-gray-500 text-xs">User ID</span>
-              <span className="text-gray-400 text-xs font-mono">{uid?.slice(0, 8)}...</span>
+              <span className="text-gray-200 text-xs">User ID</span>
+              <span className="text-gray-200 text-xs font-mono">{uid?.slice(0, 8)}...</span>
             </div>
             <div className="flex justify-between items-center py-2">
-              <span className="text-gray-500 text-xs">Email Verified</span>
+              <span className="text-gray-200 text-xs">Email Verified</span>
               <span className="text-xs">
                 {user?.emailVerified ? "✓ Yes" : "⚠ No"}
               </span>
@@ -950,7 +950,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
             </div>
             <h3 className="text-white font-bold text-sm">Security Best Practices</h3>
           </div>
-          <div className="flex flex-col gap-2.5 text-xs text-gray-400 leading-relaxed">
+          <div className="flex flex-col gap-2.5 text-xs text-gray-200 leading-relaxed">
             <p>✓ Use a strong password with uppercase, lowercase, numbers & symbols</p>
             <p>✓ Never share your password with anyone</p>
             <p>✓ Change your password every 3-6 months</p>
@@ -964,7 +964,7 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
             <span className="text-2xl">🤝</span>
             <h3 className="text-white font-bold text-sm">Need Help?</h3>
           </div>
-          <p className="text-gray-400 text-xs leading-relaxed">
+          <p className="text-gray-200 text-xs leading-relaxed">
             Having trouble with settings? Contact our support team for assistance.
           </p>
           <button type="button" 
