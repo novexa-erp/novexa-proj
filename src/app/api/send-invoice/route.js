@@ -74,8 +74,9 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
   const currentItems    = allItems.filter(it => !(it.description || "").startsWith("Previous Balance"));
 
   // Helper: get variant multiplier from variantLabel (e.g. "0.5 kg" → 0.5, "XL" → 1)
+  // Works for BOTH custom variants (no productId) AND inventory variants (with productId)
   function getVarMult(it) {
-    if (!it.variantLabel || it.productId) return 1; // inventory products: price is already per-variant
+    if (!it.variantLabel) return 1;
     const num = parseFloat(it.variantLabel);
     return (!isNaN(num) && num > 0) ? num : 1;
   }

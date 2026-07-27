@@ -507,8 +507,28 @@ function AddProductModal({ product, onSave, onClose }) {
   });
 
   const [newVariant, setNewVariant] = useState({ label: "", costPrice: "", sellingPrice: "", stock: "" });
+  // Base prices per unit (e.g. per 1 kg) — used to auto-calculate variant prices
+  const [baseSellingPrice, setBaseSellingPrice] = useState("");
+  const [baseCostPrice,    setBaseCostPrice]    = useState("");
   const selectedType = VARIANT_TYPES.find(t => t.id === formData.variantType);
   const hasVariants = formData.variantType !== "none";
+
+  // Auto-calculate variant prices from base price when label changes
+  function handleNewVariantLabelChange(label) {
+    const num = parseFloat(label);
+    const multiplier = (!isNaN(num) && num > 0) ? num : null;
+
+    setNewVariant(v => {
+      const updated = { ...v, label };
+      if (multiplier !== null) {
+        const sp = parseFloat(baseSellingPrice);
+        const cp = parseFloat(baseCostPrice);
+        if (!isNaN(sp) && sp > 0) updated.sellingPrice = String(Math.round(sp * multiplier * 100) / 100);
+        if (!isNaN(cp) && cp > 0) updated.costPrice    = String(Math.round(cp * multiplier * 100) / 100);
+      }
+      return updated;
+    });
+  }
 
   function handleImageChange(e) {
     const file = e.target.files?.[0];
@@ -782,10 +802,9 @@ function AddProductModal({ product, onSave, onClose }) {
                       <button
                         key={preset}
                         type="button"
-                        onClick={() => setNewVariant(v => ({ 
-                          ...v, 
-                          label: selectedType.unit ? `${preset} ${selectedType.unit}` : preset 
-                        }))}
+                        onClick={() => handleNewVariantLabelChange(
+                          selectedType.unit ? `${preset} ${selectedType.unit}` : String(preset)
+                        )}
                         className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all hover:scale-105"
                         style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", color: "#F59E0B" }}>
                         {preset} {selectedType.unit || ""}
@@ -797,36 +816,101 @@ function AddProductModal({ product, onSave, onClose }) {
 
               {/* Add Variant Form */}
               <div className="p-3 rounded-lg" style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+
+                {/* Base price per unit — shown once, used to auto-calculate all variants */}
+                <div className="mb-3 p-3 rounded-lg" style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)" }}>
+                  <p className="text-[10px] font-bold text-amber-400 uppercase tracking-widest mb-2">
+                    📐 Base Price per {selectedType?.unit || "unit"} (for auto-calculation)
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    <div>
+                      <label className="text-[10px] text-gray-500 mb-1 block">💰 Cost Price / {selectedType?.unit || "unit"}</label>
+                      <input
+                        type="number" inputMode="decimal"
+                        placeholder={`e.g. 200 per ${selectedType?.unit || "unit"}`}
+                        value={baseCostPrice}
+                        onChange={e => {
+                          setBaseCostPrice(e.target.value);
+                          // recalc current label if set
+                          const num = parseFloat(newVariant.label);
+                          if (!isNaN(num) && num > 0) {
+                            const cp = parseFloat(e.target.value);
+                            if (!isNaN(cp) && cp > 0)
+                              setNewVariant(v => ({ ...v, costPrice: String(Math.round(cp * num * 100) / 100) }));
+                          }
+                        }}
+                        className="w-full px-3 py-2 rounded-lg text-xs text-white outline-none"
+                        style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
+                      />
+                    </div>
+                    <div>
+                      <label className="text-[10px] text-gray-500 mb-1 block">₨ Selling Price / {selectedType?.unit || "unit"}</label>
+                      <input
+                        type="number" inputMode="decimal"
+                        placeholder={`e.g. 250 per ${selectedType?.unit || "unit"}`}
+                        value={baseSellingPrice}
+                        onChange={e => {
+                          setBaseSellingPrice(e.target.value);
+                          const num = parseFloat(newVariant.label);
+                          if (!isNaN(num) && num > 0) {
+                            const sp = parseFloat(e.target.value);
+                            if (!isNaN(sp) && sp > 0)
+                              setNewVariant(v => ({ ...v, sellingPrice: String(Math.round(sp * num * 100) / 100) }));
+                          }
+                        }}
+                        className="w-full px-3 py-2 rounded-lg text-xs text-white outline-none"
+                        style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
+                      />
+                    </div>
+                  </div>
+                  <p className="text-[10px] text-gray-600 mt-1.5">
+                    Enter the price per 1 {selectedType?.unit || "unit"} — variant prices will be calculated automatically.
+                  </p>
+                </div>
+
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-2 mb-2">
+                  <div className="md:col-span-2">
+                    <input
+                      type="text"
+                      placeholder={selectedType?.unit ? `e.g. 0.5 ${selectedType.unit}` : "e.g. Medium"}
+                      value={newVariant.label}
+                      onChange={e => handleNewVariantLabelChange(e.target.value)}
+                      className="w-full px-3 py-2 rounded-lg text-xs text-white outline-none"
+                      style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
+                    />
+                    {/* Show auto-calculated hint */}
+                    {newVariant.label && parseFloat(newVariant.label) > 0 && (baseSellingPrice || baseCostPrice) && (
+                      <p className="text-[10px] text-amber-400 mt-1 px-1">
+                        ⚡ Auto: {parseFloat(newVariant.label)} × base price
+                        {baseCostPrice ? ` → Cost: Rs. ${newVariant.costPrice}` : ""}
+                        {baseSellingPrice ? ` → Selling: Rs. ${newVariant.sellingPrice}` : ""}
+                      </p>
+                    )}
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-500 mb-1 block">💰 Cost Price (editable)</label>
+                    <input
+                      type="number" inputMode="decimal"
+                      placeholder="Cost Price (Rs.)"
+                      value={newVariant.costPrice}
+                      onChange={e => setNewVariant(v => ({ ...v, costPrice: e.target.value }))}
+                      className="px-3 py-2 rounded-lg text-xs text-white outline-none w-full"
+                      style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
+                    />
+                  </div>
+                  <div>
+                    <label className="text-[10px] text-gray-500 mb-1 block">₨ Selling Price (editable)</label>
+                    <input
+                      type="number" inputMode="decimal"
+                      placeholder="Selling Price (Rs.)"
+                      value={newVariant.sellingPrice}
+                      onChange={e => setNewVariant(v => ({ ...v, sellingPrice: e.target.value }))}
+                      className="px-3 py-2 rounded-lg text-xs text-white outline-none w-full"
+                      style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
+                    />
+                  </div>
                   <input
-                    type="text"
-                    placeholder={selectedType?.unit ? `e.g. 1 ${selectedType.unit}` : "e.g. Medium"}
-                    value={newVariant.label}
-                    onChange={e => setNewVariant(v => ({ ...v, label: e.target.value }))}
-                    className="px-3 py-2 rounded-lg text-xs text-white outline-none md:col-span-2"
-                    style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
-                  />
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    placeholder="💰 Cost Price (Rs.)"
-                    value={newVariant.costPrice}
-                    onChange={e => setNewVariant(v => ({ ...v, costPrice: e.target.value }))}
-                    className="px-3 py-2 rounded-lg text-xs text-white outline-none"
-                    style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
-                  />
-                  <input
-                    type="number"
-                    inputMode="decimal"
-                    placeholder="₨ Selling Price (Rs.)"
-                    value={newVariant.sellingPrice}
-                    onChange={e => setNewVariant(v => ({ ...v, sellingPrice: e.target.value }))}
-                    className="px-3 py-2 rounded-lg text-xs text-white outline-none"
-                    style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}
-                  />
-                  <input
-                    type="number"
-                    inputMode="numeric"
+                    type="number" inputMode="numeric"
                     placeholder="Stock"
                     value={newVariant.stock}
                     onChange={e => setNewVariant(v => ({ ...v, stock: e.target.value }))}

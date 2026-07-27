@@ -212,7 +212,7 @@ export default function Footer() {
             </Link>
 
             {/* Tagline */}
-            <p className="text-gray-500 text-sm leading-relaxed max-w-xs">
+            <p className="text-gray-200 text-sm leading-relaxed max-w-xs">
               Novexa — the all-in-one ERP platform that helps small and medium businesses manage
               invoices, customers, inventory, and payments from one place.
             </p>
@@ -260,7 +260,7 @@ export default function Footer() {
 
             {/* Newsletter */}
             <div>
-              <p className="text-xs font-semibold text-gray-400 uppercase tracking-widest mb-2">
+              <p className="text-xs font-semibold text-gray-200 uppercase tracking-widest mb-2">
                 Stay Updated
               </p>
               <NewsletterBox />
@@ -298,7 +298,7 @@ export default function Footer() {
                           href={link.href}
                           className="text-sm transition-all duration-200 flex items-center gap-1.5 group"
                           style={{
-                            color: hoveredLink === key ? "#fff" : "#6b7280",
+                            color: hoveredLink === key ? "#F59E0B" : "#fff",
                           }}
                           onMouseEnter={() => setHoveredLink(key)}
                           onMouseLeave={() => setHoveredLink(null)}
@@ -351,7 +351,7 @@ export default function Footer() {
               >
                 {stat.value}
               </span>
-              <span className="text-gray-600 text-xs mt-0.5">{stat.label}</span>
+              <span className="text-gray-200 text-xs mt-0.5">{stat.label}</span>
             </div>
           ))}
         </div> */}
@@ -361,8 +361,14 @@ export default function Footer() {
           className="flex flex-col md:flex-row items-center justify-between gap-4 pt-6"
           style={{ borderTop: "1px solid rgba(255,255,255,0.06)" }}
         >
-          <p className="text-gray-600 text-xs text-center md:text-left">
-            © {new Date().getFullYear()} Novexa ERP (Novexa). All rights reserved.
+          <p className="text-gray-200 text-xs text-center md:text-left">
+            © {new Date().getFullYear()} Novexa ERP. All rights reserved.{" "}
+            <span className="text-gray-200">·</span>{" "}
+            <a href="https://codecoves.com" target="_blank" rel="noopener noreferrer"
+              className="transition-colors duration-200 hover:text-gray-200"
+              style={{ color: "#4b5563" }}>
+              A Project of <span style={{ color: "#F59E0B" }}>Codecoves</span>
+            </a>
           </p>
 
           {/* Bottom quick links */}
@@ -373,7 +379,7 @@ export default function Footer() {
               { label: "Security",         href: "/security" },
             ].map((item) => (
               <Link key={item.label} href={item.href}
-                className="text-gray-600 hover:text-gray-400 text-xs transition-colors duration-200">
+                className="text-gray-200 hover:text-gray-200 text-xs transition-colors duration-200">
                 {item.label}
               </Link>
             ))}

@@ -908,6 +908,14 @@ function DashboardContent() {
               <span className="text-[10px] opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: "#6b7280" }}>ℹ️</span>
             </button>
           )}
+          {/* View Site Button */}
+          <a href="/" target="_blank" rel="noopener noreferrer"
+            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full text-left transition-all duration-200 hover:bg-blue-500/10 group mb-1"
+            style={{ color: "#60a5fa", border: "1px solid rgba(37,99,235,0.2)" }}>
+            <span className="text-base">🌐</span>
+            <span>View Site</span>
+            <span className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-xs">↗</span>
+          </a>
           {/* Trash Button */}
           <button
             onClick={() => handleNavChange("trash")}
@@ -930,6 +938,18 @@ function DashboardContent() {
             <span>Logout</span>
             <span className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity">→</span>
           </button>
+
+          {/* Codecoves credit */}
+          <a href="https://codecoves.com" target="_blank" rel="noopener noreferrer"
+            className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl transition-all duration-200 group"
+            style={{ background: "rgba(245,158,11,0.04)", marginTop: "15px", border: "1px solid rgba(245,158,11,0.1)" }}
+            onMouseEnter={e => { e.currentTarget.style.background = "rgba(245,158,11,0.08)"; e.currentTarget.style.borderColor = "rgba(245,158,11,0.25)"; }}
+            onMouseLeave={e => { e.currentTarget.style.background = "rgba(245,158,11,0.04)"; e.currentTarget.style.borderColor = "rgba(245,158,11,0.1)"; }}>
+            <span className="text-[10px] text-gray-200 font-medium tracking-wide">A project of</span>
+            <span className="text-[11px] font-black tracking-wide transition-colors duration-200 group-hover:text-amber-300"
+              style={{ color: "#F59E0B" }}>Codecoves</span>
+            <span className="text-[10px] text-gray-200 group-hover:text-amber-500 transition-colors duration-200">↗</span>
+          </a>
         </div>
       </aside>
 

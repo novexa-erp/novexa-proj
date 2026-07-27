@@ -805,7 +805,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
 
   // Check if any additional items have been filled
   const hasAdditionalItems = additionalItems.some(
-    it => it.description.trim() && (Number(it.qty) > 0) && (Number(it.unitPrice) >= 0)
+    it => it.description.trim() && (Number(it.qty) > 0) && (Number(it.unitPrice) > 0)
   );
   // Total amount of additional items
   const additionalTotal = additionalItems.reduce(
@@ -1116,14 +1116,43 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
             const firstRealItem = form.items.find(
               it => it.description && !it.description.startsWith("Previous Balance · INV-")
             );
-            const productName  = firstRealItem?.description  || "";
-            const defaultRate  = firstRealItem?.unitPrice     || "";
-            const variantUnit  = firstRealItem?.variantUnit   || ""; // e.g. "kg", "L", "m"
-            const variantLabel = firstRealItem?.variantLabel  || ""; // e.g. "1 kg"
-            const isVariant    = !!(firstRealItem?.variantId && variantUnit);
+            const productName = firstRealItem?.description || "";
 
-            // common preset values for variant units
-            const unitPresets = ["0.25","0.5","0.75","1","2","5","10","20","50"];
+            // Find the inventory product linked to the first real item
+            const linkedProduct = firstRealItem?.productId
+              ? activeProducts.find(p => p.id === firstRealItem.productId)
+              // fallback: match by name if productId not stored
+              || activeProducts.find(p => p.name?.toLowerCase() === (firstRealItem?.description || "").toLowerCase())
+              : activeProducts.find(p => p.name?.toLowerCase() === (firstRealItem?.description || "").toLowerCase());
+            const linkedVariants = linkedProduct?.variants || [];
+            
+            // Common variant presets (independent of inventory)
+            const commonVariantPresets = ["0.25", "0.5", "0.75", "1", "2", "5", "10", "20", "50"];
+            const variantUnit    = linkedProduct
+              ? ({ weight: "kg", volume: "L", length: "m" }[linkedProduct.variantType] || "")
+              : (firstRealItem?.variantUnit || "");
+
+            // Show variant mode if product has variants or item has variant info
+            const showVariantMode = linkedVariants.length > 0
+              || !!(firstRealItem?.variantUnit)
+              || !!(firstRealItem?.variantLabel);
+
+            // variantMultiplier: e.g. "0.5 kg" → 0.5
+            const curVariantLabel = additionalItems[0]?.variantLabel || firstRealItem?.variantLabel || "";
+            const curVariantUnit  = additionalItems[0]?.variantUnit  || variantUnit;
+            const variantMultiplier = curVariantLabel ? (parseFloat(curVariantLabel) > 0 ? parseFloat(curVariantLabel) : 1) : 1;
+
+            // perKgRate: editable by user (stored in a separate state key "perKgRate")
+            // We store it in additionalItems[0].perKgRate
+            const curPerKgRate  = additionalItems[0]?.perKgRate  ?? (firstRealItem?.unitPrice || "");
+            const curQty        = additionalItems[0]?.qty        ?? "";
+            // per unit price = variantMultiplier × perKgRate (readonly)
+            const perUnitPrice  = curPerKgRate !== "" ? (variantMultiplier * Number(curPerKgRate)).toFixed(2) : "";
+            const lineTotal     = (Number(curQty) || 0) * (Number(perUnitPrice) || 0);
+
+            // For normal (non-variant) mode
+            const curUnitPrice  = additionalItems[0]?.unitPrice  ?? (firstRealItem?.unitPrice || "");
+            const normalTotal   = (Number(curQty) || 0) * (Number(curUnitPrice) || 0);
 
             return (
               <div>
@@ -1132,12 +1161,13 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                     onClick={() => {
                       setAdditionalItems([{
                         description:  productName,
-                        qty:          isVariant ? "" : 1,
-                        unitPrice:    defaultRate,
-                        productId:    firstRealItem?.productId  || "",
-                        variantId:    firstRealItem?.variantId  || "",
+                        qty:          "",
+                        unitPrice:    firstRealItem?.unitPrice || "",
+                        perKgRate:    firstRealItem?.unitPrice || "",
+                        productId:    firstRealItem?.productId   || "",
+                        variantId:    firstRealItem?.variantId   || "",
                         variantLabel: firstRealItem?.variantLabel || "",
-                        variantUnit:  firstRealItem?.variantUnit  || "",
+                        variantUnit:  variantUnit || firstRealItem?.variantUnit || "",
                         stock:        firstRealItem?.stock || "",
                       }]);
                       setShowAddPurchase(true);
@@ -1160,111 +1190,137 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                     </div>
 
                     <div className="p-4 flex flex-col gap-3">
-                      {isVariant ? (
-                        /* ── Variant mode: product + unit input + rate (locked) + total ── */
+                      {showVariantMode ? (
+                        /* ── Variant mode ── */
                         <>
+                          {/* Desktop headers */}
                           <div className="hidden sm:grid gap-2 text-[10px] font-bold uppercase tracking-widest text-gray-600 px-1"
-                            style={{ gridTemplateColumns: "1fr 120px 110px 90px" }}>
+                            style={{ gridTemplateColumns: "1fr 80px 110px 110px 80px" }}>
                             <span>Product</span>
-                            <span className="text-center">Qty ({variantUnit})</span>
-                            <span className="text-right">Rate / {variantUnit}</span>
+                            <span className="text-center">Units</span>
+                            <span className="text-right">Per {curVariantUnit || "unit"} Rate</span>
+                            <span className="text-right">Per Unit (calc)</span>
                             <span className="text-right">Total</span>
                           </div>
-
                           {/* Desktop row */}
                           <div className="hidden sm:grid gap-2 items-center"
-                            style={{ gridTemplateColumns: "1fr 120px 110px 90px" }}>
-                            {/* Product name — read only */}
+                            style={{ gridTemplateColumns: "1fr 80px 110px 110px 80px" }}>
+                            {/* Product + variant label */}
                             <div className="px-3 py-2 rounded-xl text-sm truncate"
                               style={{ background: "rgba(255,255,255,0.03)", border: "1.5px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
                               {additionalItems[0]?.description || "—"}
-                              {variantLabel && <span className="ml-1 text-[10px] text-amber-400">({variantLabel})</span>}
+                              {curVariantLabel && (
+                                <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                                  style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>
+                                  {curVariantLabel}
+                                </span>
+                              )}
                             </div>
-
-                            {/* Unit qty input with decimal support + presets */}
-                            <div className="flex flex-col gap-1">
-                              <input
-                                type="number" inputMode="decimal" min="0.01" step="0.01" placeholder={`e.g. 0.5`}
-                                value={additionalItems[0]?.qty || ""}
-                                onChange={e => setAddItem(0, "qty", e.target.value)}
-                                style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(245,158,11,0.3)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" }}
-                              />
-                              {/* Quick preset buttons */}
-                              <div className="flex flex-wrap gap-1">
-                                {unitPresets.map(p => (
-                                  <button key={p} type="button"
-                                    onClick={() => setAddItem(0, "qty", p)}
-                                    className="px-1.5 py-0.5 rounded text-[9px] font-semibold transition-colors"
-                                    style={{
-                                      background: additionalItems[0]?.qty === p ? "rgba(245,158,11,0.3)" : "rgba(255,255,255,0.05)",
-                                      color: additionalItems[0]?.qty === p ? "#f59e0b" : "#6b7280",
-                                      border: `1px solid ${additionalItems[0]?.qty === p ? "rgba(245,158,11,0.4)" : "rgba(255,255,255,0.08)"}`,
-                                    }}>
-                                    {p}
-                                  </button>
-                                ))}
-                              </div>
-                            </div>
-
-                            {/* Rate — read only (locked to original) */}
+                            {/* Units — how many units (integer) */}
+                            <input
+                              type="number" inputMode="numeric" min="1" step="1" placeholder="Units"
+                              value={curQty}
+                              onChange={e => setAddItem(0, "qty", e.target.value)}
+                              style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(245,158,11,0.3)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" }}
+                            />
+                            {/* Per Kg/unit rate — EDITABLE */}
+                            <input
+                              type="number" inputMode="decimal" min="0" placeholder={`Per ${curVariantUnit || "unit"}`}
+                              value={curPerKgRate}
+                              onChange={e => {
+                                const r = e.target.value;
+                                setAddItem(0, "perKgRate", r);
+                                // also update unitPrice = multiplier × rate
+                                const pu = r !== "" ? (variantMultiplier * Number(r)) : "";
+                                setAddItem(0, "unitPrice", pu !== "" ? String(pu) : "");
+                              }}
+                              style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(245,158,11,0.25)", borderRadius:10, padding:"9px 10px", color:"#f59e0b", fontSize:13, textAlign:"right" }}
+                            />
+                            {/* Per unit price — READONLY (multiplier × perKgRate) */}
                             <div className="px-2 py-2 rounded-xl text-sm text-right"
                               style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.06)", color: "#9ca3af" }}>
-                              {formatRs(additionalItems[0]?.unitPrice)}
+                              {perUnitPrice !== "" ? formatRs(perUnitPrice) : "—"}
                             </div>
-
-                            {/* Line total */}
+                            {/* Total */}
                             <p className="text-xs font-bold text-right pr-1"
-                              style={{ color: (Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0 ? "#f59e0b" : "#4b5563" }}>
-                              {(Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0
-                                ? formatRs((Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0))
-                                : "—"}
+                              style={{ color: lineTotal > 0 ? "#f59e0b" : "#4b5563" }}>
+                              {lineTotal > 0 ? formatRs(lineTotal) : "—"}
                             </p>
                           </div>
 
+                          {/* Variant quick-pick buttons (shown on all screen sizes) */}
+                          {curVariantUnit && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              <span className="text-[10px] text-gray-600 font-semibold uppercase tracking-wide self-center mr-1">Variant:</span>
+                              {commonVariantPresets.map((preset) => {
+                                const isActive = curVariantLabel === preset || curVariantLabel === `${preset} ${curVariantUnit}`;
+                                return (
+                                  <button key={preset} type="button"
+                                    onClick={() => {
+                                      const mult = parseFloat(preset);
+                                      const pu = curPerKgRate !== "" ? (mult * Number(curPerKgRate)) : "";
+                                      setAddItem(0, "variantLabel", preset);
+                                      setAddItem(0, "unitPrice",    pu !== "" ? String(pu) : "");
+                                    }}
+                                    className="px-2.5 py-1 rounded-lg text-[11px] font-semibold transition-all hover:scale-105"
+                                    style={{
+                                      background: isActive ? "rgba(245,158,11,0.25)" : "rgba(255,255,255,0.05)",
+                                      color:      isActive ? "#f59e0b" : "#6b7280",
+                                      border:     `1.5px solid ${isActive ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.08)"}`,
+                                    }}>
+                                    {preset} {curVariantUnit}
+                                  </button>
+                                );
+                              })}
+                            </div>
+                          )}
+
                           {/* Mobile stacked */}
-                          <div className="sm:hidden flex flex-col gap-2">
-                            <div className="px-3 py-2 rounded-xl text-sm truncate"
+                          <div className="sm:hidden flex flex-col gap-3">
+                            <div className="px-3 py-2 rounded-xl text-sm"
                               style={{ background: "rgba(255,255,255,0.03)", border: "1.5px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
                               {additionalItems[0]?.description || "—"}
-                              {variantLabel && <span className="ml-1 text-[10px] text-amber-400">({variantLabel})</span>}
+                              {curVariantLabel && (
+                                <span className="ml-1.5 px-1.5 py-0.5 rounded text-[10px] font-semibold"
+                                  style={{ background: "rgba(245,158,11,0.15)", color: "#f59e0b" }}>
+                                  {curVariantLabel}
+                                </span>
+                              )}
                             </div>
-                            <div className="grid gap-2 items-center" style={{ gridTemplateColumns: "1fr 1fr" }}>
-                              <div className="flex flex-col gap-1">
-                                <label style={lbl}>Qty ({variantUnit})</label>
+                            <div className="grid gap-2" style={{ gridTemplateColumns: "1fr 1fr" }}>
+                              <div>
+                                <label style={lbl}>Units (Qty)</label>
                                 <input
-                                  type="number" inputMode="decimal" min="0.01" step="0.01" placeholder="e.g. 0.5"
-                                  value={additionalItems[0]?.qty || ""}
+                                  type="number" inputMode="numeric" min="1" step="1" placeholder="Units"
+                                  value={curQty}
                                   onChange={e => setAddItem(0, "qty", e.target.value)}
                                   style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(245,158,11,0.3)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" }}
                                 />
-                                <div className="flex flex-wrap gap-1">
-                                  {unitPresets.map(p => (
-                                    <button key={p} type="button"
-                                      onClick={() => setAddItem(0, "qty", p)}
-                                      className="px-1.5 py-0.5 rounded text-[9px] font-semibold transition-colors"
-                                      style={{
-                                        background: additionalItems[0]?.qty === p ? "rgba(245,158,11,0.3)" : "rgba(255,255,255,0.05)",
-                                        color: additionalItems[0]?.qty === p ? "#f59e0b" : "#6b7280",
-                                        border: `1px solid ${additionalItems[0]?.qty === p ? "rgba(245,158,11,0.4)" : "rgba(255,255,255,0.08)"}`,
-                                      }}>
-                                      {p}
-                                    </button>
-                                  ))}
-                                </div>
                               </div>
-                              <div className="flex flex-col gap-1">
-                                <label style={lbl}>Rate / {variantUnit}</label>
-                                <div className="px-2 py-2 rounded-xl text-sm text-right"
-                                  style={{ background: "rgba(255,255,255,0.02)", border: "1.5px solid rgba(255,255,255,0.06)", color: "#9ca3af" }}>
-                                  {formatRs(additionalItems[0]?.unitPrice)}
-                                </div>
-                                <p className="text-xs font-bold text-right mt-1"
-                                  style={{ color: (Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0 ? "#f59e0b" : "#4b5563" }}>
-                                  {(Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0
-                                    ? `Total: ${formatRs((Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0))}`
-                                    : "Total: —"}
-                                </p>
+                              <div>
+                                <label style={lbl}>Per {curVariantUnit || "unit"} Rate</label>
+                                <input
+                                  type="number" inputMode="decimal" min="0"
+                                  placeholder={`Per ${curVariantUnit || "unit"}`}
+                                  value={curPerKgRate}
+                                  onChange={e => {
+                                    const r = e.target.value;
+                                    setAddItem(0, "perKgRate", r);
+                                    const pu = r !== "" ? (variantMultiplier * Number(r)) : "";
+                                    setAddItem(0, "unitPrice", pu !== "" ? String(pu) : "");
+                                  }}
+                                  style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(245,158,11,0.25)", borderRadius:10, padding:"9px 10px", color:"#f59e0b", fontSize:13, textAlign:"right" }}
+                                />
                               </div>
+                            </div>
+                            <div className="flex justify-between items-center">
+                              <span className="text-[10px] text-gray-500">
+                                Per unit: <span style={{ color: "#9ca3af" }}>{perUnitPrice !== "" ? formatRs(perUnitPrice) : "—"}</span>
+                              </span>
+                              <p className="text-xs font-bold"
+                                style={{ color: lineTotal > 0 ? "#f59e0b" : "#4b5563" }}>
+                                {lineTotal > 0 ? `Total: ${formatRs(lineTotal)}` : "Total: —"}
+                              </p>
                             </div>
                           </div>
                         </>
@@ -1278,38 +1334,30 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                             <span className="text-right">Rate</span>
                             <span className="text-right">Total</span>
                           </div>
-
                           {/* Desktop row */}
                           <div className="hidden sm:grid gap-2 items-center"
                             style={{ gridTemplateColumns: "1fr 90px 110px 90px" }}>
-                            {/* Product name — read only */}
                             <div className="px-3 py-2 rounded-xl text-sm truncate"
                               style={{ background: "rgba(255,255,255,0.03)", border: "1.5px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
                               {additionalItems[0]?.description || "—"}
                             </div>
-                            {/* Qty — editable */}
                             <input
                               type="number" inputMode="numeric" min="1" placeholder="Qty"
-                              value={additionalItems[0]?.qty || ""}
+                              value={curQty}
                               onChange={e => setAddItem(0, "qty", e.target.value)}
                               style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(255,255,255,0.09)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" }}
                             />
-                            {/* Rate — editable */}
                             <input
                               type="number" inputMode="decimal" min="0" placeholder="Rate"
-                              value={additionalItems[0]?.unitPrice || ""}
+                              value={curUnitPrice}
                               onChange={e => setAddItem(0, "unitPrice", e.target.value)}
                               style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(255,255,255,0.09)", borderRadius:10, padding:"9px 10px", color:"#fff", fontSize:13, textAlign:"right" }}
                             />
-                            {/* Line total */}
                             <p className="text-xs font-bold text-right pr-1"
-                              style={{ color: (Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0 ? "#f59e0b" : "#4b5563" }}>
-                              {(Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0
-                                ? formatRs((Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0))
-                                : "—"}
+                              style={{ color: lineTotal > 0 ? "#f59e0b" : "#4b5563" }}>
+                              {lineTotal > 0 ? formatRs(lineTotal) : "—"}
                             </p>
                           </div>
-
                           {/* Mobile stacked */}
                           <div className="sm:hidden flex flex-col gap-2">
                             <div className="px-3 py-2 rounded-xl text-sm truncate"
@@ -1321,7 +1369,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                                 <label style={lbl}>Qty</label>
                                 <input
                                   type="number" inputMode="numeric" min="1" placeholder="Qty"
-                                  value={additionalItems[0]?.qty || ""}
+                                  value={curQty}
                                   onChange={e => setAddItem(0, "qty", e.target.value)}
                                   style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(255,255,255,0.09)", borderRadius:10, padding:"9px 8px", color:"#fff", fontSize:13, textAlign:"center" }}
                                 />
@@ -1330,17 +1378,15 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                                 <label style={lbl}>Rate</label>
                                 <input
                                   type="number" inputMode="decimal" min="0" placeholder="Rate"
-                                  value={additionalItems[0]?.unitPrice || ""}
+                                  value={curUnitPrice}
                                   onChange={e => setAddItem(0, "unitPrice", e.target.value)}
                                   style={{ width:"100%", outline:"none", background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(255,255,255,0.09)", borderRadius:10, padding:"9px 10px", color:"#fff", fontSize:13, textAlign:"right" }}
                                 />
                               </div>
                             </div>
                             <p className="text-xs font-bold text-right"
-                              style={{ color: (Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0 ? "#f59e0b" : "#4b5563" }}>
-                              {(Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0) > 0
-                                ? `Total: ${formatRs((Number(additionalItems[0]?.qty)||0)*(Number(additionalItems[0]?.unitPrice)||0))}`
-                                : "Total: —"}
+                              style={{ color: lineTotal > 0 ? "#f59e0b" : "#4b5563" }}>
+                              {lineTotal > 0 ? `Total: ${formatRs(lineTotal)}` : "Total: —"}
                             </p>
                           </div>
                         </>

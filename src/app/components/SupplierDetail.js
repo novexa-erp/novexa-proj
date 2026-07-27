@@ -3242,26 +3242,57 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
                           )}
                         </div>
                       </div>
-                      <div className="flex gap-1.5 flex-wrap justify-end">
-                        <button onClick={() => setViewOrder(o)} title="View Order"
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
-                          style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", color: "#f59e0b" }}>👁</button>
-                        {bal > 0 && (
-                          <button onClick={() => setPayOrder(o)} title="Pay Supplier"
-                            className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
-                            style={{ background: "rgba(16,185,129,0.1)", border: "1px solid rgba(16,185,129,0.2)", color: "#34d399" }}>💸</button>
-                        )}
-                        <button onClick={() => setReturnOrder(o)} title="Return Goods"
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
-                          style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.2)", color: "#f87171" }}>↩</button>
-                        <button onClick={() => setHistoryOrder(o)} title="View History"
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
-                          style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.2)", color: "#a78bfa" }}>📊</button>
-                        <button onClick={() => { setEditOrder({ id: o.id, form: orderToForm(o) }); setShowOrderModal(true); }}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
+                      {/* Action buttons — each separate with distinct color, same as invoice screen */}
+                      <div className="flex items-center gap-1.5 flex-wrap justify-end">
+                        {/* New Purchase (Add Items) */}
+                        <button
+                          onClick={() => { setEditOrder({ id: o.id, form: orderToForm(o) }); setShowOrderModal(true); }}
+                          title="New Purchase / Add Items"
+                          className="flex items-center gap-1 px-2.5 h-8 rounded-lg text-[11px] font-bold transition-all hover:scale-105"
+                          style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)", color: "#f59e0b", whiteSpace: "nowrap" }}>
+                          🛒 <span className="hidden sm:inline">New</span>
+                        </button>
+                        {/* Goods Return */}
+                        <button
+                          onClick={() => setReturnOrder(o)}
+                          title="Return Goods"
+                          className="flex items-center gap-1 px-2.5 h-8 rounded-lg text-[11px] font-bold transition-all hover:scale-105"
+                          style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.25)", color: "#f87171", whiteSpace: "nowrap" }}>
+                          ↩ <span className="hidden sm:inline">Return</span>
+                        </button>
+                        {/* View Order */}
+                        <button
+                          onClick={() => setViewOrder(o)}
+                          title="View Order"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-all hover:scale-105"
+                          style={{ background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.2)", color: "#34d399" }}>👁</button>
+                        {/* Edit Order */}
+                        <button
+                          onClick={() => { setEditOrder({ id: o.id, form: orderToForm(o) }); setShowOrderModal(true); }}
+                          title="Edit Order"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-all hover:scale-105"
                           style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>✏️</button>
-                        <button onClick={() => setDeleteOrderId(o.id)}
-                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
+                        {/* History */}
+                        <button
+                          onClick={() => setHistoryOrder(o)}
+                          title="View History"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-all hover:scale-105"
+                          style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.2)", color: "#a78bfa" }}>📊</button>
+                        {/* Pay Supplier — only when balance > 0 */}
+                        {bal > 0 && (
+                          <button
+                            onClick={() => setPayOrder(o)}
+                            title="Pay Supplier"
+                            className="flex items-center gap-1 px-2.5 h-8 rounded-lg text-[11px] font-bold transition-all hover:scale-105"
+                            style={{ background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.3)", color: "#34d399", whiteSpace: "nowrap" }}>
+                            💸 <span className="hidden sm:inline">Pay</span>
+                          </button>
+                        )}
+                        {/* Delete */}
+                        <button
+                          onClick={() => setDeleteOrderId(o.id)}
+                          title="Delete Order"
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-all hover:scale-105"
                           style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>🗑</button>
                       </div>
                     </div>

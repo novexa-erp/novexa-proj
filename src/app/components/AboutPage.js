@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import Link from "next/link";
+import Image from "next/image";
 
 function useInView(t = 0.08) {
   const [v, setV] = useState(false);
@@ -30,14 +31,6 @@ const values = [
   { icon: "🤝", title: "Customer Obsession",     desc: "We build what our customers need, not what looks good on a features page.", color: "#F59E0B", bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.3)" },
   { icon: "📈", title: "Constant Improvement",   desc: "We ship updates every week. If something can be better, we make it better.", color: "#2563EB", bg: "rgba(37,99,235,0.08)", border: "rgba(37,99,235,0.3)" },
   { icon: "🌍", title: "Built for Everyone",     desc: "From a 2-person shop to a 200-person enterprise — Novexa scales with you.", color: "#F59E0B", bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.3)" },
-];
-
-const timeline = [
-  { year: "2021", title: "The Idea",        desc: "Founded after seeing small businesses struggle with paper invoices and Excel chaos.", color: "#2563EB" },
-  { year: "2022", title: "First Version",   desc: "Launched MVP with invoicing and customer management. 50 businesses signed up in week one.", color: "#F59E0B" },
-  { year: "2023", title: "Growth",          desc: "Added inventory, payments, and analytics. Crossed 200 active businesses.", color: "#2563EB" },
-  { year: "2024", title: "Scale",           desc: "HR, procurement, and multi-branch modules launched. 500+ businesses onboard.", color: "#F59E0B" },
-  { year: "2025", title: "Today & Beyond",  desc: "Continuing to build the most complete ERP for SMEs — faster, smarter, simpler.", color: "#2563EB" },
 ];
 
 export default function AboutPage() {
@@ -102,6 +95,9 @@ export default function AboutPage() {
 
       {/* ── TIMELINE ── */}
       <TimelineSection />
+
+      {/* ── CODECOVES ── */}
+      <CodecovesSection />
 
       {/* ── CTA ── */}
       <AboutCta />
@@ -280,70 +276,393 @@ function ValuesSection() {
   );
 }
 
-// ── Timeline ─────────────────────────────────────────────────────────────────
+// ── What Makes Novexa Different ──────────────────────────────────────────────
 function TimelineSection() {
-  const [ref, v] = useInView(0.08);
+  const [ref, v]   = useInView(0.06);
+  const [hov, setHov] = useState(null);
+
+  const FEATURES = [
+    {
+      icon: "⚡",
+      title: "Everything in One Place",
+      desc: "Invoices, inventory, customers, payments, suppliers, analytics, HR — one login, one dashboard, zero chaos.",
+      wide: true,
+    },
+    {
+      icon: "�",
+      title: "Your Data, Your Control",
+      desc: "End-to-end encrypted. Daily backups. We never share or sell your business data.",
+      wide: false,
+    },
+    {
+      icon: "📱",
+      title: "Works on Any Device",
+      desc: "Phone, tablet, or desktop — Novexa adapts perfectly to your screen, anywhere you are.",
+      wide: false,
+    },
+    {
+      icon: "�",
+      title: "5-Minute Setup",
+      desc: "No IT team needed. No month-long onboarding. Sign up, add your products, and start invoicing — today.",
+      wide: false,
+    },
+    {
+      icon: "📊",
+      title: "Real-Time Analytics",
+      desc: "See exactly how your business is performing right now — sales, balances, top customers, and trends at a glance.",
+      wide: false,
+    },
+    {
+      icon: "🤝",
+      title: "Built Around You",
+      desc: "Every feature in Novexa was built because a real business owner asked for it. We listen, then we build.",
+      wide: true,
+    },
+  ];
+
   return (
-    <section className="relative py-20 overflow-hidden">
+    <section className="relative py-24 overflow-hidden">
+      {/* bg */}
       <div className="absolute inset-0 pointer-events-none">
-        <div className="absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[300px] bg-blue-600/4 rounded-full blur-[120px]" />
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-blue-600/20 to-transparent" />
+        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-amber-500/15 to-transparent" />
+        <div className="absolute top-0 right-0 w-[500px] h-[500px] rounded-full blur-[160px]"
+          style={{ background: "rgba(37,99,235,0.05)" }} />
+        <div className="absolute bottom-0 left-0 w-[400px] h-[400px] rounded-full blur-[130px]"
+          style={{ background: "rgba(245,158,11,0.04)" }} />
+        <div className="absolute inset-0 opacity-[0.025]"
+          style={{ backgroundImage: "radial-gradient(rgba(255,255,255,0.07) 1px, transparent 1px)", backgroundSize: "40px 40px" }} />
       </div>
-      <div ref={ref} className="relative z-10 max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 transition-all duration-700"
-        style={{ opacity: v ? 1 : 0, transform: v ? "translateY(0)" : "translateY(28px)" }}>
+
+      <div ref={ref} className="relative z-10 max-w-6xl mx-auto px-4 sm:px-6 lg:px-8 transition-all duration-700"
+        style={{ opacity: v ? 1 : 0, transform: v ? "translateY(0)" : "translateY(32px)" }}>
+
+        {/* heading */}
         <div className="text-center mb-14">
-          <h2 className="text-white leading-tight mb-4">
-            Our{" "}
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold mb-5 tracking-widest uppercase"
+            style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.25)", color: "#93C5FD" }}>
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+            Why Novexa
+          </div>
+          <h2 className="text-white font-black leading-tight mb-4">
+            What Makes Us{" "}
             <span className="bg-clip-text text-transparent"
               style={{ backgroundImage: "linear-gradient(135deg, #2563EB, #60A5FA 50%, #F59E0B)" }}>
-              Journey
+              Different
             </span>
           </h2>
-          <p className="text-gray-400 text-lg max-w-xl mx-auto">From idea to 500+ businesses — here is how we got here.</p>
+          <p className="text-gray-400 text-lg max-w-2xl mx-auto leading-relaxed">
+            Novexa is not just another ERP. It is the software your business actually deserves.
+          </p>
         </div>
 
-        <div className="relative">
-          {/* vertical line */}
-          <div className="absolute left-[19px] sm:left-1/2 sm:-translate-x-px top-0 bottom-0 w-px"
-            style={{ background: "linear-gradient(to bottom, #2563EB40, #F59E0B40, #2563EB40)" }} />
+        {/* bento grid */}
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+          {FEATURES.map((f, i) => {
+            const isBlue = i % 2 === 0;
+            const isHov  = hov === i;
+            return (
+              <div key={i}
+                onMouseEnter={() => setHov(i)}
+                onMouseLeave={() => setHov(null)}
+                className="relative rounded-2xl p-6 cursor-default transition-all duration-300 overflow-hidden"
+                style={{
+                  background: isHov
+                    ? isBlue ? "rgba(37,99,235,0.09)" : "rgba(245,158,11,0.07)"
+                    : "rgba(255,255,255,0.025)",
+                  border: `1px solid ${isHov
+                    ? isBlue ? "rgba(37,99,235,0.35)" : "rgba(245,158,11,0.35)"
+                    : "rgba(255,255,255,0.07)"}`,
+                  transform: isHov ? "translateY(-5px)" : "translateY(0)",
+                  boxShadow: isHov
+                    ? isBlue ? "0 20px 48px rgba(37,99,235,0.15)" : "0 20px 48px rgba(245,158,11,0.12)"
+                    : "none",
+                  gridColumn: f.wide ? "span 1 / span 1" : undefined,
+                  transitionDelay: `${i * 30}ms`,
+                }}>
 
-          <div className="flex flex-col gap-8">
-            {timeline.map((item, i) => {
-              const isRight = i % 2 === 0;
-              return (
-                <div key={item.year}
-                  className="relative flex items-start gap-4 sm:gap-0"
-                  style={{ opacity: v ? 1 : 0, transform: v ? "translateY(0)" : "translateY(20px)", transition: `opacity 0.6s ease ${i * 130}ms, transform 0.6s ease ${i * 130}ms` }}>
+                {/* corner glow on hover */}
+                <div className="absolute -top-10 -right-10 w-32 h-32 rounded-full blur-2xl transition-opacity duration-300 pointer-events-none"
+                  style={{
+                    background: isBlue ? "rgba(37,99,235,0.25)" : "rgba(245,158,11,0.2)",
+                    opacity: isHov ? 1 : 0,
+                  }} />
 
-                  {/* dot — mobile always left, desktop center */}
-                  <div className="relative z-10 flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center sm:absolute sm:left-1/2 sm:-translate-x-1/2"
-                    style={{ background: item.color === "#2563EB" ? "rgba(37,99,235,0.15)" : "rgba(245,158,11,0.15)", border: `2px solid ${item.color}`, boxShadow: `0 0 16px ${item.color}50` }}>
-                    <span className="text-[10px] font-black" style={{ color: item.color }}>{item.year.slice(2)}</span>
+                {/* top accent line */}
+                <div className="absolute top-0 left-6 right-6 h-px transition-opacity duration-300"
+                  style={{
+                    background: isBlue
+                      ? "linear-gradient(90deg,transparent,rgba(37,99,235,0.6),transparent)"
+                      : "linear-gradient(90deg,transparent,rgba(245,158,11,0.5),transparent)",
+                    opacity: isHov ? 1 : 0,
+                  }} />
+
+                <div className="relative z-10">
+                  {/* icon */}
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl mb-5 transition-transform duration-300"
+                    style={{
+                      background: isBlue ? "rgba(37,99,235,0.1)" : "rgba(245,158,11,0.1)",
+                      border: `1px solid ${isBlue ? "rgba(37,99,235,0.25)" : "rgba(245,158,11,0.25)"}`,
+                      transform: isHov ? "scale(1.1) rotate(-4deg)" : "scale(1) rotate(0deg)",
+                    }}>
+                    {f.icon}
                   </div>
 
-                  {/* content */}
-                  <div className={`flex-1 sm:w-[calc(50%-32px)] ${isRight ? "sm:ml-auto sm:pr-0 sm:pl-8" : "sm:mr-auto sm:pl-0 sm:pr-8 sm:text-right"}`}>
-                    <div className="rounded-2xl p-5 transition-all duration-300 cursor-default"
-                      style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}
-                      onMouseEnter={e => {
-                        e.currentTarget.style.background = item.color === "#2563EB" ? "rgba(37,99,235,0.07)" : "rgba(245,158,11,0.07)";
-                        e.currentTarget.style.borderColor = item.color === "#2563EB" ? "rgba(37,99,235,0.3)" : "rgba(245,158,11,0.3)";
-                        e.currentTarget.style.transform = "translateY(-3px)";
-                      }}
-                      onMouseLeave={e => {
-                        e.currentTarget.style.background = "rgba(255,255,255,0.025)";
-                        e.currentTarget.style.borderColor = "rgba(255,255,255,0.07)";
-                        e.currentTarget.style.transform = "translateY(0)";
-                      }}>
-                      <span className="text-xs font-bold tracking-widest uppercase mb-1 block" style={{ color: item.color }}>{item.year}</span>
-                      <h4 className="text-white font-bold text-base mb-1">{item.title}</h4>
-                      <p className="text-gray-500 text-sm leading-relaxed">{item.desc}</p>
-                    </div>
+                  {/* title */}
+                  <h4 className="text-white font-black text-base mb-2 leading-snug">{f.title}</h4>
+
+                  {/* desc */}
+                  <p className="text-gray-500 text-sm leading-relaxed">{f.desc}</p>
+
+                  {/* bottom arrow on hover */}
+                  <div className="mt-4 flex items-center gap-1.5 transition-all duration-300"
+                    style={{ opacity: isHov ? 1 : 0, transform: isHov ? "translateX(0)" : "translateX(-8px)" }}>
+                    <span className="text-xs font-bold"
+                      style={{ color: isBlue ? "#60a5fa" : "#fbbf24" }}>Learn more</span>
+                    <span className="text-xs" style={{ color: isBlue ? "#60a5fa" : "#fbbf24" }}>→</span>
                   </div>
                 </div>
-              );
-            })}
+              </div>
+            );
+          })}
+        </div>
+
+        {/* bottom strip */}
+        <div className="mt-10 rounded-2xl p-6 flex flex-col sm:flex-row items-center justify-between gap-4"
+          style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
+          <div className="flex flex-wrap items-center justify-center sm:justify-start gap-6">
+            {[
+              { val: "500+",   lbl: "Businesses",   blue: true  },
+              { val: "1M+",    lbl: "Invoices",      blue: false },
+              { val: "8+",     lbl: "Modules",       blue: true  },
+              { val: "99.9%",  lbl: "Uptime",        blue: false },
+            ].map((s, i) => (
+              <div key={i} className="text-center">
+                <p className="font-black text-xl leading-none mb-0.5"
+                  style={{ color: s.blue ? "#60a5fa" : "#fbbf24" }}>{s.val}</p>
+                <p className="text-gray-600 text-[11px] uppercase tracking-widest font-bold">{s.lbl}</p>
+              </div>
+            ))}
+          </div>
+          <div className="h-px sm:h-10 w-full sm:w-px" style={{ background: "rgba(255,255,255,0.06)" }} />
+          <p className="text-gray-500 text-sm text-center sm:text-right max-w-xs">
+            Join <span className="text-white font-semibold">500+ businesses</span> that switched to Novexa and never looked back.
+          </p>
+        </div>
+
+      </div>
+    </section>
+  );
+}
+
+// ── Codecoves Section ─────────────────────────────────────────────────────────
+const CC_SERVICES = [
+  { icon: "🌐", title: "Web Development",      desc: "High-performance, scalable web applications built with modern frameworks and clean architecture.", color: "#2563EB", bg: "rgba(37,99,235,0.08)", border: "rgba(37,99,235,0.25)" },
+  { icon: "📱", title: "App Development",       desc: "Native and cross-platform mobile apps that deliver seamless experiences on iOS and Android.", color: "#8B5CF6", bg: "rgba(139,92,246,0.08)", border: "rgba(139,92,246,0.25)" },
+  { icon: "🎨", title: "UI/UX & Web Design",    desc: "Pixel-perfect interfaces and immersive user experiences — designed to convert and delight.", color: "#F59E0B", bg: "rgba(245,158,11,0.08)", border: "rgba(245,158,11,0.25)" },
+  { icon: "✨", title: "Animation",             desc: "Motion design and interactive animations that bring your digital presence to life.", color: "#EC4899", bg: "rgba(236,72,153,0.08)", border: "rgba(236,72,153,0.25)" },
+  { icon: "📣", title: "Digital Marketing",     desc: "Data-driven campaigns, SEO, and social media strategies that grow your brand and revenue.", color: "#10B981", bg: "rgba(16,185,129,0.08)", border: "rgba(16,185,129,0.25)" },
+  { icon: "🖌️", title: "Graphic Designing",     desc: "Brand identities, logos, and visual assets that make a lasting impression.", color: "#F97316", bg: "rgba(249,115,22,0.08)", border: "rgba(249,115,22,0.25)" },
+];
+
+const CC_SOFTWARE = [
+  { icon: "🏭", name: "ERP System",               desc: "Complete enterprise resource planning — like Novexa.", tag: "Rent · Sell" },
+  { icon: "🎓", name: "LMS",                       desc: "Learning Management System for schools and training centers.", tag: "Rent · Sell" },
+  { icon: "🏫", name: "School Management",         desc: "Full school operations: admissions, fees, grades & more.", tag: "Rent · Sell" },
+  { icon: "💪", name: "Gym Management",            desc: "Member tracking, billing, attendance and trainer management.", tag: "Rent · Sell" },
+  { icon: "🏥", name: "Hospital / Clinic",         desc: "Patient records, appointments, prescriptions & billing.", tag: "Rent · Sell" },
+  { icon: "⚙️", name: "Custom Software",           desc: "Tailored software solutions built specifically for your business needs.", tag: "Custom Build" },
+];
+
+function CodecovesSection() {
+  const [ref, v]       = useInView(0.06);
+  const [sRef, sV]     = useInView(0.06);
+  const [swRef, swV]   = useInView(0.06);
+  const [hovered, setHovered] = useState(null);
+
+  return (
+    <section className="relative py-24 overflow-hidden">
+      {/* background glows */}
+      <div className="absolute inset-0 pointer-events-none">
+        <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#2563EB]/30 to-transparent" />
+        <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#F59E0B]/20 to-transparent" />
+        <div className="absolute top-1/3 left-0 w-[500px] h-[500px] bg-blue-600/5 rounded-full blur-[140px]" />
+        <div className="absolute bottom-1/3 right-0 w-[400px] h-[400px] bg-amber-500/5 rounded-full blur-[120px]" />
+        <div className="absolute inset-0 opacity-[0.04]"
+          style={{ backgroundImage: "radial-gradient(rgba(255,255,255,0.07) 1px, transparent 1px)", backgroundSize: "36px 36px" }} />
+      </div>
+
+      <div className="relative z-10 max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+
+        {/* ── Header ── */}
+        <div ref={ref} className="text-center mb-20 transition-all duration-700"
+          style={{ opacity: v ? 1 : 0, transform: v ? "translateY(0)" : "translateY(32px)" }}>
+
+          <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full text-xs font-bold mb-6 tracking-widest uppercase"
+            style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.3)", color: "#93C5FD" }}>
+            <span className="w-1.5 h-1.5 rounded-full bg-blue-400 animate-pulse" />
+            Powered By
+          </div>
+
+          {/* Logo + name */}
+          <div className="flex flex-col items-center gap-5 mb-8">
+            <div className="relative">
+              <div className="absolute inset-0 rounded-2xl blur-2xl opacity-40"
+                style={{ background: "linear-gradient(135deg,#2563EB,#F59E0B)" }} />
+              <div className="relative w-20 h-20 rounded-2xl flex items-center justify-center overflow-hidden"
+                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.12)" }}>
+                <Image src="/images/cc-logo-new.png" alt="Codecoves Logo" width={64} height={64}
+                  className="object-contain" style={{ filter: "drop-shadow(0 0 12px rgba(37,99,235,0.5))" }} />
+              </div>
+            </div>
+            <div>
+              <h2 className="text-white font-black leading-tight mb-2">
+                Novexa is a Project of{" "}
+                <span className="bg-clip-text text-transparent"
+                  style={{ backgroundImage: "linear-gradient(135deg, #2563EB, #60A5FA 40%, #F59E0B)" }}>
+                  Codecoves
+                </span>
+              </h2>
+              <p className="text-gray-400 text-lg max-w-3xl mx-auto leading-relaxed">
+                Codecoves is a full-spectrum software solutions company — building, renting, and selling
+                digital products that empower businesses of every size.
+              </p>
+            </div>
+          </div>
+
+          {/* Tagline badges */}
+          <div className="flex flex-wrap items-center justify-center gap-3">
+            {[
+              { label: "Web & App Development", color: "#2563EB" },
+              { label: "UI/UX Design",           color: "#8B5CF6" },
+              { label: "Digital Marketing",       color: "#10B981" },
+              { label: "Software Rent & Sales",   color: "#F59E0B" },
+              { label: "Custom Software",         color: "#EC4899" },
+            ].map((b, i) => (
+              <span key={i} className="px-3 py-1 rounded-full text-xs font-bold"
+                style={{ background: `${b.color}18`, border: `1px solid ${b.color}50`, color: b.color }}>
+                {b.label}
+              </span>
+            ))}
           </div>
         </div>
+
+        {/* ── What Codecoves Provides ── */}
+        <div ref={sRef} className="mb-20 transition-all duration-700"
+          style={{ opacity: sV ? 1 : 0, transform: sV ? "translateY(0)" : "translateY(28px)" }}>
+
+          <div className="text-center mb-10">
+            <p className="text-xs font-black uppercase tracking-widest mb-2" style={{ color: "#F59E0B" }}>Services</p>
+            <h3 className="text-white font-black text-2xl md:text-3xl">Everything Your Business Needs</h3>
+            <p className="text-gray-500 text-sm mt-2 max-w-xl mx-auto">From concept to launch — design, development, marketing, and beyond.</p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+            {CC_SERVICES.map((s, i) => (
+              <div key={i}
+                onMouseEnter={() => setHovered(`svc-${i}`)}
+                onMouseLeave={() => setHovered(null)}
+                className="group relative rounded-2xl p-6 cursor-default transition-all duration-300"
+                style={{
+                  background: hovered === `svc-${i}` ? s.bg : "rgba(255,255,255,0.02)",
+                  border: `1px solid ${hovered === `svc-${i}` ? s.border : "rgba(255,255,255,0.07)"}`,
+                  transform: hovered === `svc-${i}` ? "translateY(-4px)" : "translateY(0)",
+                  boxShadow: hovered === `svc-${i}` ? `0 16px 40px ${s.color}18` : "none",
+                  transitionDelay: `${i * 40}ms`,
+                }}>
+                {/* animated corner accent */}
+                <div className="absolute top-0 right-0 w-16 h-16 rounded-bl-3xl opacity-0 group-hover:opacity-100 transition-opacity duration-300"
+                  style={{ background: `linear-gradient(225deg, ${s.color}20, transparent)` }} />
+                <div className="flex items-start gap-4">
+                  <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0 transition-transform duration-300 group-hover:scale-110"
+                    style={{ background: s.bg, border: `1px solid ${s.border}` }}>
+                    {s.icon}
+                  </div>
+                  <div>
+                    <p className="text-white font-black text-sm mb-1.5">{s.title}</p>
+                    <p className="text-gray-500 text-xs leading-relaxed">{s.desc}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        {/* ── Software Products ── */}
+        <div ref={swRef} className="transition-all duration-700"
+          style={{ opacity: swV ? 1 : 0, transform: swV ? "translateY(0)" : "translateY(28px)" }}>
+
+          <div className="text-center mb-10">
+            <p className="text-xs font-black uppercase tracking-widest mb-2" style={{ color: "#2563EB" }}>Software Products</p>
+            <h3 className="text-white font-black text-2xl md:text-3xl">Ready-Made Software — Rent or Own</h3>
+            <p className="text-gray-500 text-sm mt-2 max-w-xl mx-auto">Battle-tested software solutions available to rent or purchase outright for your business.</p>
+          </div>
+
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-12">
+            {CC_SOFTWARE.map((sw, i) => (
+              <div key={i}
+                onMouseEnter={() => setHovered(`sw-${i}`)}
+                onMouseLeave={() => setHovered(null)}
+                className="relative rounded-2xl p-5 transition-all duration-300"
+                style={{
+                  background: hovered === `sw-${i}` ? "rgba(37,99,235,0.07)" : "rgba(255,255,255,0.02)",
+                  border: `1px solid ${hovered === `sw-${i}` ? "rgba(37,99,235,0.3)" : "rgba(255,255,255,0.07)"}`,
+                  transform: hovered === `sw-${i}` ? "translateY(-3px)" : "translateY(0)",
+                  boxShadow: hovered === `sw-${i}` ? "0 12px 32px rgba(37,99,235,0.12)" : "none",
+                  transitionDelay: `${i * 40}ms`,
+                }}>
+                <div className="flex items-start gap-4">
+                  <div className="text-3xl flex-shrink-0 transition-transform duration-300"
+                    style={{ transform: hovered === `sw-${i}` ? "scale(1.15)" : "scale(1)" }}>
+                    {sw.icon}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap mb-1">
+                      <p className="text-white font-black text-sm">{sw.name}</p>
+                      <span className="px-2 py-0.5 rounded-full text-[10px] font-bold"
+                        style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.3)", color: "#fbbf24" }}>
+                        {sw.tag}
+                      </span>
+                    </div>
+                    <p className="text-gray-500 text-xs leading-relaxed">{sw.desc}</p>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+
+          {/* Bottom CTA banner */}
+          <div className="relative rounded-2xl overflow-hidden p-8 text-center"
+            style={{ background: "linear-gradient(135deg, rgba(37,99,235,0.1), rgba(13,17,23,0.95), rgba(245,158,11,0.08))", border: "1px solid rgba(255,255,255,0.08)" }}>
+            <div className="absolute top-0 left-0 w-48 h-48 rounded-full blur-[80px] pointer-events-none" style={{ background: "rgba(37,99,235,0.18)" }} />
+            <div className="absolute bottom-0 right-0 w-48 h-48 rounded-full blur-[80px] pointer-events-none" style={{ background: "rgba(245,158,11,0.14)" }} />
+            {/* animated dots */}
+            <div className="absolute inset-0 opacity-[0.05] pointer-events-none"
+              style={{ backgroundImage: "radial-gradient(rgba(255,255,255,0.1) 1px, transparent 1px)", backgroundSize: "28px 28px" }} />
+            <div className="relative z-10 flex flex-col items-center gap-4">
+              <div className="w-14 h-14 rounded-2xl overflow-hidden flex-shrink-0"
+                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                <Image src="/images/cc-logo-new.png" alt="Codecoves" width={56} height={56} className="object-contain w-full h-full" />
+              </div>
+              <div>
+                <p className="text-white font-black text-xl mb-1">
+                  Have a project in mind?
+                </p>
+                <p className="text-gray-400 text-sm max-w-md mx-auto">
+                  Whether you need a website, a mobile app, a full ERP, or a custom software solution —
+                  <span className="text-blue-400 font-semibold"> Codecoves </span>
+                  has you covered.
+                </p>
+              </div>
+              <a href="https://codecoves.com" target="_blank" rel="noopener noreferrer"
+                className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-black transition-all hover:scale-105"
+                style={{ background: "linear-gradient(135deg,#2563EB,#1d4ed8)", color: "#fff", boxShadow: "0 8px 24px rgba(37,99,235,0.35)" }}>
+                Visit Codecoves →
+              </a>
+            </div>
+          </div>
+        </div>
+
       </div>
     </section>
   );
