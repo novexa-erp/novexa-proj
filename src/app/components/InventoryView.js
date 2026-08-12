@@ -11,11 +11,12 @@ const cardStyle = {
 };
 
 const VARIANT_TYPES = [
-  { id: "none",   label: "No Variants",   icon: "📦", gradient: "from-orange-500 to-amber-600" },
-  { id: "weight", label: "Weight-based",  icon: "⚖️", unit: "kg", presets: ["0.25", "0.5", "0.75", "1", "2", "5"], gradient: "from-pink-500 to-rose-600" },
-  { id: "length", label: "Length-based",  icon: "📏", unit: "m",  presets: ["1", "2", "3", "5", "10"], gradient: "from-purple-500 to-pink-600" },
-  { id: "size",   label: "Size",          icon: "👕", presets: ["XS", "S", "M", "L", "XL", "XXL"], gradient: "from-orange-500 to-pink-600" },
-  { id: "custom", label: "Custom",        icon: "⚙️", gradient: "from-amber-500 to-orange-600" },
+  { id: "none",       label: "No Variants",   icon: "📦", gradient: "from-orange-500 to-amber-600" },
+  { id: "weight",     label: "Weight-based",  icon: "⚖️", unit: "kg", presets: ["0.25", "0.5", "0.75", "1", "2", "5"], gradient: "from-pink-500 to-rose-600" },
+  { id: "length",     label: "Length-based",  icon: "📏", unit: "m",  presets: ["1", "2", "3", "5", "10"], gradient: "from-purple-500 to-pink-600" },
+  { id: "size",       label: "Size",          icon: "👕", presets: ["XS", "S", "M", "L", "XL", "XXL"], gradient: "from-orange-500 to-pink-600" },
+  { id: "size_range", label: "Size Range",    icon: "📐", gradient: "from-blue-500 to-cyan-600" },
+  { id: "custom",     label: "Custom",        icon: "⚙️", gradient: "from-amber-500 to-orange-600" },
 ];
 
 const VALID_VARIANT_IDS = new Set(VARIANT_TYPES.map(t => t.id));
@@ -513,6 +514,34 @@ function AddProductModal({ product, onSave, onClose }) {
   const selectedType = VARIANT_TYPES.find(t => t.id === formData.variantType);
   const hasVariants = formData.variantType !== "none";
 
+  // ── Size Range state ─────────────────────────────────────────────────────────
+  const [srFrom,  setSrFrom]  = useState("28");
+  const [srTo,    setSrTo]    = useState("46");
+  const [srStep,  setSrStep]  = useState("2");
+  const [srPrice, setSrPrice] = useState("");
+  const [srCost,  setSrCost]  = useState("");
+
+  function generateSizeRange() {
+    const from = parseInt(srFrom);
+    const to   = parseInt(srTo);
+    const step = parseInt(srStep) || 2;
+    const sp   = srPrice;
+    const cp   = srCost;
+    if (isNaN(from) || isNaN(to) || from >= to) {
+      alert("Please enter valid From/To sizes"); return;
+    }
+    const generated = [];
+    for (let s = from; s <= to; s += step) {
+      // Only add if not already in variants
+      const lbl = String(s);
+      if (!formData.variants.find(v => v.label === lbl)) {
+        generated.push({ label: lbl, costPrice: cp, sellingPrice: sp, price: sp, stock: "0" });
+      }
+    }
+    if (generated.length === 0) { alert("All sizes already added"); return; }
+    setFormData(f => ({ ...f, variants: [...f.variants, ...generated] }));
+  }
+
   // Auto-calculate variant prices from base price when label changes
   function handleNewVariantLabelChange(label) {
     const num = parseFloat(label);
@@ -793,6 +822,83 @@ function AddProductModal({ product, onSave, onClose }) {
                 ⊞ Variants {selectedType && `(${selectedType.label})`}
               </label>
 
+              {/* ── Size Range UI ── */}
+              {formData.variantType === "size_range" && (
+                <div className="rounded-xl overflow-hidden" style={{ border: "1px solid rgba(59,130,246,0.3)", background: "rgba(59,130,246,0.04)" }}>
+                  <div className="px-4 py-3 border-b" style={{ borderColor: "rgba(59,130,246,0.15)", background: "rgba(59,130,246,0.08)" }}>
+                    <p className="text-[11px] font-bold uppercase tracking-widest" style={{ color: "#60A5FA" }}>📐 Size Range Generator</p>
+                    <p className="text-[10px] text-gray-500 mt-0.5">Sizes automatically generate karein — e.g. 28 to 46 step 2</p>
+                  </div>
+                  <div className="p-4 flex flex-col gap-3">
+                    {/* From / To / Step */}
+                    <div className="grid grid-cols-3 gap-2">
+                      <div>
+                        <label className="text-[10px] text-gray-500 mb-1 block">From (start)</label>
+                        <input type="number" inputMode="numeric" min="1" placeholder="28"
+                          value={srFrom} onChange={e => setSrFrom(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg text-sm text-white outline-none text-center font-bold"
+                          style={{ background: "rgba(255,255,255,0.05)", border: "1.5px solid rgba(59,130,246,0.3)" }} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-500 mb-1 block">To (end)</label>
+                        <input type="number" inputMode="numeric" min="1" placeholder="46"
+                          value={srTo} onChange={e => setSrTo(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg text-sm text-white outline-none text-center font-bold"
+                          style={{ background: "rgba(255,255,255,0.05)", border: "1.5px solid rgba(59,130,246,0.3)" }} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-500 mb-1 block">Step</label>
+                        <input type="number" inputMode="numeric" min="1" placeholder="2"
+                          value={srStep} onChange={e => setSrStep(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg text-sm text-white outline-none text-center font-bold"
+                          style={{ background: "rgba(255,255,255,0.05)", border: "1.5px solid rgba(59,130,246,0.3)" }} />
+                      </div>
+                    </div>
+
+                    {/* Preview of sizes */}
+                    {srFrom && srTo && srStep && parseInt(srFrom) < parseInt(srTo) && (
+                      <div className="flex flex-wrap gap-1.5">
+                        {(() => {
+                          const sizes = [];
+                          for (let s = parseInt(srFrom); s <= parseInt(srTo); s += parseInt(srStep) || 2) sizes.push(s);
+                          return sizes.map(s => (
+                            <span key={s} className="px-2 py-1 rounded-lg text-[11px] font-bold"
+                              style={{ background: "rgba(59,130,246,0.15)", color: "#93c5fd", border: "1px solid rgba(59,130,246,0.25)" }}>
+                              {s}
+                            </span>
+                          ));
+                        })()}
+                      </div>
+                    )}
+
+                    {/* Price inputs */}
+                    <div className="grid grid-cols-2 gap-2">
+                      <div>
+                        <label className="text-[10px] text-gray-500 mb-1 block">💰 Cost Price (Rs.) — all sizes</label>
+                        <input type="number" inputMode="decimal" placeholder="e.g. 150"
+                          value={srCost} onChange={e => setSrCost(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg text-sm text-white outline-none"
+                          style={{ background: "rgba(255,255,255,0.05)", border: "1.5px solid rgba(59,130,246,0.25)" }} />
+                      </div>
+                      <div>
+                        <label className="text-[10px] text-gray-500 mb-1 block">₨ Selling Price (Rs.) — all sizes</label>
+                        <input type="number" inputMode="decimal" placeholder="e.g. 200"
+                          value={srPrice} onChange={e => setSrPrice(e.target.value)}
+                          className="w-full px-3 py-2 rounded-lg text-sm text-white outline-none"
+                          style={{ background: "rgba(255,255,255,0.05)", border: "1.5px solid rgba(59,130,246,0.25)" }} />
+                      </div>
+                    </div>
+                    <p className="text-[10px] text-gray-600">Price baad mein har size pe alag bhi set kar sakte ho.</p>
+
+                    <button type="button" onClick={generateSizeRange}
+                      className="w-full py-2.5 rounded-xl text-sm font-bold transition-all hover:scale-[1.02]"
+                      style={{ background: "linear-gradient(135deg,#3b82f6,#2563eb)", color: "#fff" }}>
+                      ⚡ Generate Sizes ({srFrom}–{srTo} step {srStep})
+                    </button>
+                  </div>
+                </div>
+              )}
+
               {/* Quick Presets */}
               {selectedType?.presets && (
                 <div>
@@ -930,21 +1036,68 @@ function AddProductModal({ product, onSave, onClose }) {
               {/* Variants List */}
               {formData.variants.length > 0 && (
                 <div className="space-y-2">
-                  {formData.variants.map((variant, index) => (
-                    <div key={index} className="group flex items-center justify-between p-3 rounded-lg transition-all hover:scale-[1.01]"
-                      style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
-                      <div className="flex-1">
-                        <p className="text-white text-sm font-semibold">{variant.label}</p>
-                        <p className="text-gray-500 text-xs">Selling: Rs. {variant.sellingPrice || variant.price || "—"} • Cost: Rs. {variant.costPrice || "—"} • Stock: {variant.stock || 0}</p>
+                  {/* Size Range: compact grid view with inline stock editing */}
+                  {formData.variantType === "size_range" ? (
+                    <div>
+                      <p className="text-[10px] text-gray-500 mb-2 font-semibold uppercase tracking-widest">Har size ka stock alag set karo:</p>
+                      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
+                        {formData.variants.map((variant, index) => (
+                          <div key={index} className="flex flex-col gap-1 p-2.5 rounded-xl"
+                            style={{ background: "rgba(59,130,246,0.08)", border: "1px solid rgba(59,130,246,0.2)" }}>
+                            <div className="flex items-center justify-between">
+                              <span className="text-white text-sm font-black">Size {variant.label}</span>
+                              <button type="button" onClick={() => removeVariant(index)}
+                                className="text-red-400 hover:text-red-300 text-xs">✕</button>
+                            </div>
+                            <input type="number" inputMode="numeric" placeholder="Stock"
+                              value={variant.stock}
+                              onChange={e => {
+                                const updated = [...formData.variants];
+                                updated[index] = { ...updated[index], stock: e.target.value };
+                                setFormData(f => ({ ...f, variants: updated }));
+                              }}
+                              className="w-full px-2 py-1.5 rounded-lg text-xs text-white outline-none text-center"
+                              style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(59,130,246,0.25)" }} />
+                            <div className="grid grid-cols-2 gap-1">
+                              <input type="number" inputMode="decimal" placeholder="Cost"
+                                value={variant.costPrice}
+                                onChange={e => {
+                                  const updated = [...formData.variants];
+                                  updated[index] = { ...updated[index], costPrice: e.target.value };
+                                  setFormData(f => ({ ...f, variants: updated }));
+                                }}
+                                className="w-full px-2 py-1 rounded-lg text-[10px] text-gray-300 outline-none text-center"
+                                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" }} />
+                              <input type="number" inputMode="decimal" placeholder="Price"
+                                value={variant.sellingPrice}
+                                onChange={e => {
+                                  const updated = [...formData.variants];
+                                  updated[index] = { ...updated[index], sellingPrice: e.target.value, price: e.target.value };
+                                  setFormData(f => ({ ...f, variants: updated }));
+                                }}
+                                className="w-full px-2 py-1 rounded-lg text-[10px] text-amber-400 outline-none text-center"
+                                style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" }} />
+                            </div>
+                          </div>
+                        ))}
                       </div>
-                      <button
-                        type="button"
-                        onClick={() => removeVariant(index)}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-all text-base">
-                        ⌫
-                      </button>
                     </div>
-                  ))}
+                  ) : (
+                    /* Normal variants list */
+                    formData.variants.map((variant, index) => (
+                      <div key={index} className="group flex items-center justify-between p-3 rounded-lg transition-all hover:scale-[1.01]"
+                        style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                        <div className="flex-1">
+                          <p className="text-white text-sm font-semibold">{variant.label}</p>
+                          <p className="text-gray-500 text-xs">Selling: Rs. {variant.sellingPrice || variant.price || "—"} • Cost: Rs. {variant.costPrice || "—"} • Stock: {variant.stock || 0}</p>
+                        </div>
+                        <button type="button" onClick={() => removeVariant(index)}
+                          className="w-8 h-8 rounded-lg flex items-center justify-center text-red-400 hover:bg-red-500/20 hover:text-red-300 transition-all text-base">
+                          ⌫
+                        </button>
+                      </div>
+                    ))
+                  )}
                 </div>
               )}
             </div>

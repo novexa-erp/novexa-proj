@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   collection, getDocs, addDoc, updateDoc, deleteDoc,
-  doc, serverTimestamp, onSnapshot, query, orderBy, writeBatch, where,
+  doc, serverTimestamp, onSnapshot, query, orderBy, writeBatch, where, runTransaction,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { getLimits, loadPlansFromFirestore, countThisMonth, getEffectiveLimit } from "@/lib/planLimits";
@@ -159,6 +159,23 @@ function DeleteConfirm({ name, onConfirm, onCancel, label = "Supplier" }) {
   );
 }
 
+// ── Global supplier serial counter ────────────────────────────────────────────
+// Format: SUP-01120726  (serial 2-digit + DD + MM + YY)
+async function getNextSupplierNumber() {
+  const counterRef = doc(db, "globalCounters", "supplierSerial");
+  let serial;
+  await runTransaction(db, async (txn) => {
+    const snap = await txn.get(counterRef);
+    serial = snap.exists() ? (snap.data().count || 0) + 1 : 1;
+    txn.set(counterRef, { count: serial });
+  });
+  const now = new Date();
+  const dd  = String(now.getDate()).padStart(2, "0");
+  const mm  = String(now.getMonth() + 1).padStart(2, "0");
+  const yy  = String(now.getFullYear()).slice(-2);
+  return `SUP-${String(serial).padStart(2, "0")}${dd}${mm}${yy}`;
+}
+
 // ── Supplier Card ─────────────────────────────────────────────────────────────
 function SupplierCard({ supplier, onClick, onEdit, onDelete, index }) {
   const balance       = Number(supplier.totalBalance)  || 0;
@@ -187,6 +204,9 @@ function SupplierCard({ supplier, onClick, onEdit, onDelete, index }) {
           </div>
           <div className="min-w-0">
             <h3 className="text-white font-bold text-base truncate">{supplier.name}</h3>
+            {supplier.supplierNumber && (
+              <p className="text-[10px] font-semibold" style={{ color: "#60A5FA" }}>{supplier.supplierNumber}</p>
+            )}
             {supplier.shopName && <p className="text-amber-400 text-xs font-semibold truncate">{supplier.shopName}</p>}
             <p className="text-gray-500 text-[11px]">{supplier.phone}</p>
           </div>
@@ -369,8 +389,9 @@ export default function PurchasesView({ uid, userDoc }) {
           { ...form, updatedAt: serverTimestamp() });
         setAlert({ show: true, type: "success", title: "Supplier Updated! ✓", message: `${form.name} updated.` });
       } else {
+        const supplierNumber = await getNextSupplierNumber();
         await addDoc(collection(db, "users", uid, "suppliers"),
-          { ...form, createdAt: serverTimestamp() });
+          { ...form, supplierNumber, createdAt: serverTimestamp() });
         setAlert({ show: true, type: "success", title: "Supplier Added! 🎉", message: `${form.name} added.` });
       }
       setShowSupplierModal(false);

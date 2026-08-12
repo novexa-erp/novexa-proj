@@ -317,6 +317,50 @@ function PurchaseOrderModal({ initial, supplier, onClose, onSave, saving, isEdit
   const [form, setForm] = useState(initial || PO_EMPTY);
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
 
+  // ── Grid Mode state ──────────────────────────────────────────────────────────
+  const [gridMode, setGridMode]       = useState(false);
+  // Grid config
+  const [gridItemName, setGridItemName] = useState("");
+  const [gridUseRows, setGridUseRows]   = useState("color"); // "color" | "cup"
+  const [gridCols, setGridCols]         = useState("28,30,32,34,36,38,40,42,44,46"); // comma-separated sizes
+  const [gridRows, setGridRows]         = useState("Black,White,Red,Blue,Green"); // comma-separated colors/cups
+  const [gridUnitPrice, setGridUnitPrice] = useState(""); // per piece price
+  // Grid qty data: { "Black|32": "5", "White|34": "2" ... }
+  const [gridQty, setGridQty] = useState({});
+
+  const parsedCols = gridCols.split(",").map(s => s.trim()).filter(Boolean);
+  const parsedRows = gridRows.split(",").map(s => s.trim()).filter(Boolean);
+
+  function gridKey(row, col) { return `${row}|${col}`; }
+
+  function applyGridToForm() {
+    // Convert grid to individual items
+    const newItems = [];
+    for (const row of parsedRows) {
+      for (const col of parsedCols) {
+        const qty = Number(gridQty[gridKey(row, col)]) || 0;
+        if (qty <= 0) continue;
+        newItems.push({
+          description: `${gridItemName || "Item"} | ${gridUseRows === "cup" ? "Cup" : "Color"}: ${row} | Size: ${col}`,
+          hasVariant: false,
+          variantType: "none",
+          variantQty: "",
+          unitPrice: gridUnitPrice || "",
+          qty,
+        });
+      }
+    }
+    if (newItems.length === 0) { alert("Koi quantity fill nahi ki — grid khali hai."); return; }
+    setForm(p => ({ ...p, items: [...p.items.filter(it => it.description), ...newItems] }));
+    setGridMode(false);
+    setGridQty({});
+  }
+
+  // grid total
+  const gridTotal = parsedRows.reduce((s, row) =>
+    s + parsedCols.reduce((s2, col) => s2 + (Number(gridQty[gridKey(row, col)]) || 0), 0), 0
+  );
+
   // In edit mode: items at index < lockedCount are fully locked (all fields disabled)
   const lockedCount = isEdit ? (originalItemCount ?? (initial?.items?.length ?? 0)) : 0;
   // The original item descriptions (used to pre-fill new rows on "Add Item" in edit mode)
@@ -398,13 +442,228 @@ function PurchaseOrderModal({ initial, supplier, onClose, onSave, saving, isEdit
           <div>
             <div className="flex items-center justify-between mb-1">
               <label style={lbl}>Items <span style={{ color: "#f87171" }}>*</span></label>
-              {isEdit && (
-                <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
-                  style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", color: "#f59e0b" }}>
-                  🔒 Original items locked
-                </span>
-              )}
+              <div className="flex items-center gap-2">
+                {isEdit && (
+                  <span className="text-[10px] font-semibold px-2 py-0.5 rounded-full"
+                    style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", color: "#f59e0b" }}>
+                    🔒 Original items locked
+                  </span>
+                )}
+                {!isEdit && (
+                  <button type="button"
+                    onClick={() => setGridMode(g => !g)}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold transition-all hover:scale-105"
+                    style={{
+                      background: gridMode ? "rgba(139,92,246,0.2)" : "rgba(139,92,246,0.08)",
+                      border: `1px solid ${gridMode ? "rgba(139,92,246,0.5)" : "rgba(139,92,246,0.25)"}`,
+                      color: "#a78bfa",
+                    }}>
+                    📐 {gridMode ? "Grid Mode ON" : "Grid Mode"}
+                  </button>
+                )}
+              </div>
             </div>
+
+            {/* ── Grid Mode UI ── */}
+            {gridMode && !isEdit && (
+              <div className="rounded-xl overflow-hidden mb-3" style={{ border: "1px solid rgba(139,92,246,0.3)", background: "rgba(139,92,246,0.04)" }}>
+                {/* Grid header */}
+                <div className="px-4 py-3" style={{ borderBottom: "1px solid rgba(139,92,246,0.15)", background: "rgba(139,92,246,0.08)" }}>
+                  <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: "#a78bfa" }}>📐 Size × Color/Cup Grid</p>
+                  <p className="text-[10px] text-gray-500 mt-0.5">Rows = Colors ya Cups · Columns = Sizes · Cells = Qty</p>
+                </div>
+
+                <div className="p-4 flex flex-col gap-3">
+                  {/* Item name */}
+                  <div>
+                    <label style={lbl}>Item Name</label>
+                    <input type="text" placeholder="e.g. Bra, Underwear, T-Shirt..."
+                      value={gridItemName} onChange={e => setGridItemName(e.target.value)}
+                      style={{ ...base }} />
+                  </div>
+
+                  {/* Row type: Color or Cup */}
+                  <div>
+                    <label style={lbl}>Rows represent</label>
+                    <div className="flex gap-2">
+                      {[
+                        { id: "color", label: "🎨 Colors", ex: "Black, White, Red..." },
+                        { id: "cup",   label: "🔤 Cups/Other", ex: "B, C, D, DD, E..." },
+                      ].map(opt => (
+                        <button key={opt.id} type="button"
+                          onClick={() => setGridUseRows(opt.id)}
+                          className="flex-1 py-2 rounded-xl text-xs font-bold transition-all"
+                          style={{
+                            background: gridUseRows === opt.id ? "rgba(139,92,246,0.25)" : "rgba(255,255,255,0.04)",
+                            border: `1.5px solid ${gridUseRows === opt.id ? "rgba(139,92,246,0.6)" : "rgba(255,255,255,0.1)"}`,
+                            color: gridUseRows === opt.id ? "#c4b5fd" : "#6b7280",
+                          }}>
+                          {opt.label}
+                          <span className="block text-[9px] font-normal mt-0.5 text-gray-500">{opt.ex}</span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Columns (Sizes) */}
+                  <div>
+                    <label style={lbl}>Columns (Sizes) — comma separated</label>
+                    <input type="text" placeholder="e.g. 28,30,32,34,36,38,40,42,44,46"
+                      value={gridCols} onChange={e => setGridCols(e.target.value)}
+                      style={{ ...base }} />
+                    {/* Quick presets */}
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {[
+                        { label: "28–46 (step 2)", val: "28,30,32,34,36,38,40,42,44,46" },
+                        { label: "30–46 (step 2)", val: "30,32,34,36,38,40,42,44,46" },
+                        { label: "S/M/L/XL/XXL",  val: "S,M,L,XL,XXL" },
+                        { label: "36–46 shoes",    val: "36,37,38,39,40,41,42,43,44,45,46" },
+                      ].map(p => (
+                        <button key={p.label} type="button"
+                          onClick={() => setGridCols(p.val)}
+                          className="px-2 py-1 rounded-lg text-[10px] font-semibold transition-all hover:scale-105"
+                          style={{ background: "rgba(139,92,246,0.1)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.2)" }}>
+                          {p.label}
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Rows (Colors/Cups) */}
+                  <div>
+                    <label style={lbl}>{gridUseRows === "cup" ? "Cups" : "Colors"} — comma separated</label>
+                    <input type="text"
+                      placeholder={gridUseRows === "cup" ? "e.g. B,C,D,DD,E,F" : "e.g. Black,White,Red,Blue,Green"}
+                      value={gridRows} onChange={e => setGridRows(e.target.value)}
+                      style={{ ...base }} />
+                    {/* Quick presets */}
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {gridUseRows === "cup"
+                        ? [
+                            { label: "B C D DD E F", val: "B,C,D,DD,E,F" },
+                            { label: "A B C D DD",   val: "A,B,C,D,DD" },
+                            { label: "S D B NB R",   val: "S,D,B,NB,R,P,W,SB" },
+                          ].map(p => (
+                            <button key={p.label} type="button"
+                              onClick={() => setGridRows(p.val)}
+                              className="px-2 py-1 rounded-lg text-[10px] font-semibold transition-all hover:scale-105"
+                              style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.2)" }}>
+                              {p.label}
+                            </button>
+                          ))
+                        : [
+                            { label: "Basic 5", val: "Black,White,Red,Blue,Green" },
+                            { label: "Skin tones", val: "Skin,Beige,Nude,Black,White" },
+                          ].map(p => (
+                            <button key={p.label} type="button"
+                              onClick={() => setGridRows(p.val)}
+                              className="px-2 py-1 rounded-lg text-[10px] font-semibold transition-all hover:scale-105"
+                              style={{ background: "rgba(52,211,153,0.1)", color: "#34d399", border: "1px solid rgba(52,211,153,0.2)" }}>
+                              {p.label}
+                            </button>
+                          ))
+                      }
+                    </div>
+                  </div>
+
+                  {/* Unit price */}
+                  <div>
+                    <label style={lbl}>Unit Price per piece (Rs.) — optional</label>
+                    <input type="number" inputMode="decimal" placeholder="e.g. 250"
+                      value={gridUnitPrice} onChange={e => setGridUnitPrice(e.target.value)}
+                      style={{ ...base }} />
+                  </div>
+
+                  {/* THE GRID */}
+                  {parsedCols.length > 0 && parsedRows.length > 0 && (
+                    <div>
+                      <div className="flex items-center justify-between mb-2">
+                        <label style={lbl}>Quantity Grid</label>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                          style={{ background: "rgba(139,92,246,0.15)", color: "#c4b5fd", border: "1px solid rgba(139,92,246,0.3)" }}>
+                          Total pieces: {gridTotal}
+                        </span>
+                      </div>
+                      <div style={{ overflowX: "auto" }}>
+                        <table style={{ borderCollapse: "collapse", minWidth: "100%" }}>
+                          <thead>
+                            <tr>
+                              <th style={{ padding: "6px 10px", textAlign: "left", fontSize: 10, fontWeight: 700, textTransform: "uppercase", color: "#9ca3af", whiteSpace: "nowrap", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                                {gridUseRows === "cup" ? "Cup" : "Color"} ↓ / Size →
+                              </th>
+                              {parsedCols.map(col => (
+                                <th key={col} style={{ padding: "6px 10px", textAlign: "center", fontSize: 11, fontWeight: 800, color: "#a78bfa", whiteSpace: "nowrap", background: "rgba(139,92,246,0.08)", border: "1px solid rgba(255,255,255,0.07)", minWidth: 52 }}>
+                                  {col}
+                                </th>
+                              ))}
+                              <th style={{ padding: "6px 10px", textAlign: "center", fontSize: 10, fontWeight: 700, color: "#6b7280", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>Row Total</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            {parsedRows.map(row => {
+                              const rowTotal = parsedCols.reduce((s, col) => s + (Number(gridQty[gridKey(row, col)]) || 0), 0);
+                              return (
+                                <tr key={row}>
+                                  <td style={{ padding: "4px 10px", fontSize: 12, fontWeight: 700, color: "#f59e0b", whiteSpace: "nowrap", background: "rgba(245,158,11,0.05)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                                    {row}
+                                  </td>
+                                  {parsedCols.map(col => (
+                                    <td key={col} style={{ padding: "3px", border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}>
+                                      <input
+                                        type="number" inputMode="numeric" min="0" placeholder=""
+                                        value={gridQty[gridKey(row, col)] || ""}
+                                        onChange={e => setGridQty(q => ({ ...q, [gridKey(row, col)]: e.target.value }))}
+                                        style={{
+                                          width: 48, textAlign: "center", outline: "none",
+                                          background: (Number(gridQty[gridKey(row, col)]) || 0) > 0 ? "rgba(139,92,246,0.15)" : "transparent",
+                                          border: "none", borderRadius: 6, padding: "5px 2px",
+                                          color: "#fff", fontSize: 13, fontWeight: 700,
+                                        }}
+                                      />
+                                    </td>
+                                  ))}
+                                  <td style={{ padding: "4px 10px", textAlign: "center", fontSize: 12, fontWeight: 800, color: rowTotal > 0 ? "#34d399" : "#4b5563", border: "1px solid rgba(255,255,255,0.07)", background: "rgba(52,211,153,0.04)" }}>
+                                    {rowTotal || "—"}
+                                  </td>
+                                </tr>
+                              );
+                            })}
+                            {/* Column totals row */}
+                            <tr>
+                              <td style={{ padding: "4px 10px", fontSize: 10, fontWeight: 700, color: "#6b7280", textTransform: "uppercase", background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>Col Total</td>
+                              {parsedCols.map(col => {
+                                const colTotal = parsedRows.reduce((s, row) => s + (Number(gridQty[gridKey(row, col)]) || 0), 0);
+                                return (
+                                  <td key={col} style={{ padding: "4px 10px", textAlign: "center", fontSize: 12, fontWeight: 800, color: colTotal > 0 ? "#60A5FA" : "#4b5563", border: "1px solid rgba(255,255,255,0.07)", background: "rgba(37,99,235,0.05)" }}>
+                                    {colTotal || "—"}
+                                  </td>
+                                );
+                              })}
+                              <td style={{ padding: "4px 10px", textAlign: "center", fontSize: 13, fontWeight: 900, color: gridTotal > 0 ? "#f59e0b" : "#4b5563", border: "1px solid rgba(255,255,255,0.07)", background: "rgba(245,158,11,0.06)" }}>
+                                {gridTotal || "—"}
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+
+                  {/* Apply button */}
+                  <button type="button" onClick={applyGridToForm}
+                    disabled={gridTotal === 0}
+                    className="w-full py-3 rounded-xl text-sm font-black transition-all hover:scale-[1.02]"
+                    style={{
+                      background: gridTotal > 0 ? "linear-gradient(135deg,#8b5cf6,#6d28d9)" : "rgba(139,92,246,0.15)",
+                      color: gridTotal > 0 ? "#fff" : "#6b7280",
+                      cursor: gridTotal === 0 ? "not-allowed" : "pointer",
+                    }}>
+                    ✓ Add {gridTotal} pieces to Order →
+                  </button>
+                </div>
+              </div>
+            )}
+
             <div className="rounded-xl overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
             <div className="flex flex-col gap-0 p-1">
                 {form.items.map((item, idx) => {
@@ -1422,12 +1681,26 @@ function PurchaseOrderViewModal({ order, supplier, userDoc = {}, receipts, retur
 }
 
 // ── Blank Order Form — multi-page, printable ────────────────────────────────
-function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false }) {
+function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false,
+  sgCols = "28,30,32,34,36,38,40,42,44,46",
+  sgRows = "Black,White,Red,Blue,Green",
+  sgRowLabel = "color",
+  sgItemName = "",
+}) {
   const hasVariant  = formType === "variant";
+  const hasGrid     = formType === "sizegrid";
   const generatedOn = new Date().toLocaleDateString("en-PK", { day:"2-digit", month:"long", year:"numeric" });
+
+  // Parsed size grid data
+  const gridCols = sgCols.split(",").map(s => s.trim()).filter(Boolean);
+  const gridRows = sgRows.split(",").map(s => s.trim()).filter(Boolean);
   const cols = hasVariant
     ? ["Item / Description", "Variant Type", "Size / Unit", "Units", "Total Qty", "Unit Price", "Total Amount"]
     : ["Item / Description", "Qty", "Unit Price", "Total Amount"];
+
+  // Header badge label
+  const formBadge = hasGrid ? "📐 SIZE GRID" : hasVariant ? "📦 WITH VARIANTS" : "📋 STANDARD";
+  const formSubtitle = hasGrid ? "Size × Color/Cup Grid Form" : hasVariant ? "Variant / Measurement Order" : "Standard Order Form";
 
   // Color palette — switches between color and B&W
   const accent     = bw ? "#000"    : "#b45309";
@@ -1472,12 +1745,12 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
           <div style={{ textAlign: "right", paddingRight: "10px" }}>
             <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: "-1.5px", color: accent, lineHeight: 1.1 }}>ORDER FORM</div>
             <div style={{ fontSize: 9, color: textSub, marginTop: 2 }}>
-              {hasVariant ? "Variant / Measurement Order" : "Standard Order Form"}
+              {formSubtitle}
             </div>
             <div style={{ marginTop: 4, display: "flex", justifyContent: "flex-end", gap: 6, alignItems: "center" }}>
               <span style={{ padding: "2px 10px", borderRadius: 20, background: accentBg,
                 border: `1px solid ${accent}`, fontSize: 8, color: accentText, fontWeight: 700 }}>
-                {hasVariant ? "📦 WITH VARIANTS" : "📋 STANDARD"}
+                {formBadge}
               </span>
               <span style={{ fontSize: 9, color: textMid }}>Page {pageNum} / {totalPages}</span>
             </div>
@@ -1628,14 +1901,120 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
               </>
             )}
 
-            {/* ── Items table (all pages) ── */}
-            <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 0, flex: isLast ? undefined : 1 }}>
-              <thead><TableHead /></thead>
-              <tbody>
-                <ItemRows from={rowStart} count={rowCount} />
-                <PageSubtotal />
-              </tbody>
-            </table>
+            {/* ── Items table (all pages) — standard & variant ── */}
+            {!hasGrid && (
+              <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 0, flex: isLast ? undefined : 1 }}>
+                <thead><TableHead /></thead>
+                <tbody>
+                  <ItemRows from={rowStart} count={rowCount} />
+                  <PageSubtotal />
+                </tbody>
+              </table>
+            )}
+
+            {/* ── Size Grid table (sizegrid mode) ── */}
+            {hasGrid && (
+              <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
+                {/* Item name + row label header */}
+                <div style={{ marginBottom: 8 }}>
+                  {sgItemName && (
+                    <div style={{ fontSize: 13, fontWeight: 900, color: accent, marginBottom: 3 }}>
+                      {sgItemName}
+                    </div>
+                  )}
+                  <div style={{ fontSize: 9, color: textSub, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700 }}>
+                    Rows: {sgRowLabel === "cup" ? "Cups" : "Colors"} &nbsp;·&nbsp; Columns: Sizes &nbsp;·&nbsp; Cells: Quantity
+                  </div>
+                </div>
+
+                {/* Size Grid table */}
+                <div style={{ overflowX: "auto" }}>
+                  <table style={{ borderCollapse: "collapse", width: "100%" }}>
+                    <thead>
+                      <tr style={{ background: headBg }}>
+                        <th style={{ padding: "5px 8px", fontSize: 9, fontWeight: 800, textTransform: "uppercase",
+                          color: "#fff", textAlign: "left", whiteSpace: "nowrap", minWidth: 60,
+                          borderRight: `1px solid rgba(255,255,255,0.3)` }}>
+                          {sgRowLabel === "cup" ? "Cup" : "Color"} ↓
+                        </th>
+                        {gridCols.map(col => (
+                          <th key={col} style={{ padding: "5px 6px", fontSize: 10, fontWeight: 900,
+                            color: "#fff", textAlign: "center", minWidth: 36,
+                            borderRight: `1px solid rgba(255,255,255,0.2)` }}>
+                            {col}
+                          </th>
+                        ))}
+                        <th style={{ padding: "5px 8px", fontSize: 9, fontWeight: 800, textTransform: "uppercase",
+                          color: "#fff", textAlign: "center", minWidth: 50,
+                          background: "rgba(0,0,0,0.2)", borderLeft: `2px solid rgba(255,255,255,0.4)` }}>
+                          Total
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {/* Blank rows for each color/cup */}
+                      {gridRows.map((row, ri) => (
+                        <tr key={row} style={{ background: ri % 2 === 0 ? "#fff" : "#f9fafb", borderBottom: `1px solid ${borderMid}` }}>
+                          <td style={{ padding: "7px 8px", fontSize: 11, fontWeight: 800, color: accent,
+                            borderRight: `1px solid ${borderDark}`, whiteSpace: "nowrap" }}>
+                            {row}
+                          </td>
+                          {gridCols.map(col => (
+                            <td key={col} style={{ padding: "4px 3px", borderRight: `1px solid ${borderMid}`,
+                              height: 28, minWidth: 36 }} />
+                          ))}
+                          <td style={{ padding: "4px 8px", borderLeft: `2px solid ${borderDark}`,
+                            background: accentBg, height: 28, minWidth: 50 }} />
+                        </tr>
+                      ))}
+                      {/* Column totals row */}
+                      <tr style={{ background: accentBg, borderTop: `2px solid ${borderDark}` }}>
+                        <td style={{ padding: "6px 8px", fontSize: 9, fontWeight: 800, color: accentText,
+                          textTransform: "uppercase", letterSpacing: "0.05em",
+                          borderRight: `1px solid ${borderDark}` }}>
+                          Col Total
+                        </td>
+                        {gridCols.map(col => (
+                          <td key={col} style={{ padding: "6px 3px", borderRight: `1px solid ${borderMid}`,
+                            height: 26, minWidth: 36 }} />
+                        ))}
+                        <td style={{ padding: "6px 8px", borderLeft: `2px solid ${accent}`,
+                          background: accentBg, fontWeight: 900, height: 26 }} />
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+
+                {/* Extra blank order rows below grid */}
+                {isFirst && (
+                  <div style={{ marginTop: 10 }}>
+                    <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", color: textSub,
+                      letterSpacing: "0.05em", marginBottom: 4 }}>Additional Items</div>
+                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
+                      <thead>
+                        <tr style={{ background: headBg }}>
+                          {["#","Item / Description","Qty","Unit Price","Total"].map((h, i) => (
+                            <th key={h} style={{ padding: "4px 7px", fontSize: 9, fontWeight: 800,
+                              textTransform: "uppercase", color: "#fff",
+                              textAlign: i === 0 ? "center" : i === 1 ? "left" : "right" }}>{h}</th>
+                          ))}
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {Array.from({ length: 5 }).map((_, i) => (
+                          <tr key={i} style={{ borderBottom: `1px solid ${borderMid}` }}>
+                            <td style={{ padding: "5px 7px", textAlign: "center", fontSize: 10, color: "#000", fontWeight: 700, width: 22 }}>{i + 1}</td>
+                            {[0,1,2,3].map(ci => (
+                              <td key={ci} style={{ padding: "5px 7px", borderLeft: `1px solid ${borderMid}`, height: 24 }} />
+                            ))}
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+            )}
 
             {/* ── Last page only: grand total + payment + signatures ── */}
             {isLast && (
@@ -1712,6 +2091,12 @@ export function OrderFormView({ userDoc = {} }) {
   const [loading,  setLoading]  = useState(false);
   const [scale,    setScale]    = useState(1);
   const [bw,       setBw]       = useState(false);
+
+  // ── Size Grid config ─────────────────────────────────────────────────────────
+  const [sgCols,     setSgCols]     = useState("28,30,32,34,36,38,40,42,44,46");
+  const [sgRows,     setSgRows]     = useState("Black,White,Red,Blue,Green");
+  const [sgRowLabel, setSgRowLabel] = useState("color"); // "color" | "cup"
+  const [sgItemName, setSgItemName] = useState("");
 
   const PAGE_OPTIONS = [5, 10, 25, 50];
 
@@ -1831,7 +2216,7 @@ export function OrderFormView({ userDoc = {} }) {
           <div className="flex flex-wrap items-center gap-3">
             {/* Form type */}
             <div className="flex gap-1 p-1 rounded-xl" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
-              {[["plain","📋 Standard"],["variant","📦 Variants"]].map(([v, lbl]) => (
+              {[["plain","📋 Standard"],["variant","📦 Variants"],["sizegrid","📐 Size Grid"]].map(([v, lbl]) => (
                 <button key={v} onClick={() => setFormType(v)}
                   className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
                   style={{
@@ -1882,7 +2267,8 @@ export function OrderFormView({ userDoc = {} }) {
             { icon: "📄", text: `${pages} pages` },
             { icon: "✏️", text: "Fill by hand" },
             { icon: "🖊️", text: "Sign & file" },
-            { icon: formType === "variant" ? "📦" : "📋", text: formType === "variant" ? "With Variants" : "Standard" },
+            { icon: formType === "variant" ? "📦" : formType === "sizegrid" ? "�" : "�📋",
+              text: formType === "variant" ? "With Variants" : formType === "sizegrid" ? "Size Grid" : "Standard" },
           ].map((chip, i) => (
             <span key={i} className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium"
               style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", color: "#d97706" }}>
@@ -1920,6 +2306,92 @@ export function OrderFormView({ userDoc = {} }) {
         </div>
       </div>
 
+      {/* ── Size Grid Config (shown only when sizegrid mode) ── */}
+      {formType === "sizegrid" && (
+        <div className="rounded-xl p-4 flex flex-col gap-3"
+          style={{ background: "rgba(99,102,241,0.05)", border: "1px solid rgba(99,102,241,0.25)" }}>
+          <p className="text-[11px] font-black uppercase tracking-widest" style={{ color: "#818cf8" }}>📐 Size Grid Settings</p>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+            {/* Item name */}
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Item Name (optional)</label>
+              <input type="text" placeholder="e.g. Bra, Underwear, T-Shirt"
+                value={sgItemName} onChange={e => setSgItemName(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg text-sm text-white outline-none"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }} />
+            </div>
+            {/* Row type */}
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Rows represent</label>
+              <div className="flex gap-2">
+                {[["color","🎨 Colors"],["cup","🔤 Cups / Other"]].map(([v, l]) => (
+                  <button key={v} type="button" onClick={() => setSgRowLabel(v)}
+                    className="flex-1 py-2 rounded-xl text-xs font-bold transition-all"
+                    style={{
+                      background: sgRowLabel === v ? "rgba(99,102,241,0.25)" : "rgba(255,255,255,0.04)",
+                      border: `1.5px solid ${sgRowLabel === v ? "rgba(99,102,241,0.6)" : "rgba(255,255,255,0.1)"}`,
+                      color: sgRowLabel === v ? "#c7d2fe" : "#6b7280",
+                    }}>{l}</button>
+                ))}
+              </div>
+            </div>
+            {/* Columns (Sizes) */}
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Columns (Sizes) — comma separated</label>
+              <input type="text" placeholder="28,30,32,34,36,38,40,42,44,46"
+                value={sgCols} onChange={e => setSgCols(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg text-sm text-white outline-none"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }} />
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {[
+                  { l:"28–46 (step 2)", v:"28,30,32,34,36,38,40,42,44,46" },
+                  { l:"30–46 (step 2)", v:"30,32,34,36,38,40,42,44,46" },
+                  { l:"S M L XL XXL",   v:"S,M,L,XL,XXL" },
+                  { l:"Shoes 36–46",    v:"36,37,38,39,40,41,42,43,44,45,46" },
+                ].map(p => (
+                  <button key={p.l} type="button" onClick={() => setSgCols(p.v)}
+                    className="px-2 py-0.5 rounded-lg text-[10px] font-semibold"
+                    style={{ background:"rgba(99,102,241,0.12)", color:"#c7d2fe", border:"1px solid rgba(99,102,241,0.2)" }}>
+                    {p.l}
+                  </button>
+                ))}
+              </div>
+            </div>
+            {/* Rows (Colors/Cups) */}
+            <div>
+              <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">
+                {sgRowLabel === "cup" ? "Cups" : "Colors"} — comma separated
+              </label>
+              <input type="text"
+                placeholder={sgRowLabel === "cup" ? "B,C,D,DD,E,F" : "Black,White,Red,Blue,Green"}
+                value={sgRows} onChange={e => setSgRows(e.target.value)}
+                className="w-full px-3 py-2 rounded-lg text-sm text-white outline-none"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }} />
+              <div className="flex flex-wrap gap-1.5 mt-1.5">
+                {(sgRowLabel === "cup"
+                  ? [
+                      { l:"B C D DD E F",  v:"B,C,D,DD,E,F" },
+                      { l:"A B C D DD",    v:"A,B,C,D,DD" },
+                      { l:"S D B NB R P",  v:"S,D,B,NB,R,P,W,SB" },
+                    ]
+                  : [
+                      { l:"Basic 5",   v:"Black,White,Red,Blue,Green" },
+                      { l:"Skin tones",v:"Skin,Beige,Nude,Black,White" },
+                    ]
+                ).map(p => (
+                  <button key={p.l} type="button" onClick={() => setSgRows(p.v)}
+                    className="px-2 py-0.5 rounded-lg text-[10px] font-semibold"
+                    style={{ background:"rgba(245,158,11,0.1)", color:"#fbbf24", border:"1px solid rgba(245,158,11,0.2)" }}>
+                    {p.l}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+          <p className="text-[10px] text-gray-600">Settings change hone par preview automatically update hoga.</p>
+        </div>
+      )}
+
       {/* ── Form Preview ── */}
       {/* measureRef: full width div to measure available space */}
       <div ref={containerRef} style={{ width: "100%", position: "relative" }}>
@@ -1939,7 +2411,8 @@ export function OrderFormView({ userDoc = {} }) {
               marginBottom: scale < 1 ? `${1123 * pages * (scale - 1)}px` : 0,
             }}>
               <div ref={printRef}>
-                <BlankOrderFormTemplate userDoc={userDoc} formType={formType} totalPages={pages} bw={bw} />
+                <BlankOrderFormTemplate userDoc={userDoc} formType={formType} totalPages={pages} bw={bw}
+                  sgCols={sgCols} sgRows={sgRows} sgRowLabel={sgRowLabel} sgItemName={sgItemName} />
               </div>
             </div>
           </div>
@@ -2149,7 +2622,8 @@ export function OrderFormModal({ order, userDoc = {}, onClose }) {
                 marginBottom: scale < 1 ? `${1123 * pages * (scale - 1)}px` : 0,
               }}>
                 <div ref={printRef}>
-                  <BlankOrderFormTemplate userDoc={userDoc} formType={formType} totalPages={pages} />
+                  <BlankOrderFormTemplate userDoc={userDoc} formType={formType} totalPages={pages}
+                    sgCols={sgCols} sgRows={sgRows} sgRowLabel={sgRowLabel} sgItemName={sgItemName} />
                 </div>
               </div>
             </div>
@@ -2547,6 +3021,240 @@ function SupplierHistoryModal({ supplier, orders, payments, receipts, returns, u
   );
 }
 
+// ── Purchase Order Preview Modal ──────────────────────────────────────────────
+// Auto-shows after a new order is saved — pre-filled printable order form
+function PurchaseOrderPreviewModal({ order, supplier, userDoc, onClose }) {
+  const printRef = useRef(null);
+  const num = (order.id || "").slice(-4).toUpperCase();
+  const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
+  const now = new Date();
+  const dateStr = `${String(now.getDate()).padStart(2,"0")}-${MONTHS[now.getMonth()]}-${now.getFullYear()}`;
+  const orderDateStr = order.orderDate
+    ? (() => { const d = new Date(order.orderDate); return `${String(d.getDate()).padStart(2,"0")}-${MONTHS[d.getMonth()]}-${d.getFullYear()}`; })()
+    : dateStr;
+
+  function handlePrint() {
+    const content = printRef.current;
+    if (!content) return;
+    const win = window.open("", "_blank");
+    win.document.write(`
+      <html><head><title>PO-${num}</title>
+      <style>
+        * { margin:0; padding:0; box-sizing:border-box; }
+        body { font-family: Arial, sans-serif; background:#fff; color:#111; padding:32px; }
+        .header { display:flex; justify-content:space-between; align-items:flex-start; margin-bottom:24px; border-bottom:2px solid #f59e0b; padding-bottom:16px; }
+        .brand { font-size:20px; font-weight:900; color:#f59e0b; }
+        .brand-sub { font-size:10px; color:#6b7280; margin-top:2px; }
+        .po-title { font-size:22px; font-weight:900; color:#111; }
+        .po-num { font-size:12px; color:#6b7280; margin-top:2px; }
+        .info-grid { display:grid; grid-template-columns:1fr 1fr; gap:24px; margin-bottom:24px; }
+        .info-box { border:1px solid #e5e7eb; border-radius:8px; padding:14px; }
+        .info-label { font-size:9px; font-weight:700; text-transform:uppercase; letter-spacing:0.08em; color:#9ca3af; margin-bottom:6px; }
+        .info-name { font-size:15px; font-weight:800; color:#111; }
+        .info-detail { font-size:11px; color:#6b7280; margin-top:3px; }
+        table { width:100%; border-collapse:collapse; margin-bottom:20px; }
+        thead { background:#fef3c7; }
+        th { padding:10px 12px; text-align:left; font-size:10px; font-weight:700; text-transform:uppercase; letter-spacing:0.06em; color:#92400e; }
+        th:last-child, td:last-child { text-align:right; }
+        td { padding:10px 12px; font-size:12px; border-bottom:1px solid #f3f4f6; }
+        tr:last-child td { border-bottom:none; }
+        .totals { margin-left:auto; width:240px; }
+        .total-row { display:flex; justify-content:space-between; padding:5px 0; font-size:12px; color:#374151; border-bottom:1px solid #f3f4f6; }
+        .total-final { display:flex; justify-content:space-between; padding:8px 0; font-size:14px; font-weight:900; border-top:2px solid #f59e0b; margin-top:4px; }
+        .note-box { border:1px solid #e5e7eb; border-radius:8px; padding:12px; margin-bottom:20px; }
+        .note-label { font-size:9px; font-weight:700; text-transform:uppercase; color:#9ca3af; margin-bottom:4px; }
+        .footer { text-align:center; font-size:10px; color:#9ca3af; margin-top:32px; border-top:1px solid #e5e7eb; padding-top:12px; }
+        @media print { body { padding:16px; } }
+      </style>
+      </head><body>${content.innerHTML}</body></html>
+    `);
+    win.document.close();
+    win.focus();
+    setTimeout(() => { win.print(); win.close(); }, 400);
+  }
+
+  const items = (order.items || []).filter(it => it.description);
+
+  return (
+    <div className="fixed inset-0 z-[60] flex items-start justify-center p-4 overflow-y-auto"
+      style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(8px)" }}>
+      <div className="w-full max-w-2xl my-4 rounded-2xl overflow-hidden"
+        style={{ background: "#0d1117", border: "1px solid rgba(245,158,11,0.3)", boxShadow: "0 24px 64px rgba(0,0,0,0.7)" }}>
+
+        {/* Modal Header */}
+        <div className="flex items-center justify-between px-5 py-4"
+          style={{ borderBottom: "1px solid rgba(245,158,11,0.15)", background: "linear-gradient(135deg,rgba(245,158,11,0.1),rgba(217,119,6,0.05))" }}>
+          <div className="flex items-center gap-3">
+            <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+              style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)" }}>
+              🛒
+            </div>
+            <div>
+              <h3 className="text-white font-black text-base">Purchase Order Ready!</h3>
+              <p className="text-gray-500 text-xs">PO-{num} · {supplier.name} ko bhejne ke liye ready hai</p>
+            </div>
+          </div>
+          <button onClick={onClose}
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 transition-colors">✕</button>
+        </div>
+
+        {/* Action Buttons */}
+        <div className="flex gap-2 px-5 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+          <button onClick={handlePrint}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105"
+            style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#000" }}>
+            🖨️ Print / Save PDF
+          </button>
+          <button onClick={onClose}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:bg-white/10"
+            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+            Close
+          </button>
+        </div>
+
+        {/* Printable PO Content */}
+        <div className="p-5 overflow-y-auto" style={{ maxHeight: "70vh" }}>
+          <div ref={printRef} style={{ background: "#fff", color: "#111", borderRadius: 12, padding: 28, fontFamily: "Arial, sans-serif" }}>
+
+            {/* PO Header */}
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 24, borderBottom: "2px solid #f59e0b", paddingBottom: 16 }}>
+              <div>
+                {userDoc?.logoDataUrl && (
+                  <img src={userDoc.logoDataUrl} alt="Logo" style={{ height: 48, objectFit: "contain", marginBottom: 6 }} />
+                )}
+                <div style={{ fontSize: 18, fontWeight: 900, color: "#f59e0b" }}>
+                  {userDoc?.businessName || userDoc?.name || "Novexa ERP"}
+                </div>
+                {userDoc?.phone && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>📞 {userDoc.phone}</div>}
+                {userDoc?.address && <div style={{ fontSize: 11, color: "#6b7280" }}>📍 {userDoc.address}</div>}
+              </div>
+              <div style={{ textAlign: "right" }}>
+                <div style={{ fontSize: 22, fontWeight: 900, color: "#111" }}>PURCHASE ORDER</div>
+                <div style={{ fontSize: 13, fontWeight: 700, color: "#f59e0b", marginTop: 4 }}>PO-{num}</div>
+                <div style={{ fontSize: 11, color: "#6b7280", marginTop: 2 }}>Date: {orderDateStr}</div>
+                {order.dueDate && <div style={{ fontSize: 11, color: "#6b7280" }}>Due: {order.dueDate}</div>}
+              </div>
+            </div>
+
+            {/* Supplier Info */}
+            <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 20, marginBottom: 24 }}>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 14 }}>
+                <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9ca3af", marginBottom: 6 }}>TO (SUPPLIER)</div>
+                <div style={{ fontSize: 15, fontWeight: 800, color: "#111" }}>{supplier.name}</div>
+                {supplier.shopName && <div style={{ fontSize: 11, color: "#d97706", marginTop: 2 }}>{supplier.shopName}</div>}
+                {supplier.phone && <div style={{ fontSize: 11, color: "#6b7280", marginTop: 3 }}>📞 {supplier.phone}</div>}
+                {supplier.email && <div style={{ fontSize: 11, color: "#6b7280" }}>✉ {supplier.email}</div>}
+                {supplier.address && <div style={{ fontSize: 11, color: "#6b7280" }}>📍 {supplier.address}</div>}
+              </div>
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 14 }}>
+                <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.08em", color: "#9ca3af", marginBottom: 6 }}>ORDER DETAILS</div>
+                <div style={{ fontSize: 12, color: "#374151", marginBottom: 4 }}>
+                  <span style={{ color: "#9ca3af" }}>PO Number:</span> <strong>PO-{num}</strong>
+                </div>
+                <div style={{ fontSize: 12, color: "#374151", marginBottom: 4 }}>
+                  <span style={{ color: "#9ca3af" }}>Order Date:</span> <strong>{orderDateStr}</strong>
+                </div>
+                {order.dueDate && (
+                  <div style={{ fontSize: 12, color: "#374151", marginBottom: 4 }}>
+                    <span style={{ color: "#9ca3af" }}>Due Date:</span> <strong>{order.dueDate}</strong>
+                  </div>
+                )}
+                <div style={{ fontSize: 12, color: "#374151" }}>
+                  <span style={{ color: "#9ca3af" }}>Status:</span>{" "}
+                  <strong style={{ color: order.status === "Paid" ? "#16a34a" : order.status === "Partial" ? "#d97706" : "#dc2626" }}>
+                    {order.status || "Pending"}
+                  </strong>
+                </div>
+              </div>
+            </div>
+
+            {/* Items Table */}
+            <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 20 }}>
+              <thead>
+                <tr style={{ background: "#fef3c7" }}>
+                  <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#92400e" }}>#</th>
+                  <th style={{ padding: "10px 12px", textAlign: "left", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#92400e" }}>Item / Description</th>
+                  <th style={{ padding: "10px 12px", textAlign: "center", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#92400e" }}>Qty</th>
+                  <th style={{ padding: "10px 12px", textAlign: "right", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#92400e" }}>Unit Price</th>
+                  <th style={{ padding: "10px 12px", textAlign: "right", fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.06em", color: "#92400e" }}>Total</th>
+                </tr>
+              </thead>
+              <tbody>
+                {items.map((it, i) => {
+                  const qty = Number(it.qty) || 0;
+                  const price = Number(it.unitPrice) || 0;
+                  const total = qty * price;
+                  return (
+                    <tr key={i} style={{ borderBottom: "1px solid #f3f4f6" }}>
+                      <td style={{ padding: "10px 12px", fontSize: 12, color: "#6b7280" }}>{i + 1}</td>
+                      <td style={{ padding: "10px 12px", fontSize: 13, color: "#111", fontWeight: 600 }}>
+                        {it.description}
+                        {it.variantLabel && <span style={{ fontSize: 10, color: "#d97706", marginLeft: 6 }}>({it.variantLabel})</span>}
+                      </td>
+                      <td style={{ padding: "10px 12px", fontSize: 13, color: "#111", textAlign: "center", fontWeight: 700 }}>{qty}</td>
+                      <td style={{ padding: "10px 12px", fontSize: 12, color: "#374151", textAlign: "right" }}>
+                        {price > 0 ? `Rs. ${price.toLocaleString("en-PK")}` : "—"}
+                      </td>
+                      <td style={{ padding: "10px 12px", fontSize: 13, color: "#111", textAlign: "right", fontWeight: 700 }}>
+                        {total > 0 ? `Rs. ${total.toLocaleString("en-PK")}` : "—"}
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+
+            {/* Totals */}
+            <div style={{ marginLeft: "auto", width: 260 }}>
+              {Number(order.subtotal) > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 12, color: "#374151", borderBottom: "1px solid #f3f4f6" }}>
+                  <span>Subtotal</span>
+                  <span>Rs. {Number(order.subtotal).toLocaleString("en-PK")}</span>
+                </div>
+              )}
+              {Number(order.discount) > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 12, color: "#d97706", borderBottom: "1px solid #f3f4f6" }}>
+                  <span>Discount</span>
+                  <span>- Rs. {Number(order.discount).toLocaleString("en-PK")}</span>
+                </div>
+              )}
+              {Number(order.paidAmount) > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "5px 0", fontSize: 12, color: "#16a34a", borderBottom: "1px solid #f3f4f6" }}>
+                  <span>Paid</span>
+                  <span>Rs. {Number(order.paidAmount).toLocaleString("en-PK")}</span>
+                </div>
+              )}
+              <div style={{ display: "flex", justifyContent: "space-between", padding: "8px 0", fontSize: 15, fontWeight: 900, borderTop: "2px solid #f59e0b", marginTop: 4 }}>
+                <span>Total Amount</span>
+                <span style={{ color: "#f59e0b" }}>Rs. {Number(order.totalAmount).toLocaleString("en-PK")}</span>
+              </div>
+              {Number(order.balance) > 0 && (
+                <div style={{ display: "flex", justifyContent: "space-between", padding: "4px 0", fontSize: 12, color: "#dc2626" }}>
+                  <span>Balance Due</span>
+                  <span>Rs. {Number(order.balance).toLocaleString("en-PK")}</span>
+                </div>
+              )}
+            </div>
+
+            {/* Note */}
+            {order.note && (
+              <div style={{ border: "1px solid #e5e7eb", borderRadius: 8, padding: 12, marginTop: 20 }}>
+                <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", color: "#9ca3af", marginBottom: 4 }}>NOTE</div>
+                <div style={{ fontSize: 12, color: "#374151" }}>{order.note}</div>
+              </div>
+            )}
+
+            {/* Footer */}
+            <div style={{ textAlign: "center", fontSize: 10, color: "#9ca3af", marginTop: 28, borderTop: "1px solid #e5e7eb", paddingTop: 12 }}>
+              Generated by Novexa ERP · {dateStr}
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Main SupplierDetail Export ────────────────────────────────────────────────
 export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, onEdit, onDelete }) {
   const [orders, setOrders]           = useState([]);
@@ -2562,6 +3270,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
   const [showHistory, setShowHistory] = useState(false);   // true = full supplier history
   const [historyOrder, setHistoryOrder] = useState(null);  // specific order history
   const [viewOrder, setViewOrder]       = useState(null);  // order to view as PDF
+  const [poPreview, setPoPreview]       = useState(null);  // auto-show PO form after new order
   const [supplierPayments, setSupplierPayments] = useState([]);
   const [supplierReceipts, setSupplierReceipts] = useState([]);
   const [supplierReturns, setSupplierReturns]   = useState([]);
@@ -2809,6 +3518,9 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
         if (supplier.email?.trim()) {
           setEmailConfirm({ show: true, order: { ...payload, id: ref.id }, isUpdate: false });
         }
+
+        // ── Auto-show PO preview form after new order ──────────────────────
+        setPoPreview({ order: { ...payload, id: ref.id }, supplier });
       }
 
       setShowOrderModal(false);
@@ -3060,6 +3772,9 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
           </div>
           <div className="flex-1">
             <h2 className="text-white font-black text-xl leading-none mb-1">{supplier.name}</h2>
+            {supplier.supplierNumber && (
+              <p className="text-[11px] font-semibold mb-1" style={{ color: "#60A5FA" }}>{supplier.supplierNumber}</p>
+            )}
             {supplier.shopName && <p className="text-amber-400 text-sm font-semibold mb-2">{supplier.shopName}</p>}
             <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-400">
               {supplier.phone   && <span>📞 {supplier.phone}</span>}
@@ -3433,6 +4148,16 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
           setEmailConfirm({ show: false, order: null, isUpdate: false });
         }}
       />
+
+      {/* ── Purchase Order Preview — auto-shows after new order saved ── */}
+      {poPreview && (
+        <PurchaseOrderPreviewModal
+          order={poPreview.order}
+          supplier={poPreview.supplier}
+          userDoc={userDoc}
+          onClose={() => setPoPreview(null)}
+        />
+      )}
     </>
   );
 }

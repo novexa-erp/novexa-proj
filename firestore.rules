@@ -19,7 +19,6 @@ service cloud.firestore {
 
     // ── Users ─────────────────────────────────────────────────────────────────
     match /users/{userId} {
-      // Owner can read their own doc; admin can read any user doc
       allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
 
       allow create: if isSignedIn() && isOwner(userId)
@@ -29,7 +28,7 @@ service cloud.firestore {
         && request.resource.data.name.size() > 0
         && request.resource.data.name.size() <= 100;
 
-      // Admin can create user doc (restore flow — Auth account may need separate recreation)
+      // Admin can create user doc (restore flow)
       allow create: if isAdmin();
 
       // Users can update their own doc EXCEPT protected admin-only fields
@@ -113,30 +112,23 @@ service cloud.firestore {
         allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
       match /tickets/{ticketId} {
-        // Owner reads their own tickets; admin reads all
         allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
-        // Only owner can create a ticket (not admin — admin uses server SDK)
         allow create: if isSignedIn() && isOwner(userId)
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.subject is string
           && request.resource.data.subject.size() > 0
           && request.resource.data.message is string
           && request.resource.data.message.size() > 0;
-        // Admin can update tickets (reply, change status) and delete (restore)
         allow update: if isAdmin();
-        allow delete: if isAdmin(); // admin restore (replace mode)
+        allow delete: if isAdmin();
       }
       match /addonRequests/{requestId} {
-        // Owner reads their own; admin reads all
         allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
-        // Owner can create their own request (payment screenshot flow)
         allow create: if isSignedIn() && isOwner(userId)
           && request.resource.data.uid == request.auth.uid
           && request.resource.data.grandTotal is number
           && request.resource.data.lineItems is list;
-        // Admin can create on behalf of user (manual grant flow) and restore
         allow create: if isAdmin();
-        // Admin can update (approve/reject status) and delete (restore replace mode)
         allow update: if isAdmin();
         allow delete: if isAdmin();
       }
@@ -156,14 +148,12 @@ service cloud.firestore {
     // ── Support Tickets (admin-facing global collection) ──────────────────────
     match /supportTickets/{ticketId} {
       allow read:   if isSignedIn() && (resource.data.uid == request.auth.uid || isAdmin());
-      allow create: if isAdmin(); // admin restore needs create access
+      allow create: if isAdmin();
       allow update: if isAdmin();
-      allow delete: if isAdmin(); // admin restore (replace mode) needs delete
+      allow delete: if isAdmin();
     }
 
     // ── Admin Config (Package Manager / Plan Settings / Counters) ─────────────
-    // All signed-in users: read (to load plan limits, addon prices)
-    // Super Admin only: write (plan changes, counter updates)
     match /adminConfig/{docId} {
       allow read:  if isSignedIn();
       allow write: if isAdmin();
@@ -176,9 +166,15 @@ service cloud.firestore {
     // ── Global addon requests ─────────────────────────────────────────────────
     match /addonRequests/{requestId} {
       allow read:   if isAdmin();
-      allow create: if isAdmin(); // admin restore + server SDK
-      allow update: if isAdmin(); // admin restore + server SDK
-      allow delete: if isAdmin(); // admin restore (replace mode)
+      allow create: if isAdmin();
+      allow update: if isAdmin();
+      allow delete: if isAdmin();
+    }
+
+    // ── Global Counters (invoice serial, customer serial) ─────────────────────
+    // All signed-in users can read + write (atomic runTransaction ke liye zaroori)
+    match /globalCounters/{docId} {
+      allow read, write: if isSignedIn();
     }
 
     // ── Deny everything else ─────────────────────────────────────────────────

@@ -1,9 +1,9 @@
 "use client";
-import { useState, useEffect } from "react";
+import { useState, useEffect, useRef } from "react";
 import { useRouter, useSearchParams } from "next/navigation";
 import {
   collection, addDoc, doc, updateDoc,
-  serverTimestamp, onSnapshot, query, orderBy, where, getDocs,
+  serverTimestamp, onSnapshot, query, orderBy, where, getDocs, runTransaction,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { getLimits, checkMonthlyLimit, loadPlansFromFirestore, getEffectiveLimit } from "@/lib/planLimits";
@@ -63,6 +63,57 @@ const STATUS_STYLE = {
   Unpaid:  { color: "#f87171", bg: "rgba(248,113,113,0.1)", border: "rgba(248,113,113,0.25)" },
   Partial: { color: "#fbbf24", bg: "rgba(251,191,36,0.1)",  border: "rgba(251,191,36,0.25)"  },
 };
+
+// ── Global invoice serial counter (same as InvoicesView) ──────────────────────
+// Format: INV-01140726  (serial 2-digit + DD + MM + YY)
+async function getNextInvoiceNumber() {
+  const counterRef = doc(db, "globalCounters", "invoiceSerial");
+  let serial;
+  await runTransaction(db, async (txn) => {
+    const snap = await txn.get(counterRef);
+    serial = snap.exists() ? (snap.data().count || 0) + 1 : 1;
+    txn.set(counterRef, { count: serial });
+  });
+  const now = new Date();
+  const dd  = String(now.getDate()).padStart(2, "0");
+  const mm  = String(now.getMonth() + 1).padStart(2, "0");
+  const yy  = String(now.getFullYear()).slice(-2);
+  return `INV-${String(serial).padStart(2, "0")}${dd}${mm}${yy}`;
+}
+
+// ── Customer invoice serial counter ───────────────────────────────────────────
+// Format: CUS-INV-01170826  (serial 2-digit + DD + MM + YY)
+async function getNextCustomerInvoiceNumber() {
+  const counterRef = doc(db, "globalCounters", "invoiceSerial");
+  let serial;
+  await runTransaction(db, async (txn) => {
+    const snap = await txn.get(counterRef);
+    serial = snap.exists() ? (snap.data().count || 0) + 1 : 1;
+    txn.set(counterRef, { count: serial });
+  });
+  const now = new Date();
+  const dd  = String(now.getDate()).padStart(2, "0");
+  const mm  = String(now.getMonth() + 1).padStart(2, "0");
+  const yy  = String(now.getFullYear()).slice(-2);
+  return `CUS-INV-${String(serial).padStart(2, "0")}${dd}${mm}${yy}`;
+}
+
+// ── Global customer serial counter ────────────────────────────────────────────
+// Format: CUS-01170826  (serial 2-digit + DD + MM + YY)
+async function getNextCustomerNumber() {
+  const counterRef = doc(db, "globalCounters", "customerSerial");
+  let serial;
+  await runTransaction(db, async (txn) => {
+    const snap = await txn.get(counterRef);
+    serial = snap.exists() ? (snap.data().count || 0) + 1 : 1;
+    txn.set(counterRef, { count: serial });
+  });
+  const now = new Date();
+  const dd  = String(now.getDate()).padStart(2, "0");
+  const mm  = String(now.getMonth() + 1).padStart(2, "0");
+  const yy  = String(now.getFullYear()).slice(-2);
+  return `CUS-${String(serial).padStart(2, "0")}${dd}${mm}${yy}`;
+}
 
 // ── shared input ──────────────────────────────────────────────────────────────
 const base = {
@@ -217,6 +268,14 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
   const [savingInv,    setSavingInv]    = useState(false);
   const [deleteInvId,  setDeleteInvId]  = useState(null);
   const [pdfInv,       setPdfInv]       = useState(null);
+  // ── Invoice Actions dropdown ─────────────────────────────────────────────────
+  const [openMenuId,   setOpenMenuId]   = useState(null);
+  const invMenuRef = useRef(null);
+  useEffect(() => {
+    function handler(e) { if (invMenuRef.current && !invMenuRef.current.contains(e.target)) setOpenMenuId(null); }
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, []);
   // ── Monthly invoice-per-customer usage ──────────────────────────────────────
   const [monthlyInvCount,   setMonthlyInvCount]   = useState(null);
   const [invPerCustLimitVal, setInvPerCustLimitVal] = useState(null);
@@ -879,16 +938,15 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         }
 
         // add to customer subcollection first to get the id
+        const invoiceNumber = await getNextCustomerInvoiceNumber();
         const ref = await addDoc(
           collection(db, "users", uid, "customers", customer.id, "invoices"),
           {
             ...payload,
-            // Store original values at invoice creation — used in history to show
-            // the invoice row as it was when first created (payments don't touch these)
+            invoiceNumber,
             originalAmountPaid: payload.amountPaid,
             originalBalance:    payload.balance,
             originalStatus:     payload.status,
-            // originalAmount = actual sold amount without prev balance carry-forward items
             originalAmount:     payload.actualAmount,
             createdAt: serverTimestamp(),
           }
@@ -898,6 +956,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
           doc(db, "users", uid, "invoices", ref.id),
           {
             ...payload,
+            invoiceNumber,
             originalAmountPaid: payload.amountPaid,
             originalBalance:    payload.balance,
             originalStatus:     payload.status,
@@ -910,6 +969,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             doc(db, "users", uid, "invoices", ref.id),
             {
               ...payload,
+              invoiceNumber,
               originalAmountPaid: payload.amountPaid,
               originalBalance:    payload.balance,
               originalStatus:     payload.status,
@@ -1177,6 +1237,9 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         </div>
         <div className="flex-1">
           <h2 className="text-white font-black text-xl leading-none mb-1">{customer.name}</h2>
+          {customer.customerNumber && (
+            <p className="text-[11px] font-semibold mb-1" style={{ color: "#60A5FA" }}>{customer.customerNumber}</p>
+          )}
           {customer.shopName && <p className="text-amber-400 text-sm font-semibold mb-2">{customer.shopName}</p>}
           <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-400">
             {customer.phone   && <span>📞 {customer.phone}</span>}
@@ -1336,6 +1399,10 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
                 : inv.invoiceDate || "—";
               const isOverdue = inv.dueDate && new Date(inv.dueDate) < new Date() && effectiveStatus !== "Paid";
               const num = (inv.id || "").slice(-4).toUpperCase();
+              const invNum = inv.invoiceNumber || `INV-${num}`;
+              const badgeNum = inv.invoiceNumber
+                ? inv.invoiceNumber.replace("CUS-INV-", "").replace("INV-", "").slice(0, 2)
+                : num;
 
               // Only show real product items (no prev balance entries)
               const realItems = (inv.items || []).filter(it => it.description && !isPrevBalItem(it));
@@ -1345,11 +1412,11 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
                   <div className="flex items-center gap-3 min-w-0">
                     <div className="w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black flex-shrink-0"
                       style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>
-                      {num}
+                      {badgeNum}
                     </div>
                     <div className="flex-1 min-w-0">
                       <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-white text-sm font-medium whitespace-nowrap">INV-{num}</p>
+                        <p className="text-white text-sm font-medium whitespace-nowrap">{invNum}</p>
                         {isOverdue && (
                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
                             style={{ background: "rgba(248,113,113,0.12)", color: "#f87171" }}>OVERDUE</span>
@@ -1384,24 +1451,80 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
                         )}
                       </div>
                     </div>
-                    <div className="flex gap-1.5">
+                    <div className="flex gap-1.5 items-center">
+                      {/* View */}
                       <button onClick={() => setPdfInv(inv)}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
-                        style={{ background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.2)", color: "#34d399" }}>👁</button>
+                        title="View Invoice"
+                        className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all hover:scale-105 whitespace-nowrap"
+                        style={{ background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.25)", color: "#34d399" }}>
+                        👁 View
+                      </button>
+                      {/* History */}
                       <button onClick={() => setShowHistoryModal(inv.id)}
                         title="Invoice Payment History"
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
-                        style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.2)", color: "#a78bfa" }}>📊</button>
-                      <button onClick={() => {
-                          const invReturns = customerPayments.filter(p => p.type === "return" && p.invoiceId === inv.id);
-                          setEditInv({ id: inv.id, form: docToForm(inv, invReturns) });
-                          setShowInvModal(true);
-                        }}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
-                        style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>✏️</button>
-                      <button onClick={() => setDeleteInvId(inv.id)}
-                        className="w-8 h-8 rounded-lg flex items-center justify-center text-sm transition-colors"
-                        style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>🗑</button>
+                        className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all hover:scale-105 whitespace-nowrap"
+                        style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.25)", color: "#a78bfa" }}>
+                        📊 History
+                      </button>
+                      {/* Actions dropdown */}
+                      <div className="relative" ref={openMenuId === inv.id ? invMenuRef : null}>
+                        <button onClick={() => setOpenMenuId(openMenuId === inv.id ? null : inv.id)}
+                          title="More Actions"
+                          className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all hover:scale-105 whitespace-nowrap"
+                          style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)" }}>
+                          ⚡ Actions ▾
+                        </button>
+                        {openMenuId === inv.id && (
+                          <div className="absolute right-0 top-full mt-1 z-30 rounded-xl overflow-hidden"
+                            style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 8px 32px rgba(0,0,0,0.6)", minWidth: 160 }}>
+                            {/* Edit */}
+                            <button onClick={() => {
+                                setOpenMenuId(null);
+                                const invReturns = customerPayments.filter(p => p.type === "return" && p.invoiceId === inv.id);
+                                setEditInv({ id: inv.id, form: docToForm(inv, invReturns) });
+                                setShowInvModal(true);
+                              }}
+                              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                              style={{ color: "#60A5FA" }}>
+                              ✏️ Edit
+                            </button>
+                            {/* Pay — only when balance > 0 */}
+                            {displayBalance > 0 && (
+                              <button onClick={() => {
+                                  setOpenMenuId(null);
+                                  const invReturns = customerPayments.filter(p => p.type === "return" && p.invoiceId === inv.id);
+                                  setEditInv({ id: inv.id, form: docToForm(inv, invReturns) });
+                                  setShowInvModal(true);
+                                }}
+                                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                                style={{ color: "#34d399" }}>
+                                💰 Pay
+                              </button>
+                            )}
+                            {/* Return */}
+                            {realItems.length > 0 && (
+                              <button onClick={() => {
+                                  setOpenMenuId(null);
+                                  const invReturns = customerPayments.filter(p => p.type === "return" && p.invoiceId === inv.id);
+                                  setEditInv({ id: inv.id, form: docToForm(inv, invReturns) });
+                                  setShowInvModal(true);
+                                }}
+                                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                                style={{ color: "#f87171" }}>
+                                ↩️ Return
+                              </button>
+                            )}
+                            {/* Divider */}
+                            <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }} />
+                            {/* Delete */}
+                            <button onClick={() => { setOpenMenuId(null); setDeleteInvId(inv.id); }}
+                              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                              style={{ color: "#f87171" }}>
+                              🗑️ Delete
+                            </button>
+                          </div>
+                        )}
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2198,11 +2321,14 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
             return;
           }
         }
+        const customerNumber = await getNextCustomerNumber();
         await addDoc(collection(db, "users", uid, "customers"), {
           name: form.name, shopName: form.shopName || "",
           phone: form.phone, email: form.email || "",
           address: form.address || "", city: form.city || "",
-          notes: form.notes || "", status: "active", createdAt: serverTimestamp(),
+          notes: form.notes || "", status: "active",
+          customerNumber,
+          createdAt: serverTimestamp(),
         });
         
         // Show create success alert
@@ -2620,6 +2746,9 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
                     <h3 className="text-white font-bold text-base line-clamp-1 group-hover:text-amber-400 transition-colors">
                       {c.name}
                     </h3>
+                    {c.customerNumber && (
+                      <p className="text-[10px] font-semibold mt-0.5" style={{ color: "#60A5FA" }}>{c.customerNumber}</p>
+                    )}
                     {c.shopName && (
                       <p className="text-amber-400 text-sm font-semibold line-clamp-1 mt-0.5">{c.shopName}</p>
                     )}
