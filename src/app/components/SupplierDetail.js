@@ -1684,7 +1684,8 @@ function PurchaseOrderViewModal({ order, supplier, userDoc = {}, receipts, retur
 function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false,
   sgCols = "28,30,32,34,36,38,40,42,44,46",
   sgRows = "Black,White,Red,Blue,Green",
-  sgRowLabel = "color",
+  sgRowLabel = "color", // "color" | "cup" | "both"
+  sgCupRows = "B,C,D,DD",  // used when sgRowLabel === "both"
   sgItemName = "",
 }) {
   const hasVariant  = formType === "variant";
@@ -1693,14 +1694,23 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
 
   // Parsed size grid data
   const gridCols = sgCols.split(",").map(s => s.trim()).filter(Boolean);
-  const gridRows = sgRows.split(",").map(s => s.trim()).filter(Boolean);
+  const rawGridRows = sgRows.split(",").map(s => s.trim()).filter(Boolean);
+  const rawCupRows  = sgCupRows.split(",").map(s => s.trim()).filter(Boolean);
+
+  // When "both" mode: rows = every cup × color combo e.g. "B · Red"
+  const gridRows = sgRowLabel === "both"
+    ? rawCupRows.flatMap(cup => rawGridRows.map(color => `${cup} · ${color}`))
+    : rawGridRows;
+
   const cols = hasVariant
     ? ["Item / Description", "Variant Type", "Size / Unit", "Units", "Total Qty", "Unit Price", "Total Amount"]
     : ["Item / Description", "Qty", "Unit Price", "Total Amount"];
 
   // Header badge label
   const formBadge = hasGrid ? "📐 SIZE GRID" : hasVariant ? "📦 WITH VARIANTS" : "📋 STANDARD";
-  const formSubtitle = hasGrid ? "Size × Color/Cup Grid Form" : hasVariant ? "Variant / Measurement Order" : "Standard Order Form";
+  const formSubtitle = hasGrid
+    ? (sgRowLabel === "both" ? "Cup × Color Grid Form" : "Size × Color/Cup Grid Form")
+    : hasVariant ? "Variant / Measurement Order" : "Standard Order Form";
 
   // Color palette — switches between color and B&W
   const accent     = bw ? "#000"    : "#b45309";
@@ -1717,6 +1727,32 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
   const greenBg    = bw ? "#f0f0f0" : "#f0fdf4";
   const greenText  = bw ? "#000"    : "#14532d";
 
+  // ── Size Grid pagination ──────────────────────────────────────────────────
+  // How many grid rows fit per page (approximate — each row ~30px)
+  // Page 1 has header (~80px) + meta/supplier section (~160px) + grid header + footer (~60px)
+  // Other grid pages have header (~80px) + footer (~60px)
+  const GRID_ROWS_P1   = 18; // conservative: page 1 has meta section
+  const GRID_ROWS_MID  = 28; // continuation pages
+
+  // Split gridRows across pages
+  const gridPages = [];   // array of {rows: [...], isFirst: bool}
+  if (hasGrid && gridRows.length > 0) {
+    let remaining = [...gridRows];
+    let isFirstGridPage = true;
+    while (remaining.length > 0) {
+      const cap = isFirstGridPage ? GRID_ROWS_P1 : GRID_ROWS_MID;
+      gridPages.push({ rows: remaining.splice(0, cap), isFirstGridPage });
+      isFirstGridPage = false;
+    }
+  }
+
+  const gridPageCount   = hasGrid ? Math.max(1, gridPages.length) : 0;
+  // Extra standard (plain item-row) pages requested by user — come after grid pages
+  const extraPageCount  = hasGrid ? totalPages : totalPages;
+  // Total rendered pages
+  const actualTotal     = hasGrid ? gridPageCount + extraPageCount : totalPages;
+
+  // Standard form rows config (non-grid pages)
   const rowsP1   = 15;
   const rowsMid  = 20;
   const rowsLast = 11;
@@ -1752,7 +1788,7 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
                 border: `1px solid ${accent}`, fontSize: 8, color: accentText, fontWeight: 700 }}>
                 {formBadge}
               </span>
-              <span style={{ fontSize: 9, color: textMid }}>Page {pageNum} / {totalPages}</span>
+              <span style={{ fontSize: 9, color: textMid }}>Page {pageNum} / {actualTotal}</span>
             </div>
           </div>
         </div>
@@ -1761,10 +1797,11 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
     );
   }
 
-  // Footer component — sits at bottom of flex column, no overlap
+  // Footer component — always at bottom, part of flex column
+  const FOOTER_H = 46;
   function PageFooter({ pageNum }) {
     return (
-      <div style={{ marginTop: "auto", paddingTop: 6 }}>
+      <div style={{ marginTop: "auto", paddingTop: 6, flexShrink: 0 }}>
         <div style={{ height: 1.5, background: accent, marginBottom: 5 }} />
         <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
           <div>
@@ -1777,14 +1814,14 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
           </div>
           <div style={{ textAlign: "right", fontSize: 8, color: textSub }}>
             <div>Generated: {generatedOn}</div>
-            <div>Page {pageNum} of {totalPages} · © Novexa</div>
+            <div>Page {pageNum} of {actualTotal} · © Novexa</div>
           </div>
         </div>
       </div>
     );
   }
 
-  // Table header row
+  // Table header row (standard/variant form)
   function TableHead() {
     return (
       <tr style={{ background: headBg, color: "#fff" }}>
@@ -1798,8 +1835,8 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
     );
   }
 
-  // Blank item rows
-  function ItemRows({ from, count, shade }) {
+  // Blank item rows (standard/variant)
+  function ItemRows({ from, count }) {
     return Array.from({ length: count }).map((_, i) => (
       <tr key={i} style={{ background: "#fff", borderBottom: `1px solid ${borderMid}` }}>
         <td style={{ padding: "6px 5px", textAlign: "center", fontSize: 10, color: "#000", fontWeight: 700 }}>{from + i + 1}</td>
@@ -1810,7 +1847,7 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
     ));
   }
 
-  // Page subtotal row (on every page)
+  // Page subtotal row (standard form)
   function PageSubtotal() {
     return (
       <tr style={{ background: "#f5f5f5", borderTop: `2px solid ${borderDark}` }}>
@@ -1824,35 +1861,351 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
     );
   }
 
-  // Build pages array
-  const pages = [];
-  for (let p = 0; p < totalPages; p++) {
-    pages.push(p + 1);
+  // ── Size Grid section renderer ──────────────────────────────────────────────
+  function SizeGridSection({ rows, isFirstGridPage, isContinued }) {
+    const isBoth  = sgRowLabel === "both";
+    const isCup   = sgRowLabel === "cup";
+    const isColor = sgRowLabel === "color";
+
+    const parsedRows = rows.map(row => {
+      if (isBoth) {
+        const [cup, color] = row.split(" \u00b7 ");
+        return { cup: cup?.trim() || row, color: color?.trim() || "" };
+      }
+      if (isCup)   return { cup: row, color: null };
+      return { cup: null, color: row };
+    });
+
+    // ── Table max height — guaranteed so footer always fits ─────────────────
+    // We hardcode safe measured heights for each section.
+    // Page content area = 1123 - 20px padding = 1103px
+    // PageHeader: 100px | PageFooter: 50px | label: 24px | thead: 28px
+    // MetaSection (page1): 200px | gaps: 12px
+    const CONTENT_H = 1103;
+    const HDR_H     = 100;
+    const FTR_H     = 55;   // footer height + some buffer
+    const LBL_H     = 24;
+    const ITEM_H    = isFirstGridPage && sgItemName ? 22 : 0;
+    const META_H    = isFirstGridPage ? 205 : 0;
+    const TH_H      = 28;
+    const GAPS_H    = 16;
+
+    const tableMaxH = CONTENT_H - HDR_H - FTR_H - LBL_H - ITEM_H - META_H - TH_H - GAPS_H;
+
+    const totalRows = parsedRows.length + (isContinued ? 0 : 1);
+    // rowH = distribute tableMaxH across all rows
+    const rowH      = Math.max(24, Math.floor(tableMaxH / totalRows));
+
+    return (
+      <div style={{ display: "flex", flexDirection: "column" }}>
+        {/* Header label */}
+        <div style={{ marginBottom: 4 }}>
+          {isFirstGridPage && sgItemName && (
+            <div style={{ fontSize: 13, fontWeight: 900, color: accent, marginBottom: 3 }}>
+              {sgItemName}
+            </div>
+          )}
+          <div style={{ fontSize: 9, color: textSub, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700, display: "flex", alignItems: "center", gap: 8 }}>
+            <span>
+              {isBoth ? "Rows: Cup \u00d7 Color" : isCup ? "Rows: Cups" : "Rows: Colors"}
+              &nbsp;\u00b7&nbsp; Columns: Sizes &nbsp;\u00b7&nbsp; Cells: Quantity
+            </span>
+            {isContinued && (
+              <span style={{ padding: "1px 8px", borderRadius: 10, background: accentBg,
+                border: `1px solid ${accent}`, fontSize: 8, color: accentText, fontWeight: 800 }}>
+                \u2193 CONTINUED
+              </span>
+            )}
+          </div>
+        </div>
+
+        {/* Grid table — maxHeight hard-capped so footer always fits */}
+        <div style={{ overflow: "hidden", maxHeight: tableMaxH, flexShrink: 0 }}>
+        <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
+          <colgroup>
+            <col style={{ width: 90 }} />
+            {(isCup || isBoth) && <col style={{ width: 46 }} />}
+            {(isColor || isBoth) && <col style={{ width: 58 }} />}
+            {gridCols.map(col => <col key={col} />)}
+            <col style={{ width: 48 }} />
+          </colgroup>
+          <thead>
+            <tr style={{ background: headBg }}>
+              <th style={{ padding: "5px 8px", fontSize: 9, fontWeight: 800, textTransform: "uppercase",
+                color: "#fff", textAlign: "left", whiteSpace: "nowrap",
+                borderRight: `1px solid rgba(255,255,255,0.3)` }}>
+                Name
+              </th>
+              {(isCup || isBoth) && (
+                <th style={{ padding: "5px 6px", fontSize: 9, fontWeight: 800, textTransform: "uppercase",
+                  color: "#fff", textAlign: "center", whiteSpace: "nowrap",
+                  borderRight: `1px solid rgba(255,255,255,0.3)` }}>
+                  Cup
+                </th>
+              )}
+              {(isColor || isBoth) && (
+                <th style={{ padding: "5px 6px", fontSize: 9, fontWeight: 800, textTransform: "uppercase",
+                  color: "#fff", textAlign: "center", whiteSpace: "nowrap",
+                  borderRight: `1px solid rgba(255,255,255,0.3)` }}>
+                  Color
+                </th>
+              )}
+              {gridCols.map(col => (
+                <th key={col} style={{ padding: "5px 4px", fontSize: 10, fontWeight: 900,
+                  color: "#fff", textAlign: "center",
+                  borderRight: `1px solid rgba(255,255,255,0.2)` }}>
+                  {col}
+                </th>
+              ))}
+              <th style={{ padding: "5px 6px", fontSize: 9, fontWeight: 800, textTransform: "uppercase",
+                color: "#fff", textAlign: "center",
+                background: "rgba(0,0,0,0.2)", borderLeft: `2px solid rgba(255,255,255,0.4)` }}>
+                Total
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {parsedRows.map((pr, ri) => (
+              <tr key={ri} style={{ background: ri % 2 === 0 ? "#fff" : "#f9fafb",
+                borderBottom: `1px solid ${borderMid}`, height: rowH }}>
+                <td style={{ borderRight: `1px solid ${borderDark}`, height: rowH }} />
+                {(isCup || isBoth) && (
+                  <td style={{ fontSize: 11, fontWeight: 800, color: accent,
+                    borderRight: `1px solid ${borderDark}`, whiteSpace: "nowrap",
+                    textAlign: "center", verticalAlign: "middle", height: rowH }}>
+                    {pr.cup}
+                  </td>
+                )}
+                {(isColor || isBoth) && (
+                  <td style={{ fontSize: 11, fontWeight: 800, color: accent,
+                    borderRight: `1px solid ${borderDark}`, whiteSpace: "nowrap",
+                    textAlign: "center", verticalAlign: "middle", height: rowH }}>
+                    {pr.color}
+                  </td>
+                )}
+                {gridCols.map(col => (
+                  <td key={col} style={{ borderRight: `1px solid ${borderMid}`, height: rowH }} />
+                ))}
+                <td style={{ borderLeft: `2px solid ${borderDark}`,
+                  background: accentBg, height: rowH }} />
+              </tr>
+            ))}
+
+            {/* Col Total — last grid page only */}
+            {!isContinued && (
+              <tr style={{ background: accentBg, borderTop: `2px solid ${borderDark}`, height: rowH }}>
+                <td colSpan={1 + (isCup || isBoth ? 1 : 0) + (isColor || isBoth ? 1 : 0)}
+                  style={{ padding: "0 8px", fontSize: 9, fontWeight: 800, color: accentText,
+                    textTransform: "uppercase", letterSpacing: "0.05em",
+                    borderRight: `1px solid ${borderDark}`, textAlign: "right",
+                    verticalAlign: "middle", height: rowH }}>
+                  Col Total
+                </td>
+                {gridCols.map(col => (
+                  <td key={col} style={{ borderRight: `1px solid ${borderMid}`, height: rowH }} />
+                ))}
+                <td style={{ borderLeft: `2px solid ${accent}`,
+                  background: accentBg, height: rowH }} />
+              </tr>
+            )}
+          </tbody>
+        </table>
+        </div>
+      </div>
+    );
+  }
+
+  // ── Signatures / payment section (last page only) ───────────────────────────
+  function LastPageExtras() {
+    return (
+      <>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
+          <div style={{ padding: "8px 12px", background: greenBg, border: `1px solid ${greenBdr}`, borderRadius: 8 }}>
+            <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: greenText,
+              letterSpacing: "0.07em", marginBottom: 6 }}>PAYMENT DETAILS</div>
+            {["Payment Method","Amount Paid","Remaining Balance","Payment Date"].map(lbl => (
+              <div key={lbl} style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 5 }}>
+                <span style={{ fontSize: 10, color: "#111", fontWeight: 600, minWidth: 110, flexShrink: 0 }}>{lbl}:</span>
+                <div style={{ flex: 1, borderBottom: `1.5px solid ${greenBdr}`, height: 18 }} />
+              </div>
+            ))}
+          </div>
+          <div style={{ padding: "8px 12px", background: "#fff", border: `1px solid ${sectionBdr}`, borderRadius: 8 }}>
+            <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#222",
+              letterSpacing: "0.07em", marginBottom: 6 }}>TERMS & CONDITIONS</div>
+            {[1,2,3,4].map(i => (
+              <div key={i} style={{ borderBottom: `1px solid ${borderMid}`, height: 19, marginBottom: 3 }} />
+            ))}
+          </div>
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 60 }}>
+          {["Ordered By","Authorized By","Received By"].map(lbl => (
+            <div key={lbl} style={{ textAlign: "center" }}>
+              <div style={{ borderBottom: `2px solid #111`, height: 34, marginBottom: 5 }} />
+              <div style={{ fontSize: 10, color: "#111", fontWeight: 700 }}>{lbl}</div>
+              <div style={{ fontSize: 9, color: "#555", marginTop: 1 }}>Signature / Name / Date</div>
+            </div>
+          ))}
+        </div>
+      </>
+    );
   }
 
   const pageStyle = {
-    width: 794, height: 1123, minHeight: 1123, background: "#fff", color: "#000",
+    width: 794, height: 1123, background: "#fff", color: "#000",
     fontSize: 13, padding: "10px 25px 10px 20px", boxSizing: "border-box",
-    display: "flex", flexDirection: "column", overflow: "hidden",
+    display: "flex", flexDirection: "column", overflow: "clip",
+    position: "relative",
   };
 
-  // Gradient border wrapper — screen only, stripped on print
   const pageBorderStyle = {
     background: "linear-gradient(135deg, #f59e0b, #6366f1, #8b5cf6, #f59e0b)",
     padding: "3px",
     borderRadius: 6,
-    // marginBottom: 6,
   };
 
+  // ── Meta + Supplier section (first page only) ─────────────────────────────
+  function MetaSection() {
+    return (
+      <>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+          {[["ORDER DATE","DD / MM / YYYY"],["ORDER REF #",""],["DELIVERY DATE","DD / MM / YYYY"]].map(([lbl, ph]) => (
+            <div key={lbl}>
+              <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#111",
+                letterSpacing: "0.06em", marginBottom: 2 }}>{lbl}</div>
+              <div style={{ borderBottom: `1.5px solid ${borderDark}`, height: 24, display: "flex",
+                alignItems: "flex-end", paddingBottom: 2, fontSize: 10, color: "#888" }}>{ph}</div>
+            </div>
+          ))}
+        </div>
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12,
+          padding: "10px 14px", background: sectionBg, border: `1px solid ${sectionBdr}`, borderRadius: 8 }}>
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: accent,
+              letterSpacing: "0.07em", marginBottom: 6 }}>SUPPLIER / PARTY DETAILS</div>
+            {["Name","Shop / Company","Phone","Email","Address"].map(lbl => (
+              <div key={lbl} style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 5 }}>
+                <span style={{ fontSize: 10, color: "#111", fontWeight: 600, minWidth: 80, flexShrink: 0 }}>{lbl}:</span>
+                <div style={{ flex: 1, borderBottom: `1.5px solid ${borderDark}`, height: 18 }} />
+              </div>
+            ))}
+          </div>
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#222",
+              letterSpacing: "0.07em", marginBottom: 6 }}>NOTES / SPECIAL INSTRUCTIONS</div>
+            {[1,2,3,4,5,6].map(i => (
+              <div key={i} style={{ borderBottom: `1px solid ${borderMid}`, height: 18, marginBottom: 3 }} />
+            ))}
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ── RENDER ────────────────────────────────────────────────────────────────
+
+  if (hasGrid) {
+    // ── SIZE GRID MODE ──────────────────────────────────────────────────────
+    // Phase 1: grid pages (auto-calculated from rows)
+    // Phase 2: extra standard item-row pages (user's totalPages value)
+    // Last page always: signatures
+
+    const allPages = [];
+
+    // Grid pages
+    gridPages.forEach((gp, gIdx) => {
+      const absPageNum  = gIdx + 1;
+      const isFirstPage = gIdx === 0;
+      const isLastGrid  = gIdx === gridPages.length - 1;
+      allPages.push(
+        <div key={`grid-${gIdx}`} style={pageBorderStyle}>
+          <div style={{
+            ...pageStyle,
+            pageBreakAfter: "always",
+            breakAfter: "page",
+          }}>
+            <PageHeader pageNum={absPageNum} />
+            {isFirstPage && <MetaSection />}
+            <SizeGridSection
+              rows={gp.rows}
+              isFirstGridPage={isFirstPage}
+              isContinued={!isLastGrid}
+            />
+            <PageFooter pageNum={absPageNum} />
+          </div>
+        </div>
+      );
+    });
+
+    // Extra standard pages (plain item-row pages after grid)
+    for (let ep = 0; ep < extraPageCount; ep++) {
+      const absPageNum  = gridPageCount + ep + 1;
+      const isFirst     = absPageNum === 1;
+      const isLast      = absPageNum === actualTotal;
+      const rowCount    = isLast ? rowsLast : (ep === 0 ? rowsP1 : rowsMid);
+      const rowStart    = ep === 0 ? 0 : rowsP1 + (ep - 1) * rowsMid;
+
+      allPages.push(
+        <div key={`extra-${ep}`} style={pageBorderStyle}>
+          <div style={{
+            ...pageStyle,
+            pageBreakAfter: isLast ? "avoid" : "always",
+            breakAfter: isLast ? "avoid" : "page",
+          }}>
+            <PageHeader pageNum={absPageNum} />
+            <table style={{ width: "100%", borderCollapse: "collapse", flex: isLast ? undefined : 1 }}>
+              <thead><TableHead /></thead>
+              <tbody>
+                <ItemRows from={rowStart} count={rowCount} />
+                <PageSubtotal />
+              </tbody>
+            </table>
+            {isLast && <LastPageExtras />}
+            <PageFooter pageNum={absPageNum} />
+          </div>
+        </div>
+      );
+    }
+
+    // If no extra pages, last grid page gets signatures
+    if (extraPageCount === 0) {
+      // Replace last grid page to add signatures
+      const lastIdx   = allPages.length - 1;
+      const lastGp    = gridPages[gridPages.length - 1];
+      const absPageNum = gridPageCount;
+      allPages[lastIdx] = (
+        <div key={`grid-last`} style={pageBorderStyle}>
+          <div style={{
+            ...pageStyle,
+            pageBreakAfter: "avoid",
+            breakAfter: "avoid",
+          }}>
+            <PageHeader pageNum={absPageNum} />
+            {gridPageCount === 1 && <MetaSection />}
+            <SizeGridSection
+              rows={lastGp.rows}
+              isFirstGridPage={gridPageCount === 1}
+              isContinued={false}
+            />
+            <LastPageExtras />
+            <PageFooter pageNum={absPageNum} />
+          </div>
+        </div>
+      );
+    }
+
+    return <div>{allPages}</div>;
+  }
+
+  // ── STANDARD / VARIANT MODE ───────────────────────────────────────────────
   return (
     <div>
-      {pages.map(pageNum => {
-        const isFirst = pageNum === 1;
-        const isLast  = pageNum === totalPages;
-        const isMid   = !isFirst && !isLast;
+      {Array.from({ length: totalPages }).map((_, idx) => {
+        const pageNum  = idx + 1;
+        const isFirst  = pageNum === 1;
+        const isLast   = pageNum === totalPages;
         const rowCount = isFirst ? rowsP1 : isLast ? rowsLast : rowsMid;
-        const rowStart = isFirst ? 0
-          : rowsP1 + (pageNum - 2) * rowsMid;
+        const rowStart = isFirst ? 0 : rowsP1 + (pageNum - 2) * rowsMid;
 
         return (
           <div key={pageNum} style={pageBorderStyle}>
@@ -1861,48 +2214,9 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
               pageBreakAfter: isLast ? "avoid" : "always",
               breakAfter: isLast ? "avoid" : "page",
             }}>
-            <PageHeader pageNum={pageNum} />
+              <PageHeader pageNum={pageNum} />
+              {isFirst && <MetaSection />}
 
-            {/* ── First page only: meta + supplier section ── */}
-            {isFirst && (
-              <>
-                {/* Order meta */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
-                  {[["ORDER DATE","DD / MM / YYYY"],["ORDER REF #",""],["DELIVERY DATE","DD / MM / YYYY"]].map(([lbl, ph]) => (
-                    <div key={lbl}>
-                      <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#111",
-                        letterSpacing: "0.06em", marginBottom: 2 }}>{lbl}</div>
-                      <div style={{ borderBottom: `1.5px solid ${borderDark}`, height: 24, display: "flex",
-                        alignItems: "flex-end", paddingBottom: 2, fontSize: 10, color: "#888" }}>{ph}</div>
-                    </div>
-                  ))}
-                </div>
-                {/* Supplier + Notes */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12,
-                  padding: "10px 14px", background: sectionBg, border: `1px solid ${sectionBdr}`, borderRadius: 8 }}>
-                  <div>
-                    <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: accent,
-                      letterSpacing: "0.07em", marginBottom: 6 }}>SUPPLIER / PARTY DETAILS</div>
-                    {["Name","Shop / Company","Phone","Email","Address"].map(lbl => (
-                      <div key={lbl} style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 5 }}>
-                        <span style={{ fontSize: 10, color: "#111", fontWeight: 600, minWidth: 80, flexShrink: 0 }}>{lbl}:</span>
-                        <div style={{ flex: 1, borderBottom: `1.5px solid ${borderDark}`, height: 18 }} />
-                      </div>
-                    ))}
-                  </div>
-                  <div>
-                    <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#222",
-                      letterSpacing: "0.07em", marginBottom: 6 }}>NOTES / SPECIAL INSTRUCTIONS</div>
-                    {[1,2,3,4,5,6].map(i => (
-                      <div key={i} style={{ borderBottom: `1px solid ${borderMid}`, height: 18, marginBottom: 3 }} />
-                    ))}
-                  </div>
-                </div>
-              </>
-            )}
-
-            {/* ── Items table (all pages) — standard & variant ── */}
-            {!hasGrid && (
               <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 0, flex: isLast ? undefined : 1 }}>
                 <thead><TableHead /></thead>
                 <tbody>
@@ -1910,170 +2224,9 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
                   <PageSubtotal />
                 </tbody>
               </table>
-            )}
 
-            {/* ── Size Grid table (sizegrid mode) ── */}
-            {hasGrid && (
-              <div style={{ flex: 1, display: "flex", flexDirection: "column" }}>
-                {/* Item name + row label header */}
-                <div style={{ marginBottom: 8 }}>
-                  {sgItemName && (
-                    <div style={{ fontSize: 13, fontWeight: 900, color: accent, marginBottom: 3 }}>
-                      {sgItemName}
-                    </div>
-                  )}
-                  <div style={{ fontSize: 9, color: textSub, textTransform: "uppercase", letterSpacing: "0.06em", fontWeight: 700 }}>
-                    Rows: {sgRowLabel === "cup" ? "Cups" : "Colors"} &nbsp;·&nbsp; Columns: Sizes &nbsp;·&nbsp; Cells: Quantity
-                  </div>
-                </div>
-
-                {/* Size Grid table */}
-                <div style={{ overflowX: "auto" }}>
-                  <table style={{ borderCollapse: "collapse", width: "100%" }}>
-                    <thead>
-                      <tr style={{ background: headBg }}>
-                        <th style={{ padding: "5px 8px", fontSize: 9, fontWeight: 800, textTransform: "uppercase",
-                          color: "#fff", textAlign: "left", whiteSpace: "nowrap", minWidth: 60,
-                          borderRight: `1px solid rgba(255,255,255,0.3)` }}>
-                          {sgRowLabel === "cup" ? "Cup" : "Color"} ↓
-                        </th>
-                        {gridCols.map(col => (
-                          <th key={col} style={{ padding: "5px 6px", fontSize: 10, fontWeight: 900,
-                            color: "#fff", textAlign: "center", minWidth: 36,
-                            borderRight: `1px solid rgba(255,255,255,0.2)` }}>
-                            {col}
-                          </th>
-                        ))}
-                        <th style={{ padding: "5px 8px", fontSize: 9, fontWeight: 800, textTransform: "uppercase",
-                          color: "#fff", textAlign: "center", minWidth: 50,
-                          background: "rgba(0,0,0,0.2)", borderLeft: `2px solid rgba(255,255,255,0.4)` }}>
-                          Total
-                        </th>
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {/* Blank rows for each color/cup */}
-                      {gridRows.map((row, ri) => (
-                        <tr key={row} style={{ background: ri % 2 === 0 ? "#fff" : "#f9fafb", borderBottom: `1px solid ${borderMid}` }}>
-                          <td style={{ padding: "7px 8px", fontSize: 11, fontWeight: 800, color: accent,
-                            borderRight: `1px solid ${borderDark}`, whiteSpace: "nowrap" }}>
-                            {row}
-                          </td>
-                          {gridCols.map(col => (
-                            <td key={col} style={{ padding: "4px 3px", borderRight: `1px solid ${borderMid}`,
-                              height: 28, minWidth: 36 }} />
-                          ))}
-                          <td style={{ padding: "4px 8px", borderLeft: `2px solid ${borderDark}`,
-                            background: accentBg, height: 28, minWidth: 50 }} />
-                        </tr>
-                      ))}
-                      {/* Column totals row */}
-                      <tr style={{ background: accentBg, borderTop: `2px solid ${borderDark}` }}>
-                        <td style={{ padding: "6px 8px", fontSize: 9, fontWeight: 800, color: accentText,
-                          textTransform: "uppercase", letterSpacing: "0.05em",
-                          borderRight: `1px solid ${borderDark}` }}>
-                          Col Total
-                        </td>
-                        {gridCols.map(col => (
-                          <td key={col} style={{ padding: "6px 3px", borderRight: `1px solid ${borderMid}`,
-                            height: 26, minWidth: 36 }} />
-                        ))}
-                        <td style={{ padding: "6px 8px", borderLeft: `2px solid ${accent}`,
-                          background: accentBg, fontWeight: 900, height: 26 }} />
-                      </tr>
-                    </tbody>
-                  </table>
-                </div>
-
-                {/* Extra blank order rows below grid */}
-                {isFirst && (
-                  <div style={{ marginTop: 10 }}>
-                    <div style={{ fontSize: 9, fontWeight: 700, textTransform: "uppercase", color: textSub,
-                      letterSpacing: "0.05em", marginBottom: 4 }}>Additional Items</div>
-                    <table style={{ width: "100%", borderCollapse: "collapse" }}>
-                      <thead>
-                        <tr style={{ background: headBg }}>
-                          {["#","Item / Description","Qty","Unit Price","Total"].map((h, i) => (
-                            <th key={h} style={{ padding: "4px 7px", fontSize: 9, fontWeight: 800,
-                              textTransform: "uppercase", color: "#fff",
-                              textAlign: i === 0 ? "center" : i === 1 ? "left" : "right" }}>{h}</th>
-                          ))}
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {Array.from({ length: 5 }).map((_, i) => (
-                          <tr key={i} style={{ borderBottom: `1px solid ${borderMid}` }}>
-                            <td style={{ padding: "5px 7px", textAlign: "center", fontSize: 10, color: "#000", fontWeight: 700, width: 22 }}>{i + 1}</td>
-                            {[0,1,2,3].map(ci => (
-                              <td key={ci} style={{ padding: "5px 7px", borderLeft: `1px solid ${borderMid}`, height: 24 }} />
-                            ))}
-                          </tr>
-                        ))}
-                      </tbody>
-                    </table>
-                  </div>
-                )}
-              </div>
-            )}
-
-            {/* ── Last page only: grand total + payment + signatures ── */}
-            {isLast && (
-              <>
-                {/* Grand total rows */}
-                <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 12 }}>
-                  <tbody>
-                    {[["SUBTOTAL",""],["DISCOUNT",""],["GRAND TOTAL","grand"]].map(([lbl, type]) => (
-                      <tr key={lbl} style={{ background: type === "grand" ? accentBg : "#fff",
-                        borderBottom: `1px solid ${borderMid}` }}>
-                        <td colSpan={cols.length} style={{ padding: "6px 8px", textAlign: "right",
-                          fontSize: type === "grand" ? 12 : 10, fontWeight: type === "grand" ? 900 : 700,
-                          color: type === "grand" ? accent : "#111",
-                          borderLeft: `1px solid ${type === "grand" ? accent : borderMid}` }}>
-                          {lbl}
-                        </td>
-                        <td style={{ padding: "6px 8px", width: 110,
-                          borderLeft: `2px solid ${type === "grand" ? accent : borderDark}`,
-                          borderBottom: type === "grand" ? `2px solid ${accent}` : undefined }} />
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-
-                {/* Payment + Terms */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-                  <div style={{ padding: "8px 12px", background: greenBg, border: `1px solid ${greenBdr}`, borderRadius: 8 }}>
-                    <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: greenText,
-                      letterSpacing: "0.07em", marginBottom: 6 }}>PAYMENT DETAILS</div>
-                    {["Payment Method","Amount Paid","Remaining Balance","Payment Date"].map(lbl => (
-                      <div key={lbl} style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 5 }}>
-                        <span style={{ fontSize: 10, color: "#111", fontWeight: 600, minWidth: 110, flexShrink: 0 }}>{lbl}:</span>
-                        <div style={{ flex: 1, borderBottom: `1.5px solid ${greenBdr}`, height: 18 }} />
-                      </div>
-                    ))}
-                  </div>
-                  <div style={{ padding: "8px 12px", background: "#fff", border: `1px solid ${sectionBdr}`, borderRadius: 8 }}>
-                    <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#222",
-                      letterSpacing: "0.07em", marginBottom: 6 }}>TERMS & CONDITIONS</div>
-                    {[1,2,3,4].map(i => (
-                      <div key={i} style={{ borderBottom: `1px solid ${borderMid}`, height: 19, marginBottom: 3 }} />
-                    ))}
-                  </div>
-                </div>
-
-                {/* Signatures */}
-                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 8 }}>
-                  {["Ordered By","Authorized By","Received By"].map(lbl => (
-                    <div key={lbl} style={{ textAlign: "center" }}>
-                      <div style={{ borderBottom: `2px solid #111`, height: 34, marginBottom: 5 }} />
-                      <div style={{ fontSize: 10, color: "#111", fontWeight: 700 }}>{lbl}</div>
-                      <div style={{ fontSize: 9, color: "#555", marginTop: 1 }}>Signature / Name / Date</div>
-                    </div>
-                  ))}
-                </div>
-              </>
-            )}
-
-            <PageFooter pageNum={pageNum} />
+              {isLast && <LastPageExtras />}
+              <PageFooter pageNum={pageNum} />
             </div>
           </div>
         );
@@ -2095,7 +2248,8 @@ export function OrderFormView({ userDoc = {} }) {
   // ── Size Grid config ─────────────────────────────────────────────────────────
   const [sgCols,     setSgCols]     = useState("28,30,32,34,36,38,40,42,44,46");
   const [sgRows,     setSgRows]     = useState("Black,White,Red,Blue,Green");
-  const [sgRowLabel, setSgRowLabel] = useState("color"); // "color" | "cup"
+  const [sgRowLabel, setSgRowLabel] = useState("color"); // "color" | "cup" | "both"
+  const [sgCupRows,  setSgCupRows]  = useState("B,C,D,DD"); // used in "both" mode
   const [sgItemName, setSgItemName] = useState("");
 
   const PAGE_OPTIONS = [5, 10, 25, 50];
@@ -2227,7 +2381,9 @@ export function OrderFormView({ userDoc = {} }) {
             </div>
             {/* Pages */}
             <div className="flex items-center gap-1.5">
-              <span className="text-gray-500 text-xs">Pages:</span>
+              <span className="text-gray-500 text-xs">
+                {formType === "sizegrid" ? "Extra Pages:" : "Pages:"}
+              </span>
               <div className="flex gap-1">
                 {PAGE_OPTIONS.map(p => (
                   <button key={p} onClick={() => setPages(p)}
@@ -2243,6 +2399,9 @@ export function OrderFormView({ userDoc = {} }) {
                   className="w-14 h-7 rounded-lg text-xs text-center text-white outline-none"
                   style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }} />
               </div>
+              {formType === "sizegrid" && (
+                <span className="text-[10px]" style={{ color: "#6366f1" }}>after grid</span>
+              )}
             </div>
             {/* Action buttons */}
             <button onClick={printForm}
@@ -2264,10 +2423,10 @@ export function OrderFormView({ userDoc = {} }) {
         {/* Info chips */}
         <div className="flex flex-wrap gap-2">
           {[
-            { icon: "📄", text: `${pages} pages` },
+            { icon: "📄", text: formType === "sizegrid" ? `${pages} extra pages after grid` : `${pages} pages` },
             { icon: "✏️", text: "Fill by hand" },
             { icon: "🖊️", text: "Sign & file" },
-            { icon: formType === "variant" ? "📦" : formType === "sizegrid" ? "�" : "�📋",
+            { icon: formType === "variant" ? "📦" : formType === "sizegrid" ? "📐" : "📋",
               text: formType === "variant" ? "With Variants" : formType === "sizegrid" ? "Size Grid" : "Standard" },
           ].map((chip, i) => (
             <span key={i} className="flex items-center gap-1 px-3 py-1 rounded-full text-xs font-medium"
@@ -2324,7 +2483,7 @@ export function OrderFormView({ userDoc = {} }) {
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Rows represent</label>
               <div className="flex gap-2">
-                {[["color","🎨 Colors"],["cup","🔤 Cups / Other"]].map(([v, l]) => (
+                {[["color","🎨 Colors"],["cup","🔤 Cups"],["both","🔀 Cup × Color"]].map(([v, l]) => (
                   <button key={v} type="button" onClick={() => setSgRowLabel(v)}
                     className="flex-1 py-2 rounded-xl text-xs font-bold transition-all"
                     style={{
@@ -2360,7 +2519,7 @@ export function OrderFormView({ userDoc = {} }) {
             {/* Rows (Colors/Cups) */}
             <div>
               <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">
-                {sgRowLabel === "cup" ? "Cups" : "Colors"} — comma separated
+                {sgRowLabel === "cup" ? "Cups" : sgRowLabel === "both" ? "Colors (for Cup × Color)" : "Colors"} — comma separated
               </label>
               <input type="text"
                 placeholder={sgRowLabel === "cup" ? "B,C,D,DD,E,F" : "Black,White,Red,Blue,Green"}
@@ -2387,6 +2546,34 @@ export function OrderFormView({ userDoc = {} }) {
                 ))}
               </div>
             </div>
+            {/* Cups input — shown only in "both" mode */}
+            {sgRowLabel === "both" && (
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">
+                  Cups — comma separated
+                </label>
+                <input type="text" placeholder="B,C,D,DD,E,F"
+                  value={sgCupRows} onChange={e => setSgCupRows(e.target.value)}
+                  className="w-full px-3 py-2 rounded-lg text-sm text-white outline-none"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }} />
+                <div className="flex flex-wrap gap-1.5 mt-1.5">
+                  {[
+                    { l:"B C D DD E F", v:"B,C,D,DD,E,F" },
+                    { l:"A B C D DD",   v:"A,B,C,D,DD" },
+                    { l:"B C D E",      v:"B,C,D,E" },
+                  ].map(p => (
+                    <button key={p.l} type="button" onClick={() => setSgCupRows(p.v)}
+                      className="px-2 py-0.5 rounded-lg text-[10px] font-semibold"
+                      style={{ background:"rgba(99,102,241,0.12)", color:"#c7d2fe", border:"1px solid rgba(99,102,241,0.2)" }}>
+                      {p.l}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-1.5 text-[10px] text-gray-500">
+                  Rows will be: {(sgCupRows||"B,C").split(",").slice(0,2).map(c=>c.trim()).filter(Boolean).flatMap(cup => (sgRows||"Red,Blue").split(",").slice(0,2).map(c=>`${cup.trim()} · ${c.trim()}`)).join(", ")} ...
+                </div>
+              </div>
+            )}
           </div>
           <p className="text-[10px] text-gray-600">Settings change hone par preview automatically update hoga.</p>
         </div>
@@ -2412,7 +2599,7 @@ export function OrderFormView({ userDoc = {} }) {
             }}>
               <div ref={printRef}>
                 <BlankOrderFormTemplate userDoc={userDoc} formType={formType} totalPages={pages} bw={bw}
-                  sgCols={sgCols} sgRows={sgRows} sgRowLabel={sgRowLabel} sgItemName={sgItemName} />
+                  sgCols={sgCols} sgRows={sgRows} sgRowLabel={sgRowLabel} sgCupRows={sgCupRows} sgItemName={sgItemName} />
               </div>
             </div>
           </div>
@@ -2623,7 +2810,7 @@ export function OrderFormModal({ order, userDoc = {}, onClose }) {
               }}>
                 <div ref={printRef}>
                   <BlankOrderFormTemplate userDoc={userDoc} formType={formType} totalPages={pages}
-                    sgCols={sgCols} sgRows={sgRows} sgRowLabel={sgRowLabel} sgItemName={sgItemName} />
+                    sgCols={sgCols} sgRows={sgRows} sgRowLabel={sgRowLabel} sgCupRows={sgCupRows} sgItemName={sgItemName} />
                 </div>
               </div>
             </div>
