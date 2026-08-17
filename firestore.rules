@@ -171,9 +171,12 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ── Global Counters (invoice serial, customer serial) ─────────────────────
+    // ── Global Counters (invoice serial, customer serial, supplier order number) ───
     // All signed-in users can read + write (atomic runTransaction ke liye zaroori)
     match /globalCounters/{docId} {
+      allow read, write: if isSignedIn();
+    }
+    match /_counters/{docId} {
       allow read, write: if isSignedIn();
     }
 

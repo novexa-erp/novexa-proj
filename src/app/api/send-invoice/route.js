@@ -298,7 +298,7 @@ ${invoice.note ? `<tr><td style="padding:0 40px 28px;"><div style="background:#f
 
 // ── Supplier Purchase Order HTML email ────────────────────────────────────────
 function buildSupplierOrderEmailHTML({ order, supplier, userDoc, isUpdate, receipts = [], returns = [], payments = [] }) {
-  const poNum    = "PO-" + (order.id || "").slice(-4).toUpperCase();
+  const poNum    = order.orderNumber || ("PO-" + (order.id || "").slice(-4).toUpperCase());
   const status   = order.status || "Pending";
   const sm       = STATUS_META[status] || STATUS_META.Pending;
   const bizName  = userDoc?.business || userDoc?.name || "Business";
@@ -547,7 +547,7 @@ ${order.note ? `<tr><td style="padding:0 40px 28px;"><div style="background:#fff
 export async function POST(request) {
   try {
     const body = await request.json();
-    const { invoice, userDoc, pdfBase64, uid, isSupplierOrder, supplier, isUpdate, receipts, returns, payments } = body;
+    const { invoice, userDoc, pdfBase64, orderFormPdfBase64, uid, isSupplierOrder, supplier, isUpdate, receipts, returns, payments } = body;
 
     if (!invoice?.email) {
       return NextResponse.json(
@@ -711,7 +711,7 @@ export async function POST(request) {
     let htmlBody, subject, pdfFilename;
 
     if (isSupplierOrder) {
-      const poNum   = "PO-" + (invoice.id || "").slice(-4).toUpperCase();
+      const poNum   = invoice.orderNumber || ("PO-" + (invoice.id || "").slice(-4).toUpperCase());
       htmlBody      = buildSupplierOrderEmailHTML({ order: invoice, supplier, userDoc: mergedUserDoc, isUpdate: !!isUpdate, receipts: receipts || [], returns: returns || [], payments: payments || [] });
       subject       = isUpdate
         ? `Purchase Order ${poNum} Updated — ${bizName}`
@@ -739,6 +739,21 @@ export async function POST(request) {
         content:     Buffer.from(pdfBase64, "base64"),
         contentType: "application/pdf",
       }];
+    }
+
+    // Attach filled order form PDF as second attachment (new supplier orders only)
+    if (orderFormPdfBase64 && isSupplierOrder) {
+      const refNum       = invoice.orderNumber || ("PO-" + (invoice.id || "").slice(-4).toUpperCase());
+      const orderFormAtt = {
+        filename:    `Order-Form-${refNum}.pdf`,
+        content:     Buffer.from(orderFormPdfBase64, "base64"),
+        contentType: "application/pdf",
+      };
+      if (mailOptions.attachments) {
+        mailOptions.attachments.push(orderFormAtt);
+      } else {
+        mailOptions.attachments = [orderFormAtt];
+      }
     }
 
     await transporter.sendMail(mailOptions);

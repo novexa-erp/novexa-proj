@@ -107,6 +107,58 @@ export async function generateSupplierOrderPdfBase64(order, supplier, userDoc, r
   }
 }
 
+// ── Generate PDF base64 for Filled Order Form (uses FilledOrderFormTemplate) ──
+// Renders per-page divs (each 794×1123px), captures each page separately,
+// and stitches them into a single multi-page PDF.
+export async function generateFilledOrderFormPdfBase64(order, supplier, userDoc) {
+  try {
+    const html2canvas = (await import("html2canvas")).default;
+    const jsPDF       = (await import("jspdf")).default;
+
+    const container = document.createElement("div");
+    container.style.cssText =
+      "position:fixed;top:-9999px;left:-9999px;width:794px;background:#fff;z-index:-1;";
+    document.body.appendChild(container);
+
+    const { createRoot } = await import("react-dom/client");
+    const React = (await import("react")).default;
+    const { FilledOrderFormTemplate } = await import("@/app/components/SupplierDetail");
+
+    await new Promise(resolve => {
+      const root = createRoot(container);
+      root.render(React.createElement(FilledOrderFormTemplate, { order, supplier, userDoc }));
+      setTimeout(resolve, 600);
+    });
+
+    // FilledOrderFormTemplate renders a <div> whose children are per-page gradient border divs
+    const templateRoot = container.firstElementChild;
+    const pageWrappers = templateRoot ? Array.from(templateRoot.children) : [container];
+
+    const pdf  = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+    const pdfW = pdf.internal.pageSize.getWidth();
+    const pdfH = pdf.internal.pageSize.getHeight();
+
+    for (let i = 0; i < pageWrappers.length; i++) {
+      // Each wrapper is the gradient border div; firstElementChild is the actual white page
+      const pageEl = pageWrappers[i].firstElementChild || pageWrappers[i];
+      const canvas = await html2canvas(pageEl, {
+        scale: 2, useCORS: true, backgroundColor: "#ffffff",
+        logging: false, width: 794,
+      });
+      const imgData = canvas.toDataURL("image/jpeg", 0.95);
+      const imgH    = (canvas.height / canvas.width) * pdfW;
+      if (i > 0) pdf.addPage();
+      pdf.addImage(imgData, "JPEG", 0, 0, pdfW, Math.min(imgH, pdfH));
+    }
+
+    document.body.removeChild(container);
+    return pdf.output("datauristring").split(",")[1];
+  } catch (err) {
+    console.error("[generateFilledOrderFormPdfBase64]", err);
+    return null;
+  }
+}
+
 // ── Send customer invoice email ───────────────────────────────────────────────
 export async function sendInvoiceEmail(invoice, userDoc, pdfBase64, uid, isUpdate = false, payments = []) {
   try {
@@ -128,17 +180,18 @@ export async function sendInvoiceEmail(invoice, userDoc, pdfBase64, uid, isUpdat
 }
 
 // ── Send supplier PO email ────────────────────────────────────────────────────
-export async function sendSupplierOrderEmail(order, supplier, userDoc, pdfBase64, uid, isUpdate = false, receipts = [], returns = [], payments = []) {
+export async function sendSupplierOrderEmail(order, supplier, userDoc, pdfBase64, uid, isUpdate = false, receipts = [], returns = [], payments = [], orderFormPdfBase64 = null) {
   try {
     const res = await fetch("/api/send-invoice", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        invoice:         { ...order, email: supplier.email, customerName: supplier.name },
+        invoice:           { ...order, email: supplier.email, customerName: supplier.name },
         userDoc,
         pdfBase64,
+        orderFormPdfBase64,
         uid,
-        isSupplierOrder: true,
+        isSupplierOrder:   true,
         isUpdate,
         supplier,
         receipts,
@@ -213,8 +266,16 @@ export function autoEmailSupplierOrder({ order, supplier, userDoc, uid, setAlert
     if (onConfirm) {
       onConfirm(async () => {
         try {
+          // Generate PO PDF (full history view)
           const pdfBase64 = await generateSupplierOrderPdfBase64(order, supplier, userDoc, receipts, returns, payments);
-          const result    = await sendSupplierOrderEmail(order, supplier, userDoc, pdfBase64, uid, isUpdate, receipts, returns, payments);
+
+          // Generate filled order form PDF (new orders only — supplier fills & returns it)
+          let orderFormPdfBase64 = null;
+          if (!isUpdate && (order.items || []).length > 0) {
+            orderFormPdfBase64 = await generateFilledOrderFormPdfBase64(order, supplier, userDoc);
+          }
+
+          const result = await sendSupplierOrderEmail(order, supplier, userDoc, pdfBase64, uid, isUpdate, receipts, returns, payments, orderFormPdfBase64);
           if (result.success) {
             setAlert({
               show: true, type: "success",

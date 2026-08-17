@@ -3,7 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import {
   collection, addDoc, updateDoc, deleteDoc,
   doc, serverTimestamp, onSnapshot, query, orderBy,
-  getDocs, writeBatch, where,
+  getDocs, writeBatch, where, runTransaction, getDoc, setDoc,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import { getLimits, checkMonthlyLimit, loadPlansFromFirestore, getEffectiveLimit } from "@/lib/planLimits";
@@ -48,6 +48,31 @@ function avatarColor(id) {
 }
 
 const cardS = { background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" };
+
+// ── Global sequential order number ────────────────────────────────────────────
+// Format: SUP-ORD-XXXDDMMYY  e.g. SUP-ORD-001081826
+// Counter stored in Firestore at _counters/supplierOrders (globally shared across all users)
+async function generateSupplierOrderNumber(db) {
+  const counterRef = doc(db, "_counters", "supplierOrders");
+  const seq = await runTransaction(db, async (tx) => {
+    const snap = await tx.get(counterRef);
+    const next = snap.exists() ? (snap.data().count || 0) + 1 : 1;
+    tx.set(counterRef, { count: next }, { merge: true });
+    return next;
+  });
+  const now  = new Date();
+  const dd   = String(now.getDate()).padStart(2, "0");
+  const mm   = String(now.getMonth() + 1).padStart(2, "0");
+  const yy   = String(now.getFullYear()).slice(-2);
+  const num  = String(seq).padStart(3, "0");
+  return `SUP-ORD-${num}${dd}${mm}${yy}`;
+}
+
+// Helper: display order reference — uses new orderNumber if available, else legacy PO-XXXX
+function orderRef(order) {
+  return order?.orderNumber || `PO-${(order?.id || "").slice(-4).toUpperCase()}`;
+}
+
 const base = {
   width: "100%", outline: "none", background: "rgba(255,255,255,0.04)",
   border: "1.5px solid rgba(255,255,255,0.09)", borderRadius: 10,
@@ -802,7 +827,7 @@ function PaySupplierModal({ order, supplier, onClose, onSave, saving }) {
           <div>
             <h2 className="text-white font-black text-xl">💸 Pay Supplier</h2>
             <p className="text-gray-500 text-xs mt-0.5">
-              Order: <span className="text-amber-400 font-semibold">PO-{(order.id || "").slice(-4).toUpperCase()}</span>
+              Order: <span className="text-amber-400 font-semibold">{orderRef(order)}</span>
               &nbsp;· Balance: <span className="text-red-400 font-semibold">{formatRs(maxPayable)}</span>
             </p>
           </div>
@@ -981,7 +1006,7 @@ function ReturnGoodsModal({ order, supplier, receipts = [], onClose, onSave, sav
           <div>
             <h2 className="text-white font-black text-xl">📦 Return Goods</h2>
             <p className="text-gray-500 text-xs mt-0.5">
-              Order: <span className="text-amber-400 font-semibold">PO-{(order.id || "").slice(-4).toUpperCase()}</span>
+              Order: <span className="text-amber-400 font-semibold">{orderRef(order)}</span>
               &nbsp;· Balance: <span className="text-red-400 font-semibold">{formatRs(Number(order.balance) || 0)}</span>
             </p>
           </div>
@@ -1183,7 +1208,7 @@ function DeleteConfirmSD({ name, label, onConfirm, onCancel }) {
 
 // ── Purchase Order PDF Template ───────────────────────────────────────────────
 export function PurchaseOrderPDFTemplate({ order, supplier, userDoc = {}, receipts, returns, payments }) {
-  const num = `PO-${(order.id || "").slice(-4).toUpperCase()}`;
+  const num = orderRef(order);
   const generatedOn = new Date().toLocaleDateString("en-PK", { day: "2-digit", month: "long", year: "numeric" });
 
   // Helper
@@ -1582,7 +1607,7 @@ function PurchaseOrderViewModal({ order, supplier, userDoc = {}, receipts, retur
           if (remaining > 0) pdf.addPage();
         }
       }
-      const num = `PO-${(order.id || "").slice(-4).toUpperCase()}`;
+      const num = orderRef(order);
       pdf.save(`${num}-${supplier.name.replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}.pdf`);
     } catch (err) { alert("PDF failed: " + err.message); }
     setLoading(false);
@@ -1600,7 +1625,7 @@ function PurchaseOrderViewModal({ order, supplier, userDoc = {}, receipts, retur
   }
 
   function shareWhatsApp() {
-    const num       = `PO-${(order.id || "").slice(-4).toUpperCase()}`;
+    const num       = orderRef(order);
     const balance   = Number(order.balance) || 0;
     const totalPaid = Number(order.paidAmount) || 0;
     const receiptsTotal = (receipts || []).reduce((s, r) => s + (Number(r.receiptTotal) || 0), 0);
@@ -1631,7 +1656,7 @@ function PurchaseOrderViewModal({ order, supplier, userDoc = {}, receipts, retur
         {/* Toolbar */}
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-1">
           <h3 className="text-white font-bold text-sm sm:text-base truncate max-w-[60%]">
-            📄 PO-{(order.id || "").slice(-4).toUpperCase()} · {supplier.name}
+            📄 {orderRef(order)} · {supplier.name}
           </h3>
           <div className="flex flex-wrap items-center gap-1.5">
             <button onClick={shareWhatsApp}
@@ -1703,8 +1728,8 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
     : rawGridRows;
 
   const cols = hasVariant
-    ? ["Item / Description", "Variant Type", "Size / Unit", "Units", "Total Qty", "Unit Price", "Total Amount"]
-    : ["Item / Description", "Qty", "Unit Price", "Total Amount"];
+    ? ["Item / Description", "Variant / Specification", "Size / Unit", "Qty", "Pack / Units", "Total Qty", "Remarks"]
+    : ["Item / Description", "Unit", "Qty", "Remarks"];
 
   // Header badge label
   const formBadge = hasGrid ? "📐 SIZE GRID" : hasVariant ? "📦 WITH VARIANTS" : "📋 STANDARD";
@@ -1728,11 +1753,16 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
   const greenText  = bw ? "#000"    : "#14532d";
 
   // ── Size Grid pagination ──────────────────────────────────────────────────
-  // How many grid rows fit per page (approximate — each row ~30px)
-  // Page 1 has header (~80px) + meta/supplier section (~160px) + grid header + footer (~60px)
-  // Other grid pages have header (~80px) + footer (~60px)
-  const GRID_ROWS_P1   = 18; // conservative: page 1 has meta section
-  const GRID_ROWS_MID  = 28; // continuation pages
+  // Fixed row height = 26px. Available space per page calculated from exact measurements:
+  //   Page total = 1123px, padding top+bottom = 20px → content = 1103px
+  //   PageHeader = 83px, PageFooter = 55px, grid label = 24px, thead = 28px, gaps = 16px
+  //   MetaSection (page 1 only) = 237px  [dates row ~50 + supplier box ~175 + margin 12]
+  //   Available for rows (page 1, no item name): 1103 - 83 - 237 - 55 - 24 - 28 - 16 = 660px → floor(660/26) = 25
+  //   Available for rows (page 1, with item name 22px):  660 - 22 = 638px → floor(638/26) = 24
+  //   Available for rows (mid pages): 1103 - 83 - 0 - 55 - 24 - 28 - 16 = 897px → floor(897/26) = 34
+  const GRID_ROW_H     = 26; // px — fixed height per data row (incl. Col Total row)
+  const GRID_ROWS_P1   = sgItemName ? 25 : 25; // page 1: meta section takes space
+  const GRID_ROWS_MID  = 35; // continuation pages: only header/footer overhead
 
   // Split gridRows across pages
   const gridPages = [];   // array of {rows: [...], isFirst: bool}
@@ -1798,7 +1828,7 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
   }
 
   // Footer component — always at bottom, part of flex column
-  const FOOTER_H = 46;
+  const FOOTER_H = 40;
   function PageFooter({ pageNum }) {
     return (
       <div style={{ marginTop: "auto", paddingTop: 6, flexShrink: 0 }}>
@@ -1876,25 +1906,31 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
       return { cup: null, color: row };
     });
 
-    // ── Table max height — guaranteed so footer always fits ─────────────────
-    // We hardcode safe measured heights for each section.
-    // Page content area = 1123 - 20px padding = 1103px
-    // PageHeader: 100px | PageFooter: 50px | label: 24px | thead: 28px
-    // MetaSection (page1): 200px | gaps: 12px
+    // ── Table height — fills exact available space so no gap appears before footer ──
+    // tableMaxH = total space for the grid table (thead + rows) so it touches the footer.
+    // Exact breakdown per page:
+    //   content = 1103 | HDR = 83 | FTR = 55 | LBL = 24 | TH = 28 | GAPS = 16
+    //   META (page1) = 237 | ITEM_NAME (if set) = 22
     const CONTENT_H = 1103;
-    const HDR_H     = 100;
-    const FTR_H     = 55;   // footer height + some buffer
+    const HDR_H     = 83;
+    const FTR_H     = 40;
     const LBL_H     = 24;
     const ITEM_H    = isFirstGridPage && sgItemName ? 22 : 0;
-    const META_H    = isFirstGridPage ? 205 : 0;
+    const META_H    = isFirstGridPage ? 237 : 0;
     const TH_H      = 28;
     const GAPS_H    = 16;
 
+    // Safe cap: total space available for the table body (thead + rows)
     const tableMaxH = CONTENT_H - HDR_H - FTR_H - LBL_H - ITEM_H - META_H - TH_H - GAPS_H;
 
-    const totalRows = parsedRows.length + (isContinued ? 0 : 1);
-    // rowH = distribute tableMaxH across all rows
-    const rowH      = Math.max(24, Math.floor(tableMaxH / totalRows));
+    // Fixed row height — never stretches, never overflows
+    const rowH = GRID_ROW_H;
+
+    // ── Filler rows — fill remaining table space so footer sits flush ────────
+    // Total rows that fit in tableMaxH (subtract TH_H for thead, already subtracted in tableMaxH calc)
+    const totalRowSlots = Math.floor(tableMaxH / rowH);
+    const usedSlots     = parsedRows.length + (!isContinued ? 1 : 0); // data rows + col-total row
+    const fillerCount   = Math.max(0, totalRowSlots - usedSlots);
 
     return (
       <div style={{ display: "flex", flexDirection: "column" }}>
@@ -1919,8 +1955,8 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
           </div>
         </div>
 
-        {/* Grid table — maxHeight hard-capped so footer always fits */}
-        <div style={{ overflow: "hidden", maxHeight: tableMaxH, flexShrink: 0 }}>
+        {/* Grid table — exact height wrapper; rows fill naturally, no stretching */}
+        <div style={{ overflow: "hidden", height: tableMaxH, boxSizing: "border-box" }}>
         <table style={{ borderCollapse: "collapse", width: "100%", tableLayout: "fixed" }}>
           <colgroup>
             <col style={{ width: 90 }} />
@@ -2008,6 +2044,23 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
                   background: accentBg, height: rowH }} />
               </tr>
             )}
+
+            {/* Filler empty rows — fill remaining page space so footer sits flush */}
+            {Array.from({ length: fillerCount }).map((_, fi) => (
+              <tr key={`fill-${fi}`} style={{
+                background: fi % 2 === 0 ? "#fff" : "#f9fafb",
+                borderBottom: `1px solid ${borderMid}`,
+                height: rowH,
+              }}>
+                <td style={{ borderRight: `1px solid ${borderDark}`, height: rowH }} />
+                {(isCup  || isBoth) && <td style={{ borderRight: `1px solid ${borderDark}`, height: rowH }} />}
+                {(isColor || isBoth) && <td style={{ borderRight: `1px solid ${borderDark}`, height: rowH }} />}
+                {gridCols.map(col => (
+                  <td key={col} style={{ borderRight: `1px solid ${borderMid}`, height: rowH }} />
+                ))}
+                <td style={{ borderLeft: `2px solid ${borderDark}`, background: accentBg, height: rowH }} />
+              </tr>
+            ))}
           </tbody>
         </table>
         </div>
@@ -2019,25 +2072,6 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
   function LastPageExtras() {
     return (
       <>
-        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12 }}>
-          <div style={{ padding: "8px 12px", background: greenBg, border: `1px solid ${greenBdr}`, borderRadius: 8 }}>
-            <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: greenText,
-              letterSpacing: "0.07em", marginBottom: 6 }}>PAYMENT DETAILS</div>
-            {["Payment Method","Amount Paid","Remaining Balance","Payment Date"].map(lbl => (
-              <div key={lbl} style={{ display: "flex", alignItems: "flex-end", gap: 8, marginBottom: 5 }}>
-                <span style={{ fontSize: 10, color: "#111", fontWeight: 600, minWidth: 110, flexShrink: 0 }}>{lbl}:</span>
-                <div style={{ flex: 1, borderBottom: `1.5px solid ${greenBdr}`, height: 18 }} />
-              </div>
-            ))}
-          </div>
-          <div style={{ padding: "8px 12px", background: "#fff", border: `1px solid ${sectionBdr}`, borderRadius: 8 }}>
-            <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#222",
-              letterSpacing: "0.07em", marginBottom: 6 }}>TERMS & CONDITIONS</div>
-            {[1,2,3,4].map(i => (
-              <div key={i} style={{ borderBottom: `1px solid ${borderMid}`, height: 19, marginBottom: 3 }} />
-            ))}
-          </div>
-        </div>
         <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginBottom: 60 }}>
           {["Ordered By","Authorized By","Received By"].map(lbl => (
             <div key={lbl} style={{ textAlign: "center" }}>
@@ -2157,7 +2191,6 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
               <thead><TableHead /></thead>
               <tbody>
                 <ItemRows from={rowStart} count={rowCount} />
-                <PageSubtotal />
               </tbody>
             </table>
             {isLast && <LastPageExtras />}
@@ -2221,11 +2254,352 @@ function BlankOrderFormTemplate({ userDoc = {}, formType, totalPages, bw = false
                 <thead><TableHead /></thead>
                 <tbody>
                   <ItemRows from={rowStart} count={rowCount} />
-                  <PageSubtotal />
                 </tbody>
               </table>
 
               {isLast && <LastPageExtras />}
+              <PageFooter pageNum={pageNum} />
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
+// ── Filled Order Form Template — pre-filled with actual order items ──────────
+// Used for emailing a printable order form to the supplier alongside the PO PDF.
+// Renders one or more A4 pages with order items filled into the table rows.
+export function FilledOrderFormTemplate({ order = {}, supplier = {}, userDoc = {} }) {
+  const hasVariant = (order.items || []).some(
+    it => it.hasVariant && it.variantType && it.variantType !== "none"
+  );
+  const formType = hasVariant ? "variant" : "plain";
+
+  const accent     = "#b45309";
+  const accentBg   = "#fff8e1";
+  const accentText = "#7c2d12";
+  const headBg     = "#b45309";
+  const borderMid  = "#999";
+  const borderDark = "#555";
+  const textMid    = "#333";
+  const textSub    = "#444";
+  const sectionBg  = "#f9f9f9";
+  const sectionBdr = "#bbb";
+
+  const generatedOn = new Date().toLocaleDateString("en-PK", { day: "2-digit", month: "long", year: "numeric" });
+  const poNum = order.orderNumber || `PO-${(order.id || "").slice(-4).toUpperCase()}`;
+
+  function fmtD(val) {
+    if (!val) return "";
+    try {
+      const d = val?.toDate ? val.toDate() : new Date(val);
+      return d.toLocaleDateString("en-PK", { day: "2-digit", month: "2-digit", year: "numeric" });
+    } catch { return String(val); }
+  }
+
+  // Standard columns
+  const stdCols  = ["Item / Description", "Unit", "Qty", "Remarks"];
+  // Variant columns
+  const varCols  = ["Item / Description", "Variant / Specification", "Size / Unit", "Qty", "Pack / Units", "Total Qty", "Remarks"];
+  const cols     = hasVariant ? varCols : stdCols;
+
+  const VTYPES = { kg: "kg", meter: "mtr", liter: "ltr", length: "ft", piece: "pcs" };
+
+  function itemUnit(it) {
+    if (!it.hasVariant || it.variantType === "none") return "pcs";
+    return VTYPES[it.variantType] || it.variantType;
+  }
+
+  function itemEffQty(it) {
+    if (!it.hasVariant || it.variantType === "none") return Number(it.qty) || 1;
+    const vQty = Number(it.variantQty);
+    // If variantQty is empty/zero, fall back to plain qty (no size-per-unit specified)
+    if (!vQty) return Number(it.qty) || 1;
+    return vQty * (Number(it.qty) || 1);
+  }
+
+  const items = (order.items || []).filter(it => it.description?.trim());
+
+  const pageStyle = {
+    width: 794, height: 1123, background: "#fff", color: "#000",
+    fontSize: 13, padding: "10px 25px 10px 20px", boxSizing: "border-box",
+    display: "flex", flexDirection: "column", overflow: "clip",
+    position: "relative",
+  };
+
+  const pageBorderStyle = {
+    background: "linear-gradient(135deg, #f59e0b, #6366f1, #8b5cf6, #f59e0b)",
+    padding: "3px", borderRadius: 6,
+  };
+
+  // ── Rows per page ────────────────────────────────────────────────────────
+  // Page 1 has meta section (~170px); subsequent pages don't
+  // Row height ~26px. Header ~83px, Footer ~40px, thead ~28px, label 0 (no grid label)
+  // Page 1: 1103 - 83 - 170 - 40 - 28 - 10 = 772 → floor(772/26) = 29
+  // Mid: 1103 - 83 - 40 - 28 - 10 = 942 → floor(942/26) = 36
+  const ROWS_P1  = 20; // conservative — meta section height varies
+  const ROWS_MID = 30;
+  const ROW_H    = 26;
+
+  // Split items across pages
+  const pages = [];
+  if (items.length <= ROWS_P1) {
+    pages.push({ items, isFirst: true });
+  } else {
+    pages.push({ items: items.slice(0, ROWS_P1), isFirst: true });
+    let rest = items.slice(ROWS_P1);
+    while (rest.length > 0) {
+      pages.push({ items: rest.splice(0, ROWS_MID), isFirst: false });
+      rest = rest.splice ? rest : [];
+    }
+  }
+  const totalPages = pages.length;
+
+  function PageHeader({ pageNum }) {
+    return (
+      <div>
+        <div style={{ height: 5, marginBottom: 10 }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 8 }}>
+          <div style={{ display: "flex", alignItems: "flex-start", gap: 10 }}>
+            {userDoc?.logoDataUrl && (
+              <img src={userDoc.logoDataUrl} alt="Logo"
+                style={{ width: 48, height: 48, objectFit: "contain", borderRadius: 8, border: `1px solid ${borderDark}` }} />
+            )}
+            <div>
+              <div style={{ fontWeight: 900, fontSize: 18, color: "#000", lineHeight: 1.1 }}>
+                {userDoc?.business || userDoc?.name || "Your Business"}
+              </div>
+              {userDoc?.phone   && <div style={{ fontSize: 9, color: textMid, marginTop: 1 }}>📞 {userDoc.phone}</div>}
+              {userDoc?.email   && <div style={{ fontSize: 9, color: textMid }}>✉️ {userDoc.email}</div>}
+              {userDoc?.website && <div style={{ fontSize: 9, color: textMid }}>🌐 {userDoc.website}</div>}
+              {userDoc?.address && <div style={{ fontSize: 9, color: textMid }}>📍 {userDoc.address}</div>}
+            </div>
+          </div>
+          <div style={{ textAlign: "right", paddingRight: 10 }}>
+            <div style={{ fontSize: 28, fontWeight: 900, letterSpacing: "-1.5px", color: accent, lineHeight: 1.1 }}>ORDER FORM</div>
+            <div style={{ fontSize: 9, color: textSub, marginTop: 2 }}>
+              {hasVariant ? "Variant / Measurement Order" : "Standard Order Form"}
+            </div>
+            <div style={{ marginTop: 4, display: "flex", justifyContent: "flex-end", gap: 6, alignItems: "center" }}>
+              <span style={{ padding: "2px 10px", borderRadius: 20, background: accentBg,
+                border: `1px solid ${accent}`, fontSize: 8, color: accentText, fontWeight: 700 }}>
+                {hasVariant ? "📦 WITH VARIANTS" : "📋 STANDARD"}
+              </span>
+              <span style={{ fontSize: 9, color: textMid }}>Page {pageNum} / {totalPages}</span>
+            </div>
+          </div>
+        </div>
+        <div style={{ height: 2, background: accent, marginBottom: 10 }} />
+      </div>
+    );
+  }
+
+  function PageFooter({ pageNum }) {
+    return (
+      <div style={{ marginTop: "auto", paddingTop: 6, flexShrink: 0 }}>
+        <div style={{ height: 1.5, background: accent, marginBottom: 5 }} />
+        <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+          <div>
+            <div style={{ fontSize: 10, fontWeight: 900, color: accent }}>Novexa ERP</div>
+            <div style={{ fontSize: 8, color: textSub }}>Smart Business Management — novexa.app</div>
+          </div>
+          <div style={{ textAlign: "center", fontSize: 8, color: textSub }}>
+            <div>This form was generated by Novexa ERP</div>
+            <div>Print · Fill · Sign · File</div>
+          </div>
+          <div style={{ textAlign: "right", fontSize: 8, color: textSub }}>
+            <div>Generated: {generatedOn}</div>
+            <div>Page {pageNum} of {totalPages} · © Novexa</div>
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  // Meta section (page 1 only) — pre-filled with order + supplier info
+  function MetaSection() {
+    return (
+      <>
+        {/* Top row: Order Date / Ref / Delivery Date */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12, marginBottom: 12 }}>
+          {[
+            ["ORDER DATE",     fmtD(order.orderDate) || ""],
+            ["ORDER REF #",    poNum],
+            ["DELIVERY DATE",  fmtD(order.dueDate)   || ""],
+          ].map(([lbl, val]) => (
+            <div key={lbl}>
+              <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#111",
+                letterSpacing: "0.06em", marginBottom: 2 }}>{lbl}</div>
+              <div style={{ borderBottom: `1.5px solid ${borderDark}`, height: 24, display: "flex",
+                alignItems: "flex-end", paddingBottom: 2, fontSize: 11, color: "#222", fontWeight: 600 }}>
+                {val}
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Supplier details + Notes */}
+        <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 12,
+          padding: "10px 14px", background: sectionBg, border: `1px solid ${sectionBdr}`, borderRadius: 8 }}>
+          {/* Left: Supplier details as a proper table for alignment */}
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: accent,
+              letterSpacing: "0.07em", marginBottom: 6 }}>SUPPLIER / PARTY DETAILS</div>
+            <table style={{ borderCollapse: "collapse", width: "100%" }}>
+              <tbody>
+                {[
+                  ["Name",           supplier?.name     || ""],
+                  ["Shop / Company", supplier?.shopName || ""],
+                  ["Phone",          supplier?.phone    || ""],
+                  ["Email",          supplier?.email    || ""],
+                  ["Address",        supplier?.city
+                    ? `${supplier.city}${supplier.address ? ", " + supplier.address : ""}`
+                    : (supplier?.address || "")],
+                ].map(([lbl, val]) => (
+                  <tr key={lbl} style={{ marginBottom: 4 }}>
+                    <td style={{ fontSize: 10, fontWeight: 700, color: "#444", whiteSpace: "nowrap",
+                      paddingRight: 8, paddingBottom: 5, verticalAlign: "bottom", width: 1 }}>
+                      {lbl}:
+                    </td>
+                    <td style={{ fontSize: 10, color: "#111", paddingBottom: 5, verticalAlign: "bottom",
+                      borderBottom: `1.5px solid ${borderDark}`, minWidth: 0 }}>
+                      {val}
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+          {/* Right: Notes */}
+          <div>
+            <div style={{ fontSize: 9, fontWeight: 800, textTransform: "uppercase", color: "#222",
+              letterSpacing: "0.07em", marginBottom: 6 }}>NOTES / SPECIAL INSTRUCTIONS</div>
+            <div style={{ fontSize: 10, color: "#333", lineHeight: 1.6, whiteSpace: "pre-wrap" }}>
+              {order.note || ""}
+            </div>
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // Table header
+  function TableHead() {
+    return (
+      <tr style={{ background: headBg, color: "#fff" }}>
+        <th style={{ padding: "5px 5px", fontSize: 9, fontWeight: 800, textTransform: "uppercase",
+          letterSpacing: "0.04em", textAlign: "center", width: 22 }}>#</th>
+        {cols.map((h, i) => (
+          <th key={h} style={{ padding: "5px 7px", fontSize: 9, fontWeight: 800, textTransform: "uppercase",
+            letterSpacing: "0.04em", textAlign: i === 0 ? "left" : "center" }}>{h}</th>
+        ))}
+      </tr>
+    );
+  }
+
+  // Filled item row
+  function FilledRow({ item, rowNum }) {
+    const unit   = itemUnit(item);
+    const effQty = itemEffQty(item);
+    const isVar  = item.hasVariant && item.variantType && item.variantType !== "none";
+    const tdS    = { padding: "5px 7px", fontSize: 11, borderLeft: `1px solid ${borderMid}`, verticalAlign: "middle", height: ROW_H };
+
+    return (
+      <tr style={{ background: rowNum % 2 === 0 ? "#fff" : "#f9fafb", borderBottom: `1px solid ${borderMid}`, height: ROW_H }}>
+        <td style={{ ...tdS, textAlign: "center", fontSize: 10, fontWeight: 700, color: "#111", borderLeft: "none" }}>{rowNum}</td>
+        {hasVariant ? (
+          <>
+            {/* Item / Description */}
+            <td style={{ ...tdS, fontWeight: 600, color: "#111", textAlign: "left" }}>{item.description}</td>
+            {/* Variant / Specification */}
+            <td style={{ ...tdS, textAlign: "center", color: accent, fontWeight: 700 }}>
+              {isVar ? `${item.variantQty} ${unit}` : ""}
+            </td>
+            {/* Size / Unit */}
+            <td style={{ ...tdS, textAlign: "center" }}>{isVar ? unit : "pcs"}</td>
+            {/* Qty */}
+            <td style={{ ...tdS, textAlign: "center", fontWeight: 700 }}>{item.qty || 1}</td>
+            {/* Pack / Units */}
+            <td style={{ ...tdS, textAlign: "center" }}>{isVar ? `${item.variantQty} ${unit}` : ""}</td>
+            {/* Total Qty */}
+            <td style={{ ...tdS, textAlign: "center", fontWeight: 800, color: "#111" }}>
+              {isVar ? `${effQty} ${unit}` : `${item.qty || 1} pcs`}
+            </td>
+            {/* Remarks */}
+            <td style={{ ...tdS, textAlign: "left" }}></td>
+          </>
+        ) : (
+          <>
+            {/* Item / Description */}
+            <td style={{ ...tdS, fontWeight: 600, color: "#111", textAlign: "left" }}>{item.description}</td>
+            {/* Unit */}
+            <td style={{ ...tdS, textAlign: "center" }}>pcs</td>
+            {/* Qty */}
+            <td style={{ ...tdS, textAlign: "center", fontWeight: 700 }}>{item.qty || 1}</td>
+            {/* Remarks */}
+            <td style={{ ...tdS, textAlign: "left" }}></td>
+          </>
+        )}
+      </tr>
+    );
+  }
+
+  return (
+    <div>
+      {pages.map((pg, pgIdx) => {
+        const pageNum   = pgIdx + 1;
+        const isFirst   = pgIdx === 0;
+        const isLast    = pgIdx === pages.length - 1;
+        const pageItems = pg.items;
+        // Filler rows to fill remaining page space
+        const cap       = isFirst ? ROWS_P1 : ROWS_MID;
+        const fillerCnt = Math.max(0, cap - pageItems.length);
+        const rowOffset = isFirst ? 0 : ROWS_P1 + (pgIdx - 1) * ROWS_MID;
+
+        return (
+          <div key={pageNum} style={pageBorderStyle}>
+            <div style={{
+              ...pageStyle,
+              pageBreakAfter: isLast ? "avoid" : "always",
+              breakAfter: isLast ? "avoid" : "page",
+            }}>
+              <PageHeader pageNum={pageNum} />
+              {isFirst && <MetaSection />}
+
+              <table style={{ width: "100%", borderCollapse: "collapse", marginBottom: 0 }}>
+                <thead><TableHead /></thead>
+                <tbody>
+                  {pageItems.map((item, i) => (
+                    <FilledRow key={i} item={item} rowNum={rowOffset + i + 1} />
+                  ))}
+                  {/* Filler empty rows */}
+                  {Array.from({ length: fillerCnt }).map((_, fi) => (
+                    <tr key={`fill-${fi}`} style={{ background: fi % 2 === 0 ? "#fff" : "#f9fafb",
+                      borderBottom: `1px solid ${borderMid}`, height: ROW_H }}>
+                      <td style={{ height: ROW_H, textAlign: "center", fontSize: 10, color: "#bbb" }}>
+                        {rowOffset + pageItems.length + fi + 1}
+                      </td>
+                      {cols.map((_, ci) => (
+                        <td key={ci} style={{ height: ROW_H, borderLeft: `1px solid ${borderMid}` }} />
+                      ))}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+
+              {isLast && (
+                <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 16, marginTop: 16 }}>
+                  {["Ordered By", "Authorized By", "Received By"].map(lbl => (
+                    <div key={lbl} style={{ textAlign: "center" }}>
+                      <div style={{ borderBottom: "2px solid #111", height: 34, marginBottom: 5 }} />
+                      <div style={{ fontSize: 10, color: "#111", fontWeight: 700 }}>{lbl}</div>
+                      <div style={{ fontSize: 9, color: "#555", marginTop: 1 }}>Signature / Name / Date</div>
+                    </div>
+                  ))}
+                </div>
+              )}
+
               <PageFooter pageNum={pageNum} />
             </div>
           </div>
@@ -2370,7 +2744,7 @@ export function OrderFormView({ userDoc = {} }) {
           <div className="flex flex-wrap items-center gap-3">
             {/* Form type */}
             <div className="flex gap-1 p-1 rounded-xl" style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)" }}>
-              {[["plain","📋 Standard"],["variant","📦 Variants"],["sizegrid","📐 Size Grid"]].map(([v, lbl]) => (
+              {[["plain","📋 Standard"],["variant","📦 Variants"]].map(([v, lbl]) => (
                 <button key={v} onClick={() => setFormType(v)}
                   className="px-3 py-1.5 rounded-lg text-xs font-semibold transition-all"
                   style={{
@@ -2953,7 +3327,7 @@ function SupplierHistoryTemplate({ supplier, orders, payments, receipts, returns
             const d         = item.data;
 
             const ref = isOrder
-              ? `PO-${(d.id || "").slice(-4).toUpperCase()}`
+              ? orderRef(d)
               : `PO-${(d.orderId || "").slice(-4).toUpperCase()}`;
 
             const itemsStr = isOrder && d.items?.length > 0
@@ -3212,7 +3586,7 @@ function SupplierHistoryModal({ supplier, orders, payments, receipts, returns, u
 // Auto-shows after a new order is saved — pre-filled printable order form
 function PurchaseOrderPreviewModal({ order, supplier, userDoc, onClose }) {
   const printRef = useRef(null);
-  const num = (order.id || "").slice(-4).toUpperCase();
+  const num = orderRef(order);
   const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const now = new Date();
   const dateStr = `${String(now.getDate()).padStart(2,"0")}-${MONTHS[now.getMonth()]}-${now.getFullYear()}`;
@@ -3368,19 +3742,30 @@ function PurchaseOrderPreviewModal({ order, supplier, userDoc, onClose }) {
               </thead>
               <tbody>
                 {items.map((it, i) => {
-                  const qty = Number(it.qty) || 0;
-                  const price = Number(it.unitPrice) || 0;
-                  const total = qty * price;
+                  const isVar  = it.hasVariant && it.variantType && it.variantType !== "none";
+                  const vQty   = Number(it.variantQty);
+                  const effQty = isVar && vQty ? vQty * (Number(it.qty) || 1) : (Number(it.qty) || 0);
+                  const VTYPES = { kg: "kg", meter: "mtr", liter: "ltr", length: "ft", piece: "pcs" };
+                  const unit   = isVar ? (VTYPES[it.variantType] || it.variantType) : "pcs";
+                  const price  = Number(it.unitPrice) || 0;
+                  const total  = effQty * price;
                   return (
                     <tr key={i} style={{ borderBottom: "1px solid #f3f4f6" }}>
                       <td style={{ padding: "10px 12px", fontSize: 12, color: "#6b7280" }}>{i + 1}</td>
                       <td style={{ padding: "10px 12px", fontSize: 13, color: "#111", fontWeight: 600 }}>
                         {it.description}
-                        {it.variantLabel && <span style={{ fontSize: 10, color: "#d97706", marginLeft: 6 }}>({it.variantLabel})</span>}
+                        {isVar && vQty
+                          ? <span style={{ fontSize: 10, color: "#d97706", marginLeft: 6 }}>({it.variantQty}{unit} × {it.qty} units)</span>
+                          : it.variantLabel
+                            ? <span style={{ fontSize: 10, color: "#d97706", marginLeft: 6 }}>({it.variantLabel})</span>
+                            : null
+                        }
                       </td>
-                      <td style={{ padding: "10px 12px", fontSize: 13, color: "#111", textAlign: "center", fontWeight: 700 }}>{qty}</td>
+                      <td style={{ padding: "10px 12px", fontSize: 13, color: "#111", textAlign: "center", fontWeight: 700 }}>
+                        {effQty} {unit}
+                      </td>
                       <td style={{ padding: "10px 12px", fontSize: 12, color: "#374151", textAlign: "right" }}>
-                        {price > 0 ? `Rs. ${price.toLocaleString("en-PK")}` : "—"}
+                        {price > 0 ? `Rs. ${price.toLocaleString("en-PK")} / ${unit}` : "—"}
                       </td>
                       <td style={{ padding: "10px 12px", fontSize: 13, color: "#111", textAlign: "right", fontWeight: 700 }}>
                         {total > 0 ? `Rs. ${total.toLocaleString("en-PK")}` : "—"}
@@ -3657,9 +4042,13 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
         const cleanItems = originalItems.map(({ isNew, isReceipt, ...rest }) => rest);
         const { subtotal, discount, afterDiscount, paid, balance } = calcPOTotals(formData);
 
+        // ── Generate global sequential order number ───────────────────────
+        const orderNumber = await generateSupplierOrderNumber(db);
+
         const payload = {
           supplierId:        supplier.id,
           supplierName:      supplier.name,
+          orderNumber,                         // e.g. "SUP-ORD-001081826"
           items:             cleanItems,
           discountType:      formData.discountType,
           discountValue:     Number(formData.discountValue) || 0,
@@ -4097,7 +4486,10 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
 
                 const statusKey = bal <= 0 ? "Paid" : paid > 0 ? "Partial" : "Pending";
                 const st = STATUS_STYLE[statusKey];
-                const num = (o.id || "").slice(-4).toUpperCase();
+                const num = orderRef(o);
+                const avatarLabel = o.orderNumber
+                  ? o.orderNumber.slice(-4)
+                  : (o.id || "").slice(-4).toUpperCase();
                 const isOverdue = o.dueDate && new Date(o.dueDate) < new Date() && statusKey !== "Paid";
                 return (
                   <div key={o.id} className="flex flex-col px-4 py-3 gap-2 hover:bg-white/[0.02] transition-colors border-b border-white/[0.04] last:border-0">
@@ -4105,11 +4497,11 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
                     <div className="flex items-center gap-3 min-w-0">
                       <div className="w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black flex-shrink-0"
                         style={{ background: "rgba(245,158,11,0.1)", border: "1px solid rgba(245,158,11,0.2)", color: "#F59E0B" }}>
-                        {num}
+                        {avatarLabel}
                       </div>
                       <div className="flex-1 min-w-0">
                         <div className="flex items-center gap-2 flex-wrap">
-                          <p className="text-white text-sm font-medium whitespace-nowrap">PO-{num}</p>
+                          <p className="text-white text-sm font-medium whitespace-nowrap">{num}</p>
                           {isOverdue && (
                             <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
                               style={{ background: "rgba(248,113,113,0.12)", color: "#f87171" }}>OVERDUE</span>
@@ -4284,7 +4676,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
       {/* Delete Order Confirm */}
       {deleteOrderId && (
         <DeleteConfirmSD
-          name={`PO-${(deleteOrderId || "").slice(-4).toUpperCase()}`}
+          name={orderRef({ id: deleteOrderId })}
           label="Order"
           onConfirm={() => handleDeleteOrder(deleteOrderId)}
           onCancel={() => setDeleteOrderId(null)}
