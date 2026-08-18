@@ -43,7 +43,7 @@ function fmtDateTime(str) {
 
 // ── Customer Invoice HTML email ───────────────────────────────────────────────
 function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
-  const invNum        = InvoiceNumber(invoice.id);
+  const invNum        = invoice.invoiceNumber || InvoiceNumber(invoice.id);
   const status        = invoice.status || "Unpaid";
   const sm            = STATUS_META[status] || STATUS_META.Unpaid;
   const bizName       = userDoc?.business || userDoc?.name || "Business";
@@ -718,7 +718,7 @@ export async function POST(request) {
         : `New Purchase Order ${poNum} from ${bizName}`;
       pdfFilename   = `${poNum}.pdf`;
     } else {
-      const invNum  = InvoiceNumber(invoice.id);
+      const invNum  = invoice.invoiceNumber || InvoiceNumber(invoice.id);
       htmlBody      = buildInvoiceEmailHTML({ invoice, userDoc: mergedUserDoc, isUpdate: !!isUpdate });
       subject       = isUpdate
         ? `Invoice ${invNum} Updated — ${bizName}`

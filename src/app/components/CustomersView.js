@@ -420,7 +420,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
     const totalPendingBalance = sorted.reduce((sum, inv) => sum + getActualBalance(inv), 0);
 
     const prevBalItems = latestPending ? [{
-      description: `Previous Balance · INV-${(latestPending.id || "").slice(-4).toUpperCase()}`,
+      description: `Previous Balance · ${latestPending.invoiceNumber || ("INV-" + (latestPending.id || "").slice(-4).toUpperCase())}`,
       qty:         1,
       unitPrice:   String(totalPendingBalance),
       productId:   "",
@@ -636,10 +636,10 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             balance: newActualBalance,            // new balance after purchase
             historyBalance: newActualBalance,
             invoiceId: editInv.id,
-            invoiceNumber: `INV-${editInv.id.slice(-4).toUpperCase()}`,
+            invoiceNumber: editInv.invoiceNumber || `INV-${editInv.id.slice(-4).toUpperCase()}`,
             customerId: customer.id,
             customer: customer.name,
-            description: `Additional purchase on invoice ${editInv.id.slice(-4).toUpperCase()}: ${newItems.map(it => `${it.description} x${it.qty}`).join(", ")}`,
+            description: `Additional purchase on invoice ${editInv.invoiceNumber || editInv.id.slice(-4).toUpperCase()}: ${newItems.map(it => `${it.description} x${it.qty}`).join(", ")}`,
             items: newItems,
             status: mergedStatus,
             createdAt: serverTimestamp(),
@@ -766,7 +766,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             historyBalance: Math.max(0, newActual - currentPaid),
             balance:        newBalance,
             invoiceId:      editInv.id,
-            invoiceNumber:  `INV-${editInv.id.slice(-4).toUpperCase()}`,
+            invoiceNumber:  editInv.invoiceNumber || `INV-${editInv.id.slice(-4).toUpperCase()}`,
             customerId:     customer.id,
             customer:       customer.name,
             status:         newStatus,
@@ -871,14 +871,14 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             historyBalance,                   // same — actualAmount based balance
             invoiceActualAmount: invActualAmount, // actual purchase amount (no prev bal)
             invoiceId: editInv.id,
-            invoiceNumber: `INV-${editInv.id.slice(-4).toUpperCase()}`,
+            invoiceNumber: editInv.invoiceNumber || `INV-${editInv.id.slice(-4).toUpperCase()}`,
             customerId: customer.id,
             customer: formData.customerName || customer.name,
             payerName: formData.payerName || formData.customerName || customer.name,
             payerContact: formData.payerContact || formData.phone || customer.phone,
             receiverName: formData.receiverName || "",
             receiverContact: formData.receiverContact || "",
-            description: `Payment for invoice ${editInv.id.slice(-4).toUpperCase()} from ${customer.name}`,
+            description: `Payment for invoice ${editInv.invoiceNumber || editInv.id.slice(-4).toUpperCase()} from ${customer.name}`,
             method: formData.paymentMethod || "cash",
             status: newStatus,               // Partial / Paid
             createdAt: serverTimestamp(),
@@ -994,14 +994,14 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             historyBalance:  Number(payload.balance) || 0,
             invoiceActualAmount: Number(payload.actualAmount || payload.amount) || 0,
             invoiceId:       ref.id,
-            invoiceNumber:   `INV-${ref.id.slice(-4).toUpperCase()}`,
+            invoiceNumber:   invoiceNumber,
             customerId:      customer.id,
             customer:        payload.customerName || customer.name,
             payerName:       formData.payerName || payload.customerName || customer.name,
             payerContact:    formData.payerContact || payload.phone || customer.phone,
             receiverName:    formData.receiverName || "",
             receiverContact: formData.receiverContact || "",
-            description:     `Initial payment for invoice ${ref.id.slice(-4).toUpperCase()} from ${customer.name}`,
+            description:     `Initial payment for invoice ${invoiceNumber} from ${customer.name}`,
             method:          formData.paymentMethod || "cash",
             status:          payload.status,
             createdAt:       serverTimestamp(),
@@ -1800,7 +1800,7 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose, userDoc, 
             <div className="min-w-0 flex-1">
               <h2 className="text-white font-black text-base sm:text-xl mb-1 leading-tight">
                 📊 {singleInvoiceId
-                  ? `INV-${singleInvoiceId.slice(-4).toUpperCase()} · History`
+                  ? `${invoices.find(i => i.id === singleInvoiceId)?.invoiceNumber || ("INV-" + singleInvoiceId.slice(-4).toUpperCase())} · History`
                   : "Activity History"
                 }
               </h2>
@@ -1952,7 +1952,7 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose, userDoc, 
                           <>
                             <div className="flex items-center gap-2 mb-1">
                               <p className="text-white text-sm font-bold">
-                                Invoice #{item.data.id.slice(-4).toUpperCase()}
+                                Invoice #{item.data.invoiceNumber || item.data.id.slice(-4).toUpperCase()}
                               </p>
                               <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
                                 style={{ 

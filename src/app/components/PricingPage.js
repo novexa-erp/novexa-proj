@@ -229,7 +229,39 @@ function CountdownBanner() {
 
 }
 
-// ── Helper: feature cell ──────────────────────────────────────────────────────
+// ── Derive dynamic features from Firestore plan data ─────────────────────────
+function getDynamicFeatures(plan, fsData) {
+  // Fallback to hardcoded if no Firestore data
+  if (!fsData) return plan.features;
+
+  const limits = fsData.limits || {};
+  const tabs   = fsData.allowedTabs || [];
+
+  const fmtLimit = (val) => {
+    if (val === null || val === undefined) return "Unlimited";
+    return `${Number(val).toLocaleString()} / Month`;
+  };
+
+  return {
+    users:       fsData.maxDevices ? `${fsData.maxDevices} User${fsData.maxDevices > 1 ? "s" : ""}` : plan.features.users,
+    invoices:    fmtLimit(limits.invoicesPerMonth),
+    customers:   limits.customersPerMonth === null || limits.customersPerMonth === undefined
+                   ? "Unlimited" : `${Number(limits.customersPerMonth).toLocaleString()} Customers`,
+    inventory:   tabs.includes("inventory"),
+    purchases:   tabs.includes("purchases"),
+    payments:    tabs.includes("payments"),
+    analytics:   tabs.includes("analytics")
+                   ? (plan.id === "professional" || plan.id === "enterprise" ? "Advanced" : true)
+                   : false,
+    email:       plan.features.email,   // keep static — not in PackageManager
+    orderForm:   tabs.includes("order-form"),
+    multiBranch: tabs.includes("branches")
+                   ? (plan.id === "enterprise" ? "Unlimited" : true)
+                   : false,
+    api:         plan.features.api,     // keep static
+    support:     plan.features.support, // keep static
+  };
+}
 function FeatureCell({ value, color }) {
   if (value === true)  return <span className="text-lg" style={{ color: "#10B981" }}>✓</span>;
   if (value === false) return <span className="text-lg text-gray-700">✕</span>;
@@ -279,6 +311,9 @@ function PlanCard({ plan, isYearly, index, fsPlans }) {
 
   const planName = fsData?.name || plan.name;
   const planIcon = fsData?.icon || plan.icon;
+
+  // ── Dynamic features from Firestore limits & tabs ─────────────────────────
+  const features = getDynamicFeatures(plan, fsData);
 
   const cta = ctaStyleMap[plan.ctaStyle];
 
@@ -401,7 +436,7 @@ function PlanCard({ plan, isYearly, index, fsPlans }) {
       {/* Features */}
       <ul className="flex flex-col gap-2.5 flex-1 mb-6">
         {compareRows.map((row) => {
-          const val = plan.features[row.key];
+          const val = features[row.key];
           if (val === false) return null;
           return (
             <li key={row.key} className="flex items-center gap-2.5">
@@ -534,7 +569,7 @@ function CompareTable({ isYearly, fsPlans }) {
                 <td className="px-6 py-3.5 text-gray-300 text-sm font-medium">{row.label}</td>
                 {plans.map((p) => (
                   <td key={p.id} className="px-4 py-3.5 text-center">
-                    <FeatureCell value={p.features[row.key]} color={p.color} />
+                    <FeatureCell value={getDynamicFeatures(p, fsPlans?.[p.id])[row.key]} color={p.color} />
                   </td>
                 ))}
               </tr>

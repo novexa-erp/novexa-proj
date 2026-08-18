@@ -3508,7 +3508,7 @@ function SupplierHistoryTemplate({ supplier, orders, payments, receipts, returns
 
             const ref = isOrder
               ? orderRef(d)
-              : `PO-${(d.orderId || "").slice(-4).toUpperCase()}`;
+              : d.orderRef || `PO-${(d.orderId || "").slice(-4).toUpperCase()}`;
 
             const itemsStr = isOrder && d.items?.length > 0
               ? d.items.map(it => `${it.description} ×${it.qty}`).join(", ")
@@ -4191,7 +4191,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
             supplierId:    supplier.id,
             supplierName:  supplier.name,
             orderId:       editOrder.id,
-            orderRef:      `PO-${editOrder.id.slice(-4).toUpperCase()}`,
+            orderRef:      editOrder.orderNumber || `PO-${editOrder.id.slice(-4).toUpperCase()}`,
             items:         newItems.map(({ isNew, isReceipt, ...rest }) => rest),
             receiptTotal,
             balanceBefore,
@@ -4293,7 +4293,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
             balanceBefore: afterDiscount,
             balanceAfter:  balance,
             method:        "cash",
-            description:   `Initial payment for PO-${ref.id.slice(-4).toUpperCase()}`,
+            description:   `Initial payment for ${orderNumber}`,
             createdAt:     serverTimestamp(),
           });
         }
@@ -4343,7 +4343,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
         supplierId:      supplier.id,
         supplierName:    supplier.name,
         orderId:         payOrder.id,
-        orderRef:        `PO-${payOrder.id.slice(-4).toUpperCase()}`,
+        orderRef:        payOrder.orderNumber || `PO-${payOrder.id.slice(-4).toUpperCase()}`,
         amount,
         balanceBefore:   Number(payOrder.balance) || 0,
         balanceAfter:    newBalance,
@@ -4354,7 +4354,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
         payDate,
         note:            note || "",
         status:          newStatus,
-        description:     `Payment of ${formatRs(amount)} for PO-${payOrder.id.slice(-4).toUpperCase()}`,
+        description:     `Payment of ${formatRs(amount)} for ${payOrder.orderNumber || ("PO-" + payOrder.id.slice(-4).toUpperCase())}`,
         createdAt:       serverTimestamp(),
       });
 
@@ -4380,7 +4380,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
           supplierId:      supplier.id,
           supplierName:    supplier.name,
           orderId:         payOrder.id,
-          orderRef:        `PO-${payOrder.id.slice(-4).toUpperCase()}`,
+          orderRef:        payOrder.orderNumber || `PO-${payOrder.id.slice(-4).toUpperCase()}`,
           amount,
           balanceBefore:   Number(payOrder.balance) || 0,
           balanceAfter:    newBalance,
@@ -4438,7 +4438,7 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
         supplierId:   supplier.id,
         supplierName: supplier.name,
         orderId:      returnOrder.id,
-        orderRef:     `PO-${returnOrder.id.slice(-4).toUpperCase()}`,
+        orderRef:     returnOrder.orderNumber || `PO-${returnOrder.id.slice(-4).toUpperCase()}`,
         items,
         returnTotal,
         balanceBefore,

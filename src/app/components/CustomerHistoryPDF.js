@@ -215,7 +215,7 @@ function HistoryTemplate({ customer, invoices, payments, userDoc }) {
                 const isPayment  = !isInv && !isPurchase && !isReturn;
                 const d          = item.data;
                 const ref        = isInv
-                  ? "INV-" + (d.id || "").slice(-4).toUpperCase()
+                  ? (d.invoiceNumber || ("INV-" + (d.id || "").slice(-4).toUpperCase()))
                   : (d.invoiceNumber || ("INV-" + (d.invoiceId || "").slice(-4).toUpperCase()) || "—");
 
                 const isPrevBal = (desc) => (desc || "").startsWith("Previous Balance · INV-");
