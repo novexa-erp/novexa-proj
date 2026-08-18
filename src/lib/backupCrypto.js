@@ -1,5 +1,13 @@
 const NOVEXA_MAGIC = "NOVEXA_ENC_V1";
 
+// ── Default encryption key (used when user skips password) ───────────────────
+// Files encrypted with this key restore silently without asking for a password.
+export const NOVEXA_DEFAULT_KEY = "novexa-backup-default-key-2026";
+
+export function isDefaultEncrypted(fileName) {
+  return fileName?.endsWith(".novexa") && !fileName?.includes(".pwenc.");
+}
+
 async function deriveKey(password, salt) {
   const enc = new TextEncoder();
   const baseKey = await crypto.subtle.importKey("raw", enc.encode(password), "PBKDF2", false, ["deriveKey"]);
@@ -46,5 +54,12 @@ export function isEncryptedFile(fileName) {
 }
 
 export function encryptedFileName(baseFileName) {
+  // User-password encrypted: .novexa (same as before)
+  return baseFileName.replace(/\.json$/, "") + ".novexa";
+}
+
+export function defaultEncryptedFileName(baseFileName) {
+  // Default-key encrypted (no user password): also .novexa
+  // These are auto-decrypted on restore without asking password
   return baseFileName.replace(/\.json$/, "") + ".novexa";
 }

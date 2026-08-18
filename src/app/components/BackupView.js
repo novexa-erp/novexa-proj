@@ -5,7 +5,7 @@ import {
   writeBatch,
 } from "firebase/firestore";
 import { db } from "@/lib/firebase";
-import { encryptJson, decryptFile, isEncryptedFile, encryptedFileName } from "@/lib/backupCrypto";
+import { encryptJson, decryptFile, isEncryptedFile, encryptedFileName, NOVEXA_DEFAULT_KEY } from "@/lib/backupCrypto";
 
 // ── Collections to backup ────────────────────────────────────────────────────
 const FLAT_COLLECTIONS = [
@@ -406,7 +406,9 @@ export default function BackupView({ uid }) {
 
   // ── Core write-to-dir (shared by manual + auto) ───────────────────────────
   async function writeToDir(dirHandle, json, fileName) {
-    const fileHandle = await dirHandle.getFileHandle(fileName, { create: true });
+    // Ensure .json extension is always present
+    const safeName = fileName.endsWith(".json") ? fileName : fileName + ".json";
+    const fileHandle = await dirHandle.getFileHandle(safeName, { create: true });
     const writable   = await fileHandle.createWritable();
     await writable.write(json);
     await writable.close();
@@ -442,9 +444,23 @@ export default function BackupView({ uid }) {
     if (!json) return;
     setExporting(true);
     try {
-      await writeToDir(dirHandle, json, fileName);
-      setExportMsg({ type: "success", text: `✅ Saved to "${dirHandle.name}" — ${totalDocs?.toLocaleString()} records.` });
-      await recordHistory(fileName, totalDocs, type || "manual");
+      // Always encrypt with default hidden key — no password needed on restore
+      if (dirHandle) {
+        const savedName = await writeToDirEncrypted(dirHandle, json, fileName, NOVEXA_DEFAULT_KEY);
+        setExportMsg({ type: "success", text: `✅ Backup saved to "${dirHandle.name}" — ${totalDocs?.toLocaleString()} records.` });
+        await recordHistory(savedName, totalDocs, type || "manual");
+      } else {
+        const savedName = encryptedFileName(fileName);
+        const buffer    = await encryptJson(json, NOVEXA_DEFAULT_KEY);
+        const blob      = new Blob([buffer], { type: "application/octet-stream" });
+        const url       = URL.createObjectURL(blob);
+        const a         = document.createElement("a");
+        a.href = url; a.download = savedName;
+        document.body.appendChild(a); a.click();
+        document.body.removeChild(a); URL.revokeObjectURL(url);
+        setExportMsg({ type: "success", text: `✅ Backup downloaded — ${totalDocs?.toLocaleString()} records.` });
+        await recordHistory(savedName, totalDocs, type || "manual");
+      }
     } catch (err) {
       setExportMsg({ type: "error", text: "Save failed: " + err.message });
     }
@@ -737,11 +753,20 @@ export default function BackupView({ uid }) {
     if (!file) return;
     e.target.value = "";
 
-    // Encrypted .novexa — ask for password first
+    // Encrypted .novexa — try default key first, then ask password
     if (isEncryptedFile(file.name)) {
       const reader = new FileReader();
-      reader.onload = (ev) => {
-        pwRestoreRef.current = { rawBuffer: ev.target.result, fileName: file.name };
+      reader.onload = async (ev) => {
+        const rawBuffer = ev.target.result;
+        // Try silent default-key decrypt first
+        try {
+          const json   = await decryptFile(rawBuffer, NOVEXA_DEFAULT_KEY);
+          const parsed = JSON.parse(json);
+          processBackupFile(parsed, file.name);
+          return;
+        } catch { /* not default-key — ask user password */ }
+        // User-password backup
+        pwRestoreRef.current = { rawBuffer, fileName: file.name };
         setPwInput(""); setPwError(""); setPwShow(false);
         setPwModal("enter");
       };

@@ -482,7 +482,7 @@ function AddonInvoiceModal({ req, onClose }) {
         <div style={{ overflowY: "auto", flex: 1, padding: "20px 24px", display: "flex", flexDirection: "column", gap: 20 }}>
 
           {/* Dates grid */}
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))", gap: 12 }}>
             {[
               { label: "Requested On",  value: fmtDT(ts) },
               { label: "Approved On",   value: req.status === "approved" ? fmtDT(approvedTs) : "—" },
@@ -651,11 +651,12 @@ function PurchaseHistory({ myRequests }) {
 
           return (
             <div key={req.id}
-              className="grid md:grid-cols-[0.9fr_1.4fr_1.2fr_1fr_1fr_1fr_0.8fr] grid-cols-1 items-start gap-2 md:gap-0 px-5 py-4 hover:bg-white/[0.018] transition-colors"
+              className="grid md:grid-cols-[0.9fr_1.4fr_1.2fr_1fr_1fr_1fr_0.8fr] grid-cols-1 items-start gap-2 md:gap-0 px-4 md:px-5 py-4 hover:bg-white/[0.018] transition-colors"
               style={{ borderBottom: i < myRequests.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
 
               {/* Request number */}
               <div className="flex flex-col justify-center">
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5 md:hidden">Request #</p>
                 <p className="text-indigo-400 font-black text-xs font-mono">
                   {req.requestNumber || `#${(req.id || "").slice(-6).toUpperCase()}`}
                 </p>
@@ -669,6 +670,7 @@ function PurchaseHistory({ myRequests }) {
 
               {/* Add-ons summary */}
               <div className="flex flex-col gap-1 min-w-0">
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5 md:hidden">Add-ons</p>
                 {summary.slice(0, 3).map((s, si) => (
                   <p key={si} className="text-gray-300 text-xs truncate">{s}</p>
                 ))}
@@ -679,17 +681,20 @@ function PurchaseHistory({ myRequests }) {
 
               {/* Purchased on */}
               <div className="flex flex-col justify-center">
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5 md:hidden">Purchased On</p>
                 <p className="text-gray-200 text-xs">{fmtDT(ts)}</p>
               </div>
 
               {/* Amount */}
               <div className="flex flex-col justify-center">
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5 md:hidden">Amount</p>
                 <p className="text-amber-300 font-black text-sm">{fmtRs(req.grandTotal)}</p>
                 <p className="text-gray-200 text-[10px] capitalize">{req.paymentMethod || "—"}</p>
               </div>
 
               {/* Expires */}
               <div className="flex flex-col justify-center">
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-0.5 md:hidden">Expires On</p>
                 {req.status === "approved" && expiryDate ? (
                   <>
                     <p className="text-emerald-400 text-xs font-semibold">{fmtDate(expiryDate)}</p>
@@ -707,6 +712,7 @@ function PurchaseHistory({ myRequests }) {
 
               {/* Status */}
               <div className="flex items-start pt-0.5">
+                <p className="text-[10px] text-gray-500 font-bold uppercase tracking-widest mb-1 md:hidden w-full">Status</p>
                 <span className="px-2.5 py-1 rounded-lg text-[10px] font-bold whitespace-nowrap"
                   style={{ background: stMeta.bg, border: `1px solid ${stMeta.border}`, color: stMeta.color }}>
                   {stMeta.label}
@@ -714,7 +720,7 @@ function PurchaseHistory({ myRequests }) {
               </div>
 
               {/* View Invoice button */}
-              <div className="flex items-start justify-end pt-0.5">
+              <div className="flex items-start justify-end md:justify-end pt-0.5">
                 <button onClick={() => setViewInvoice(req)}
                   className="px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:scale-105"
                   style={{ background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc" }}>
@@ -1048,21 +1054,21 @@ export default function AddonsView({ uid, userDoc, user }) {
       <div className="relative z-10 px-4 pt-1 pb-16">
 
         {/* ── Header row ── */}
-        <div className="flex items-center justify-between gap-4 mb-6 flex-wrap" style={{ animation: "fsu 0.5s ease both" }}>
+        <div className="flex items-center justify-between gap-3 mb-6 flex-wrap" style={{ animation: "fsu 0.5s ease both" }}>
           <div className="flex items-center gap-3">
             <div className="w-11 h-11 rounded-2xl flex items-center justify-center text-2xl flex-shrink-0"
               style={{ background: "linear-gradient(135deg,rgba(99,102,241,0.25),rgba(139,92,246,0.15))", border: "1px solid rgba(99,102,241,0.4)", boxShadow: "0 0 24px rgba(99,102,241,0.25)" }}>
               ⚡
             </div>
             <div>
-              <h1 className="text-white font-black text-2xl leading-none">Add-ons</h1>
+              <h1 className="text-white font-black text-xl sm:text-2xl leading-none">Add-ons</h1>
               <p className="text-gray-200 text-sm mt-0.5">Supercharge your plan with extra quota</p>
             </div>
           </div>
           {/* Mobile: show requests button */}
           <button onClick={() => setShowReqPanel(v => !v)}
-            className="lg:hidden flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all"
-            style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+            className="lg:hidden flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all"
+            style={{ background: showReqPanel ? "rgba(99,102,241,0.15)" : "rgba(255,255,255,0.05)", border: showReqPanel ? "1px solid rgba(99,102,241,0.4)" : "1px solid rgba(255,255,255,0.1)", color: showReqPanel ? "#a5b4fc" : "#9ca3af" }}>
             📊 My Status
             {pendingCount > 0 && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-black" style={{ background: "rgba(251,191,36,0.2)", color: "#fbbf24" }}>{pendingCount}</span>}
           </button>
@@ -1072,7 +1078,7 @@ export default function AddonsView({ uid, userDoc, user }) {
         <div className="flex flex-col lg:flex-row gap-6 items-start">
 
           {/* ════ LEFT: Shop flow ════ */}
-          <div className="flex-1 min-w-0" style={{ animation: "fsu 0.45s ease both" }}>
+          <div className="w-full flex-1 min-w-0" style={{ animation: "fsu 0.45s ease both" }}>
 
             {step < 3 && <Steps current={step} />}
 
@@ -1105,7 +1111,7 @@ export default function AddonsView({ uid, userDoc, user }) {
                           </div>
                         )}
                       </div>
-                      <div className="p-3 grid grid-cols-3 sm:grid-cols-5 gap-2">
+                      <div className="p-3 grid grid-cols-3 sm:grid-cols-5 gap-2.5">
                         {cat.packages.map(pkg => (
                           <PkgCard key={pkg.key} pkg={pkg} cat={cat} addonPrices={addonPrices}
                             selected={sel} onSelect={qty => setSelections(p => ({ ...p, [cat.limitKey]: qty }))} />
@@ -1159,7 +1165,7 @@ export default function AddonsView({ uid, userDoc, user }) {
                       </div>
                       <div className="p-4 flex flex-col gap-4">
                         {/* Quick pick buttons */}
-                        <div className="grid grid-cols-5 gap-2">
+                        <div className="grid grid-cols-3 sm:grid-cols-5 gap-2.5">
                           {[1, 2, 3, 5, 10].map(n => {
                             const isBtnSel = userQty === n;
                             return (
@@ -1208,7 +1214,8 @@ export default function AddonsView({ uid, userDoc, user }) {
                 })()}
 
                 {/* Floating checkout bar */}
-                <div className="sticky bottom-4 mt-1">                  <div className="rounded-2xl px-5 py-4 flex items-center gap-4"
+                <div className="sticky bottom-4 mt-1">
+                  <div className="rounded-2xl px-4 sm:px-5 py-4 flex flex-wrap items-center gap-3"
                     style={{ background: "rgba(8,10,20,0.96)", border: hasSelections ? "1px solid rgba(99,102,241,0.45)" : "1px solid rgba(255,255,255,0.06)", backdropFilter: "blur(20px)", boxShadow: hasSelections ? "0 -2px 40px rgba(99,102,241,0.18), 0 8px 32px rgba(0,0,0,0.5)" : "0 8px 32px rgba(0,0,0,0.4)" }}>
                     <div className="flex-1 min-w-0">
                       {!hasSelections ? (
@@ -1224,16 +1231,18 @@ export default function AddonsView({ uid, userDoc, user }) {
                         </>
                       )}
                     </div>
-                    {hasSelections && (
-                      <button onClick={() => setSelections({})}
-                        className="px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:bg-red-500/10"
-                        style={{ color: "#6b7280", border: "1px solid rgba(255,255,255,0.07)" }}>Clear</button>
-                    )}
-                    <button disabled={!hasSelections} onClick={() => setStep(2)}
-                      className="px-6 py-3 rounded-xl font-black text-sm transition-all flex-shrink-0"
-                      style={{ background: hasSelections ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "rgba(255,255,255,0.05)", color: hasSelections ? "#fff" : "#4b5563", boxShadow: hasSelections ? "0 4px 20px rgba(99,102,241,0.5)" : "none", cursor: hasSelections ? "pointer" : "not-allowed" }}>
-                      Proceed to Payment →
-                    </button>
+                    <div className="flex items-center gap-2 flex-shrink-0">
+                      {hasSelections && (
+                        <button onClick={() => setSelections({})}
+                          className="px-3 py-2 rounded-lg text-xs font-semibold transition-all hover:bg-red-500/10"
+                          style={{ color: "#6b7280", border: "1px solid rgba(255,255,255,0.07)" }}>Clear</button>
+                      )}
+                      <button disabled={!hasSelections} onClick={() => setStep(2)}
+                        className="px-5 sm:px-6 py-3 rounded-xl font-black text-sm transition-all"
+                        style={{ background: hasSelections ? "linear-gradient(135deg,#6366f1,#8b5cf6)" : "rgba(255,255,255,0.05)", color: hasSelections ? "#fff" : "#4b5563", boxShadow: hasSelections ? "0 4px 20px rgba(99,102,241,0.5)" : "none", cursor: hasSelections ? "pointer" : "not-allowed" }}>
+                        Proceed →
+                      </button>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1294,7 +1303,7 @@ export default function AddonsView({ uid, userDoc, user }) {
                   <p className="text-xs font-bold uppercase tracking-widest mb-4" style={{ color: selectedAccount.color }}>
                     {selectedAccount.emoji} {selectedAccount.name} — Payment Details
                   </p>
-                  <div className="grid grid-cols-2 gap-4">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     {[
                       { label: "Account Number", value: selectedAccount.accountNo, mono: true },
                       { label: "Account Name",   value: selectedAccount.accountName },
@@ -1385,11 +1394,11 @@ export default function AddonsView({ uid, userDoc, user }) {
 
           {/* ════ RIGHT: Status + Charts ════ */}
           <div className="w-full lg:w-80 xl:w-96 flex-shrink-0" style={{ animation: "fsu 0.55s ease both" }}>
-            {/* Mobile: collapsible */}
+            {/* Mobile: collapsible panel */}
             <div className={`${showReqPanel ? "block" : "hidden"} lg:block`}>
               <div className="mb-3 flex items-center justify-between">
                 <p className="text-gray-200 text-xs font-bold uppercase tracking-widest">My Add-on Status</p>
-                <button onClick={() => setShowReqPanel(false)} className="lg:hidden text-gray-200 hover:text-gray-200 text-xs">✕</button>
+                <button onClick={() => setShowReqPanel(false)} className="lg:hidden text-gray-200 hover:text-white text-xs px-2 py-1 rounded-lg transition-colors" style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)" }}>✕ Close</button>
               </div>
               {reqLoading ? (
                 <div className="flex items-center justify-center py-12">
@@ -1398,15 +1407,13 @@ export default function AddonsView({ uid, userDoc, user }) {
               ) : (
                 <RightPanel userDoc={userDoc} myRequests={myRequests} addonPrices={addonPrices} />
               )}
-
-              {/* Recent requests list — replaced by full history below */}
             </div>
           </div>
         </div>
 
         {/* ════ PURCHASE HISTORY — full width below main layout ════ */}
         {!reqLoading && myRequests.length > 0 && (
-          <div className="px-6 pb-10" style={{ animation: "fsu 0.65s ease both" }}>
+          <div className="mt-6 pb-10" style={{ animation: "fsu 0.65s ease both" }}>
             <PurchaseHistory myRequests={myRequests} />
           </div>
         )}

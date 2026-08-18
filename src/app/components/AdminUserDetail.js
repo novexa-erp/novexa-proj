@@ -1,6 +1,6 @@
 "use client";
 import { useState, useEffect, useCallback, useRef } from "react";
-import { encryptJson, decryptFile, isEncryptedFile, encryptedFileName } from "@/lib/backupCrypto";
+import { encryptJson, decryptFile, isEncryptedFile, encryptedFileName, NOVEXA_DEFAULT_KEY } from "@/lib/backupCrypto";
 
 /* ══════════════════════════════════════════════════════════════════════
    Helpers
@@ -2295,7 +2295,7 @@ function AddonsTab({ uid, user, getToken, onToast }) {
 /* ══════════════════════════════════════════════════════════════════════
    BACKUP TAB — Admin can export / restore any user's data
 ══════════════════════════════════════════════════════════════════════ */
-function BackupTab({ uid: targetUid, userName }) {
+function BackupTab({ uid: targetUid, userName, getToken }) {
   const fileInputRef = useRef(null);
   // export
   const [exporting,   setExporting]   = useState(false);
@@ -2737,8 +2737,17 @@ function BackupTab({ uid: targetUid, userName }) {
 
     if (isEncryptedFile(file.name)) {
       const reader = new FileReader();
-      reader.onload = (ev) => {
-        pwRestoreRef.current = { rawBuffer: ev.target.result, fileName: file.name };
+      reader.onload = async (ev) => {
+        const rawBuffer = ev.target.result;
+        // Try silent default-key decrypt first
+        try {
+          const json   = await decryptFile(rawBuffer, NOVEXA_DEFAULT_KEY);
+          const parsed = JSON.parse(json);
+          processBackupFile(parsed, file.name);
+          return;
+        } catch { /* not default-key — ask user password */ }
+        // User-password backup
+        pwRestoreRef.current = { rawBuffer, fileName: file.name };
         setPwInput(""); setPwError(""); setPwShow(false);
         setPwModal("enter");
       };
@@ -2861,7 +2870,25 @@ function BackupTab({ uid: targetUid, userName }) {
       done++;
       setRestoreProg(100);
       const modeLabel = mode === "replace" ? "Full replace" : "Smart merge";
-      setRestoreMsg({ type:"success", text:`✅ ${modeLabel} complete! ${fileInfo?.docCount?.toLocaleString()} records restored to ${userName || targetUid}.` });
+
+      // ── Auto re-enable Firebase Auth if user was disabled (deleted) ──────
+      let reEnableNote = "";
+      try {
+        const token = await getToken();
+        const reRes = await fetch("/api/admin/re-enable-user", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+          body:    JSON.stringify({ uid: targetUid }),
+        });
+        const reData = await reRes.json();
+        if (reData.success) {
+          reEnableNote = " | ✅ Auth re-enabled — user can now log in.";
+        }
+      } catch {
+        reEnableNote = " | ⚠️ Data restored but Auth re-enable failed — manually enable from Firebase Console.";
+      }
+
+      setRestoreMsg({ type:"success", text:`✅ ${modeLabel} complete! ${fileInfo?.docCount?.toLocaleString()} records restored to ${userName || targetUid}.${reEnableNote}` });
     } catch (err) { setRestoreMsg({ type:"error", text:"Restore failed: " + err.message }); }
     setRestoring(false); setRestoreProg(0); setRestoreLabel("");
     setPendingFile(null); setFileInfo(null);
@@ -3650,7 +3677,7 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
                 {activeTab==="tickets"   && <TicketsTab uid={uid} getToken={getToken} onToast={onToast} />}
                 {activeTab==="trash"     && <TrashTab uid={uid} data={data} getToken={getToken} onToast={onToast} onRefresh={loadData} />}
                 {activeTab==="activity"  && <ActivityTab activityLogs={data.activityLogs} />}
-                {activeTab==="backup"    && <BackupTab uid={uid} userName={data.user?.name} />}
+                {activeTab==="backup"    && <BackupTab uid={uid} userName={data.user?.name} getToken={getToken} />}
               </>
             )}
           </main>

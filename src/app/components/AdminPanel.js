@@ -10,7 +10,7 @@ import AdminUserDetail from "./AdminUserDetail";
 import SupportInbox from "./SupportInbox";
 import PackageManager from "./PackageManager";
 import AdminAddonRequests from "./AdminAddonRequests";
-import { encryptJson, encryptedFileName, decryptFile, isEncryptedFile } from "@/lib/backupCrypto";
+import { encryptJson, encryptedFileName, decryptFile, isEncryptedFile, NOVEXA_DEFAULT_KEY } from "@/lib/backupCrypto";
 
 const ADMIN_UID = process.env.NEXT_PUBLIC_ADMIN_UID;
 
@@ -129,7 +129,7 @@ function ConfirmDialog({ title, message, confirmLabel, confirmColor, onConfirm, 
         style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
         <p className="text-4xl">⚠️</p>
         <h3 className="text-white font-bold text-lg">{title}</h3>
-        <p className="text-gray-400 text-sm">{message}</p>
+        <p className="text-gray-300 text-sm">{message}</p>
         <div className="flex gap-3 mt-1">
           <button onClick={onCancel}
             className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/10"
@@ -551,10 +551,10 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
           style={{ borderBottom: "1px solid rgba(255,255,255,0.07)", background: "linear-gradient(135deg,rgba(37,99,235,0.08),rgba(245,158,11,0.04))" }}>
           <div>
             <h2 className="text-white font-black text-xl">{isEdit ? "Edit User" : "Register New User"}</h2>
-            <p className="text-gray-500 text-xs mt-0.5">{isEdit ? "Update user details and subscription" : "Create a new Novexa ERP account"}</p>
+            <p className="text-gray-300 text-xs mt-0.5">{isEdit ? "Update user details and subscription" : "Create a new Novexa ERP account"}</p>
           </div>
           <button onClick={onClose}
-            className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 transition-all">✕</button>
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 transition-all">✕</button>
         </div>
 
         <form onSubmit={e => { e.preventDefault(); onSave(form); }} className="p-6 flex flex-col gap-4">
@@ -619,7 +619,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
           {/* ── Subscription Period ── */}
           <div className="rounded-xl p-4" style={{ background: "rgba(37,99,235,0.05)", border: "1px solid rgba(37,99,235,0.15)" }}>
             <p className="text-blue-400 text-xs font-bold uppercase tracking-widest mb-1">📅 Subscription Period</p>
-            <p className="text-gray-600 text-[10px] mb-3">
+            <p className="text-gray-300 text-[10px] mb-3">
               Start date change karein — end date automatically {form.billingPeriod === "yearly" ? "1 saal" : "1 mahina"} baad set ho jaayegi. Aap manually bhi change kar sakte hain.
             </p>
             <div className="grid grid-cols-2 gap-4 mb-3">
@@ -630,7 +630,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
             <div>
               <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 6 }}>
                 ⏰ Freeze Time
-                <span className="text-gray-600 normal-case font-normal tracking-normal" style={{ fontSize: 10 }}>(optional — default 11:59 PM)</span>
+                <span className="text-gray-300 normal-case font-normal tracking-normal" style={{ fontSize: 10 }}>(optional — default 11:59 PM)</span>
               </label>
               <SInput type="time" value={form.activeToTime} onChange={set("activeToTime")} />
               {form.activeToTime && form.activeTo && (
@@ -714,7 +714,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                 +
               </button>
 
-              <span className="text-gray-400 text-sm font-medium flex-shrink-0">
+              <span className="text-gray-300 text-sm font-medium flex-shrink-0">
                 {Number(form.maxDevices) === 1 ? "Device" : "Devices"}
               </span>
             </div>
@@ -734,7 +734,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                 </button>
               ))}
             </div>
-            <p className="text-gray-600 text-[10px] mt-2">Aap koi bhi number set kar sakte hain (1–100)</p>
+            <p className="text-gray-300 text-[10px] mt-2">Aap koi bhi number set kar sakte hain (1–100)</p>
           </div>
 
           {/* ── Billing Period ── */}
@@ -880,7 +880,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                   <span className="text-base">🔄</span>
                   <div className="flex-1">
                     <p className="text-emerald-400 text-xs font-black uppercase tracking-widest">Subscription Renew Karein</p>
-                    <p className="text-gray-500 text-[10px] mt-0.5">
+                    <p className="text-gray-300 text-[10px] mt-0.5">
                       Current end date ke baad se automatically next period shuru hoga
                     </p>
                   </div>
@@ -909,20 +909,20 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                       style={{ background: renewDone ? "rgba(52,211,153,0.1)" : "rgba(37,99,235,0.08)", border: `1px solid ${renewDone ? "rgba(52,211,153,0.3)" : "rgba(37,99,235,0.2)"}` }}>
                       <span className="text-sm">{renewDone ? "✅" : "📅"}</span>
                       <div className="flex-1">
-                        <p className="text-gray-500 text-[10px] uppercase tracking-widest font-bold mb-1">
+                        <p className="text-gray-300 text-[10px] uppercase tracking-widest font-bold mb-1">
                           {renewDone ? "Renewed — Updated End Date" : "New End Date (Preview)"}
                         </p>
                         {/* Start of new period — display only */}
                         <div className="flex items-center gap-2 text-xs">
-                          <span className="text-gray-500">New period starts:</span>
+                          <span className="text-gray-300">New period starts:</span>
                           <span className="font-semibold" style={{ color: "#93c5fd" }}>
                             {displayNewStart ? new Date(displayNewStart + "T00:00:00").toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
                           </span>
                         </div>
                         {/* End date extended */}
                         <div className="flex items-center gap-2 text-xs mt-1">
-                          <span className="text-gray-500">End:</span>
-                          <span className="text-gray-500 line-through text-[11px]">
+                          <span className="text-gray-300">End:</span>
+                          <span className="text-gray-300 line-through text-[11px]">
                             {new Date(currentEnd + "T00:00:00").toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}
                           </span>
                           <span className="text-xs">→</span>
@@ -930,7 +930,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                             {new Date(newEnd + "T00:00:00").toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}
                           </span>
                         </div>
-                        <p className="text-gray-600 text-[10px] mt-1.5">
+                        <p className="text-gray-300 text-[10px] mt-1.5">
                           +{period === "yearly" ? "1 year" : "1 month"} from current end date
                         </p>
                       </div>
@@ -940,7 +940,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                   {/* Payment method for renewal */}
                   {!renewDone && (
                     <div>
-                      <p className="text-gray-500 text-[10px] uppercase tracking-widest font-bold mb-2">💳 Renewal Payment Method</p>
+                      <p className="text-gray-300 text-[10px] uppercase tracking-widest font-bold mb-2">💳 Renewal Payment Method</p>
                       <div className="grid grid-cols-3 gap-2">
                         {[
                           { id: "online", label: "🌐 Online", desc: "Card / Bank" },
@@ -997,7 +997,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                 <span className="text-xl flex-shrink-0">⚡</span>
                 <div className="flex-1 min-w-0">
                   <p className="text-amber-400 text-xs font-bold">Extra Add-on Quota</p>
-                  <p className="text-gray-500 text-[10px] mt-0.5">
+                  <p className="text-gray-300 text-[10px] mt-0.5">
                     {hasAnyExtra
                       ? `Active — ${dLeft !== null && dLeft > 0 ? `${dLeft}d left` : dLeft !== null && dLeft <= 0 ? "Expired" : "Set"}`
                       : "No active add-ons"}
@@ -1042,7 +1042,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
               style={{ background: "linear-gradient(135deg,rgba(16,185,129,0.1),rgba(5,150,105,0.05))" }}>
               <div className="text-4xl mb-3">🔄</div>
               <h3 className="text-white font-black text-lg">Confirm Renewal</h3>
-              <p className="text-gray-400 text-sm mt-1">
+              <p className="text-gray-300 text-sm mt-1">
                 Are you sure you want to renew <span className="text-white font-semibold">{initial?.name}</span>&apos;s subscription?
               </p>
             </div>
@@ -1056,7 +1056,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
               ].map(r => (
                 <div key={r.label} className="flex items-center justify-between py-2"
                   style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                  <span className="text-gray-500 text-xs uppercase tracking-widest font-bold">{r.label}</span>
+                  <span className="text-gray-300 text-xs uppercase tracking-widest font-bold">{r.label}</span>
                   <span className="text-white text-xs font-semibold text-right max-w-[55%]">{r.value}</span>
                 </div>
               ))}
@@ -1126,14 +1126,14 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
           </div>
           <div className="text-center">
             <p className="text-white font-black text-base">Processing Renewal...</p>
-            <p className="text-gray-500 text-sm mt-1">Updating subscription &amp; sending email</p>
+            <p className="text-gray-300 text-sm mt-1">Updating subscription &amp; sending email</p>
           </div>
           <div className="flex flex-col gap-1.5 w-full">
             {["Saving new subscription dates", "Updating payment record", "Sending confirmation email"].map((step, i) => (
               <div key={i} className="flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full animate-pulse flex-shrink-0"
                   style={{ background: "#10B981", animationDelay: `${i * 0.2}s` }} />
-                <span className="text-gray-400 text-xs">{step}</span>
+                <span className="text-gray-300 text-xs">{step}</span>
               </div>
             ))}
           </div>
@@ -1154,7 +1154,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
               ✅
             </div>
             <h3 className="text-white font-black text-xl">Renewed Successfully!</h3>
-            <p className="text-gray-400 text-sm mt-1.5">
+            <p className="text-gray-300 text-sm mt-1.5">
               <span className="text-white font-semibold">{initial?.name}</span>&apos;s subscription has been renewed and a confirmation email has been sent.
             </p>
           </div>
@@ -1168,7 +1168,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
             ].map(r => (
               <div key={r.label} className="flex items-start justify-between gap-3 py-1.5"
                 style={{ borderBottom: "1px solid rgba(16,185,129,0.1)" }}>
-                <span className="text-gray-500 text-[11px] uppercase tracking-widest font-bold flex-shrink-0">{r.label}</span>
+                <span className="text-gray-300 text-[11px] uppercase tracking-widest font-bold flex-shrink-0">{r.label}</span>
                 <span className="text-emerald-300 text-xs font-semibold text-right">{r.value}</span>
               </div>
             ))}
@@ -1200,7 +1200,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
               style={{ background: "linear-gradient(135deg,rgba(245,158,11,0.1),rgba(217,119,6,0.05))" }}>
               <div className="text-4xl mb-3">⚡</div>
               <h3 className="text-white font-black text-lg">Confirm Add-on Purchase</h3>
-              <p className="text-gray-400 text-sm mt-1">
+              <p className="text-gray-300 text-sm mt-1">
                 <span className="text-white font-semibold">{initial?.name}</span> ke liye extra quota activate karein?
               </p>
             </div>
@@ -1210,12 +1210,12 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                   style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
                   <span className="text-sm">{item.icon}</span>
                   <span className="text-gray-300 text-xs flex-1">{item.label}</span>
-                  <span className="text-gray-500 text-xs mr-1">×{item.qty}</span>
+                  <span className="text-gray-300 text-xs mr-1">×{item.qty}</span>
                   <span className="text-amber-300 text-xs font-bold">Rs. {item.total.toLocaleString()}</span>
                 </div>
               ))}
               <div className="flex items-center justify-between pt-2 pb-1">
-                <span className="text-gray-400 text-xs font-bold uppercase tracking-widest">Total</span>
+                <span className="text-gray-300 text-xs font-bold uppercase tracking-widest">Total</span>
                 <span className="text-amber-300 font-black text-base">Rs. {cTotal.toLocaleString()}</span>
               </div>
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg mt-1"
@@ -1224,12 +1224,12 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                 <p className="text-amber-400 text-[11px] font-medium">Valid: {purchStr} → {expiryStr} (1 month)</p>
               </div>
               <div className="flex items-center gap-2 py-1.5 mt-1" style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
-                <span className="text-gray-500 text-xs uppercase tracking-widest font-bold">Payment</span>
+                <span className="text-gray-300 text-xs uppercase tracking-widest font-bold">Payment</span>
                 <span className="text-white text-xs font-semibold ml-auto">{addonPayMethod === "online" ? "🌐 Online" : addonPayMethod === "cheque" ? "🧾 Cheque" : "💵 Cash"}</span>
               </div>
               {initial?.email && (
                 <div className="flex items-center gap-2 py-1.5">
-                  <span className="text-gray-500 text-xs uppercase tracking-widest font-bold">Invoice Email</span>
+                  <span className="text-gray-300 text-xs uppercase tracking-widest font-bold">Invoice Email</span>
                   <span className="text-blue-400 text-xs font-semibold ml-auto truncate max-w-[55%]">✉️ {initial.email}</span>
                 </div>
               )}
@@ -1265,14 +1265,14 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
           </div>
           <div className="text-center">
             <p className="text-white font-black text-base">Activating Add-on...</p>
-            <p className="text-gray-500 text-sm mt-1">Saving limits &amp; sending invoice email</p>
+            <p className="text-gray-300 text-sm mt-1">Saving limits &amp; sending invoice email</p>
           </div>
           <div className="flex flex-col gap-1.5 w-full">
             {["Saving extra quota", "Setting 1-month expiry", "Sending invoice email"].map((step, i) => (
               <div key={i} className="flex items-center gap-2">
                 <div className="w-1.5 h-1.5 rounded-full animate-pulse flex-shrink-0"
                   style={{ background: "#F59E0B", animationDelay: `${i * 0.2}s` }} />
-                <span className="text-gray-400 text-xs">{step}</span>
+                <span className="text-gray-300 text-xs">{step}</span>
               </div>
             ))}
           </div>
@@ -1291,7 +1291,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
             <div className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-4"
               style={{ background: "rgba(245,158,11,0.15)", border: "2px solid rgba(245,158,11,0.4)" }}>✅</div>
             <h3 className="text-white font-black text-xl">Add-on Activated!</h3>
-            <p className="text-gray-400 text-sm mt-1.5">
+            <p className="text-gray-300 text-sm mt-1.5">
               <span className="text-white font-semibold">{initial?.name}</span>&apos;s extra quota is now active and an invoice has been sent.
             </p>
           </div>
@@ -1300,22 +1300,22 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
             {addonSuccess.items?.map(item => (
               <div key={item.key} className="flex items-center justify-between py-1.5"
                 style={{ borderBottom: "1px solid rgba(245,158,11,0.1)" }}>
-                <span className="text-gray-400 text-[11px]">{item.icon} {item.label} ×{item.qty}</span>
+                <span className="text-gray-300 text-[11px]">{item.icon} {item.label} ×{item.qty}</span>
                 <span className="text-amber-300 text-xs font-semibold">Rs. {item.total.toLocaleString()}</span>
               </div>
             ))}
             <div className="flex items-center justify-between py-1.5" style={{ borderBottom: "1px solid rgba(245,158,11,0.1)" }}>
-              <span className="text-gray-500 text-[11px] uppercase tracking-widest font-bold">Total Paid</span>
+              <span className="text-gray-300 text-[11px] uppercase tracking-widest font-bold">Total Paid</span>
               <span className="text-amber-300 font-black">Rs. {addonSuccess.grandTotal?.toLocaleString()}</span>
             </div>
             {addonSuccess.expiresAt && (
               <div className="flex items-center justify-between py-1.5" style={{ borderBottom: "1px solid rgba(245,158,11,0.1)" }}>
-                <span className="text-gray-500 text-[11px] uppercase tracking-widest font-bold">Expires On</span>
+                <span className="text-gray-300 text-[11px] uppercase tracking-widest font-bold">Expires On</span>
                 <span className="text-amber-300 text-xs font-semibold">⏰ {new Date(addonSuccess.expiresAt).toLocaleDateString("en-PK", { day: "2-digit", month: "long", year: "numeric" })}</span>
               </div>
             )}
             <div className="flex items-center justify-between py-1.5">
-              <span className="text-gray-500 text-[11px] uppercase tracking-widest font-bold">Invoice Sent</span>
+              <span className="text-gray-300 text-[11px] uppercase tracking-widest font-bold">Invoice Sent</span>
               <span className="text-blue-400 text-xs font-semibold">✉️ {initial?.email}</span>
             </div>
           </div>
@@ -1352,11 +1352,11 @@ function UserDetailModal({ detailUser, detailLoading, onClose, fmtDate, daysLeft
             </div>
             <div>
               <h2 className="text-white font-black text-lg leading-none">{detailUser?.user?.name || "Loading..."}</h2>
-              <p className="text-gray-500 text-xs mt-0.5">{detailUser?.user?.email}</p>
+              <p className="text-gray-300 text-xs mt-0.5">{detailUser?.user?.email}</p>
             </div>
           </div>
           <button onClick={onClose}
-            className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 transition-all">✕</button>
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 transition-all">✕</button>
         </div>
 
         {detailLoading ? (
@@ -1366,7 +1366,7 @@ function UserDetailModal({ detailUser, detailLoading, onClose, fmtDate, daysLeft
         ) : detailUser && (
           <div className="p-6 flex flex-col gap-5">
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-3">👤 Profile</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-300 mb-3">👤 Profile</p>
               <div className="grid grid-cols-2 gap-3">
                 {[
                   { label: "Phone",    value: detailUser.user.phone   || "—" },
@@ -1377,14 +1377,14 @@ function UserDetailModal({ detailUser, detailLoading, onClose, fmtDate, daysLeft
                 ].map(r => (
                   <div key={r.label} className="rounded-xl px-4 py-3"
                     style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)" }}>
-                    <p className="text-gray-600 text-[10px] uppercase tracking-widest font-bold mb-1">{r.label}</p>
+                    <p className="text-gray-300 text-[10px] uppercase tracking-widest font-bold mb-1">{r.label}</p>
                     <p className="text-white text-sm font-medium">{r.value}</p>
                   </div>
                 ))}
               </div>
             </div>
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-3">📅 Subscription</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-300 mb-3">📅 Subscription</p>
               <div className="grid grid-cols-3 gap-3">
                 {[
                   { label:"Active From", value: fmtDate(detailUser.user.activeFrom) },
@@ -1395,14 +1395,14 @@ function UserDetailModal({ detailUser, detailLoading, onClose, fmtDate, daysLeft
                 ].map(r => (
                   <div key={r.label} className="rounded-xl px-4 py-3"
                     style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)" }}>
-                    <p className="text-gray-600 text-[10px] uppercase tracking-widest font-bold mb-1">{r.label}</p>
+                    <p className="text-gray-300 text-[10px] uppercase tracking-widest font-bold mb-1">{r.label}</p>
                     <p className="text-white text-sm font-medium">{r.value}</p>
                   </div>
                 ))}
               </div>
             </div>
             <div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-3">⚡ Activity</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-300 mb-3">⚡ Activity</p>
               <div className="grid grid-cols-2 gap-3 mb-4">
                 {[
                   { label:"Last Login",   value: detailUser.user.lastLogin    ? new Date(detailUser.user.lastLogin).toLocaleString("en-PK")    : detailUser.authRecord?.lastSignInTime || "Never" },
@@ -1413,14 +1413,14 @@ function UserDetailModal({ detailUser, detailLoading, onClose, fmtDate, daysLeft
                 ].map(r => (
                   <div key={r.label} className="rounded-xl px-4 py-3"
                     style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.06)" }}>
-                    <p className="text-gray-600 text-[10px] uppercase tracking-widest font-bold mb-1">{r.label}</p>
+                    <p className="text-gray-300 text-[10px] uppercase tracking-widest font-bold mb-1">{r.label}</p>
                     <p className="text-white text-sm font-medium truncate">{r.value}</p>
                   </div>
                 ))}
               </div>
-              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-2">🕐 Login History (last 20)</p>
+              <p className="text-[10px] font-bold uppercase tracking-widest text-gray-300 mb-2">🕐 Login History (last 20)</p>
               {detailUser.activityLogs.length === 0 ? (
-                <p className="text-gray-600 text-xs px-1">No login history yet.</p>
+                <p className="text-gray-300 text-xs px-1">No login history yet.</p>
               ) : (
                 <div className="rounded-xl overflow-hidden" style={{ border:"1px solid rgba(255,255,255,0.06)" }}>
                   <div className="grid text-[10px] font-bold uppercase tracking-widest px-4 py-2"
@@ -1430,10 +1430,10 @@ function UserDetailModal({ detailUser, detailLoading, onClose, fmtDate, daysLeft
                   {detailUser.activityLogs.map((log, i) => (
                     <div key={log.id} className="grid px-4 py-2.5 text-xs hover:bg-white/[0.02] transition-colors"
                       style={{ gridTemplateColumns:"2fr 1fr 1fr 1fr", borderBottom: i<detailUser.activityLogs.length-1?"1px solid rgba(255,255,255,0.04)":"none" }}>
-                      <span className="text-gray-400">{new Date(log.timestamp).toLocaleString("en-PK")}</span>
-                      <span className="text-gray-500 font-mono text-[10px]">{log.ip}</span>
-                      <span className="text-gray-400">{log.browser}</span>
-                      <span className="text-gray-400">{log.device}</span>
+                      <span className="text-gray-300">{new Date(log.timestamp).toLocaleString("en-PK")}</span>
+                      <span className="text-gray-300 font-mono text-[10px]">{log.ip}</span>
+                      <span className="text-gray-300">{log.browser}</span>
+                      <span className="text-gray-300">{log.device}</span>
                     </div>
                   ))}
                 </div>
@@ -1622,7 +1622,9 @@ function AdminSystemBackup({ getToken, users }) {
 
   // ── Core write helpers ─────────────────────────────────────────────────────
   async function writeToDirHandle(dh, json, fileName) {
-    const fh = await dh.getFileHandle(fileName, { create: true });
+    // Ensure .json extension is always present
+    const safeName = fileName.endsWith(".json") ? fileName : fileName + ".json";
+    const fh = await dh.getFileHandle(safeName, { create: true });
     const w  = await fh.createWritable();
     await w.write(json); await w.close();
   }
@@ -1665,15 +1667,26 @@ function AdminSystemBackup({ getToken, users }) {
 
   async function handleAskSkip() {
     setPwModal("idle");
-    const payload = pwPendingRef.current;
-    if (!payload) return;
+    const { dh, json, fileName, totalDocs, userCount, type } = pwPendingRef.current || {};
+    if (!json) return;
     setPhase("running");
     try {
-      await finalizePlainSave(payload);
+      // Always encrypt with default hidden key — no password asked on restore
+      const savedName = dh
+        ? await writeToDirEncrypted(dh, json, fileName, NOVEXA_DEFAULT_KEY)
+        : encryptedFileName(fileName);
+      if (!dh) {
+        const buffer = await encryptJson(json, NOVEXA_DEFAULT_KEY);
+        downloadBlob(buffer, savedName, "application/octet-stream");
+      }
+      setResultMsg({ type:"success", text:`✅ Backup saved as "${savedName}" — ${totalDocs?.toLocaleString()} total docs, ${userCount} users.` });
+      setProgress(100);
+      addLog(`\n📦 Backup complete (auto-encrypted): ${totalDocs?.toLocaleString()} docs across ${userCount} users.`);
+      await addHistoryEntry(savedName, userCount, totalDocs, type);
     } catch (err) {
       setResultMsg({ type:"error", text:"Save failed: " + err.message });
-      setPhase("done");
     }
+    setPhase("done"); setStatusMsg("");
     pwPendingRef.current = null;
   }
 
@@ -1987,8 +2000,17 @@ function AdminSystemBackup({ getToken, users }) {
     e.target.value = "";
     if (isEncryptedFile(file.name)) {
       const reader = new FileReader();
-      reader.onload = (ev) => {
-        pwRestoreRef.current = { rawBuffer: ev.target.result, fileName: file.name };
+      reader.onload = async (ev) => {
+        const rawBuffer = ev.target.result;
+        // First try default key (no-password backups) — silent auto-decrypt
+        try {
+          const json   = await decryptFile(rawBuffer, NOVEXA_DEFAULT_KEY);
+          const parsed = JSON.parse(json);
+          processAdminBackupFile(parsed, file.name);
+          return;
+        } catch { /* not a default-key file — fall through to ask password */ }
+        // User-password backup — ask password
+        pwRestoreRef.current = { rawBuffer, fileName: file.name };
         setPwInput(""); setPwError(""); setPwShow(false);
         setPwModal("enter");
       };
@@ -2204,12 +2226,12 @@ function AdminSystemBackup({ getToken, users }) {
                 <span className="text-2xl">🔐</span>
                 <div>
                   <p className="text-white font-black text-sm">Protect this system backup?</p>
-                  <p className="text-gray-500 text-xs">Encrypt with a password before saving</p>
+                  <p className="text-gray-300 text-xs">Encrypt with a password before saving</p>
                 </div>
                 <button onClick={() => { setPwModal("idle"); pwPendingRef.current = null; }}
-                  className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+                  className="ml-auto text-gray-300 hover:text-gray-300 text-lg">✕</button>
               </div>
-              <div className="rounded-xl px-4 py-3 text-xs leading-relaxed text-gray-400"
+              <div className="rounded-xl px-4 py-3 text-xs leading-relaxed text-gray-300"
                 style={{ background:"rgba(99,102,241,0.06)", border:"1px solid rgba(99,102,241,0.18)" }}>
                 🔒 <span className="text-indigo-300 font-semibold">Encrypted (.novexa)</span> — unlock via user backup restore tab.<br />
                 📄 <span className="text-gray-300 font-semibold">Unencrypted (.json)</span> — plain readable JSON.
@@ -2242,11 +2264,11 @@ function AdminSystemBackup({ getToken, users }) {
                 <span className="text-2xl">🔑</span>
                 <div>
                   <p className="text-white font-black text-sm">Set Backup Password</p>
-                  <p className="text-gray-500 text-xs">AES-256 encryption — remember this password!</p>
+                  <p className="text-gray-300 text-xs">AES-256 encryption — remember this password!</p>
                 </div>
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Password</label>
+                <label className="text-[10px] text-gray-300 uppercase tracking-widest font-bold">Password</label>
                 <div className="relative">
                   <input type={pwShow ? "text" : "password"} value={pwInput}
                     onChange={e => { setPwInput(e.target.value); setPwError(""); }}
@@ -2257,13 +2279,13 @@ function AdminSystemBackup({ getToken, users }) {
                     autoFocus
                   />
                   <button type="button" onClick={() => setPwShow(v => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs">
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-300 text-xs">
                     {pwShow ? "Hide" : "Show"}
                   </button>
                 </div>
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Confirm Password</label>
+                <label className="text-[10px] text-gray-300 uppercase tracking-widest font-bold">Confirm Password</label>
                 <input type={pwShow ? "text" : "password"} value={pwConfirm}
                   onChange={e => { setPwConfirm(e.target.value); setPwError(""); }}
                   onKeyDown={e => e.key === "Enter" && handlePwSet()}
@@ -2300,15 +2322,15 @@ function AdminSystemBackup({ getToken, users }) {
                 <span className="text-2xl">⏱️</span>
                 <div>
                   <p className="text-white font-black text-sm">Auto-Backup Destination</p>
-                  <p className="text-gray-500 text-xs">Where should auto-backups be saved?</p>
+                  <p className="text-gray-300 text-xs">Where should auto-backups be saved?</p>
                 </div>
-                <button onClick={() => setAutoDestModal(false)} className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+                <button onClick={() => setAutoDestModal(false)} className="ml-auto text-gray-300 hover:text-gray-300 text-lg">✕</button>
               </div>
               <div className="px-4 py-3 rounded-xl flex items-center gap-3"
                 style={{ background:"rgba(245,158,11,0.06)", border:"1px solid rgba(245,158,11,0.2)" }}>
                 <span className="text-xl">🗂️</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[10px] text-gray-500 uppercase font-bold mb-0.5">Current Folder</p>
+                  <p className="text-[10px] text-gray-300 uppercase font-bold mb-0.5">Current Folder</p>
                   <p className="text-amber-300 font-bold text-sm truncate">{folderName}</p>
                 </div>
               </div>
@@ -2341,9 +2363,9 @@ function AdminSystemBackup({ getToken, users }) {
                 <span className="text-2xl">📁</span>
                 <div>
                   <p className="text-white font-black text-sm">Where to save the backup?</p>
-                  <p className="text-gray-500 text-xs">A folder is already saved</p>
+                  <p className="text-gray-300 text-xs">A folder is already saved</p>
                 </div>
-                <button onClick={() => setFolderModal(false)} className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+                <button onClick={() => setFolderModal(false)} className="ml-auto text-gray-300 hover:text-gray-300 text-lg">✕</button>
               </div>
               <div className="px-4 py-3 rounded-xl flex items-center gap-3"
                 style={{ background:"rgba(245,158,11,0.06)", border:"1px solid rgba(245,158,11,0.2)" }}>
@@ -2380,13 +2402,13 @@ function AdminSystemBackup({ getToken, users }) {
                   style={{ background:"rgba(99,102,241,0.12)", border:"1px solid rgba(99,102,241,0.3)" }}>🔓</div>
                 <div className="flex-1 min-w-0">
                   <p className="text-white font-black text-sm">Enter Backup Password</p>
-                  <p className="text-gray-500 text-xs truncate">{pwRestoreRef.current?.fileName}</p>
+                  <p className="text-gray-300 text-xs truncate">{pwRestoreRef.current?.fileName}</p>
                 </div>
                 <button onClick={() => { setPwModal("idle"); pwRestoreRef.current = null; }}
-                  className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+                  className="ml-auto text-gray-300 hover:text-gray-300 text-lg">✕</button>
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Password</label>
+                <label className="text-[10px] text-gray-300 uppercase tracking-widest font-bold">Password</label>
                 <div className="relative">
                   <input type={pwShow ? "text" : "password"} value={pwInput}
                     onChange={e => { setPwInput(e.target.value); setPwError(""); }}
@@ -2397,7 +2419,7 @@ function AdminSystemBackup({ getToken, users }) {
                     autoFocus
                   />
                   <button type="button" onClick={() => setPwShow(v => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs">
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-300 text-xs">
                     {pwShow ? "Hide" : "Show"}
                   </button>
                 </div>
@@ -2424,16 +2446,16 @@ function AdminSystemBackup({ getToken, users }) {
                   style={{ background:"rgba(59,130,246,0.12)", border:"1px solid rgba(59,130,246,0.3)" }}>♻️</div>
                 <div>
                   <p className="text-white font-black text-sm">Choose Restore Mode</p>
-                  <p className="text-gray-500 text-xs">How would you like to restore?</p>
+                  <p className="text-gray-300 text-xs">How would you like to restore?</p>
                 </div>
-                <button onClick={closeRestoreModal} className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+                <button onClick={closeRestoreModal} className="ml-auto text-gray-300 hover:text-gray-300 text-lg">✕</button>
               </div>
               <div className="rounded-xl px-4 py-3 flex flex-col gap-1.5"
                 style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)" }}>
-                <div className="flex gap-2 text-xs"><span className="text-gray-500 w-20 flex-shrink-0">File:</span><span className="text-white font-medium truncate">{fileInfo.name}</span>{fileInfo.encrypted && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0" style={{ background:"rgba(99,102,241,0.15)", color:"#818cf8", border:"1px solid rgba(99,102,241,0.3)" }}>🔐</span>}</div>
-                <div className="flex gap-2 text-xs"><span className="text-gray-500 w-20 flex-shrink-0">Backup Date:</span><span className="text-amber-300 font-medium">{fmtDT(fileInfo.exportedAt)}</span></div>
-                <div className="flex gap-2 text-xs"><span className="text-gray-500 w-20 flex-shrink-0">Records:</span><span className="text-green-400 font-bold">{fileInfo.docCount?.toLocaleString()}</span></div>
-                {fileInfo.isAdminBackup && <div className="flex gap-2 text-xs"><span className="text-gray-500 w-20 flex-shrink-0">Users:</span><span className="text-blue-400 font-bold">{fileInfo.userCount}</span></div>}
+                <div className="flex gap-2 text-xs"><span className="text-gray-300 w-20 flex-shrink-0">File:</span><span className="text-white font-medium truncate">{fileInfo.name}</span>{fileInfo.encrypted && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0" style={{ background:"rgba(99,102,241,0.15)", color:"#818cf8", border:"1px solid rgba(99,102,241,0.3)" }}>🔐</span>}</div>
+                <div className="flex gap-2 text-xs"><span className="text-gray-300 w-20 flex-shrink-0">Backup Date:</span><span className="text-amber-300 font-medium">{fmtDT(fileInfo.exportedAt)}</span></div>
+                <div className="flex gap-2 text-xs"><span className="text-gray-300 w-20 flex-shrink-0">Records:</span><span className="text-green-400 font-bold">{fileInfo.docCount?.toLocaleString()}</span></div>
+                {fileInfo.isAdminBackup && <div className="flex gap-2 text-xs"><span className="text-gray-300 w-20 flex-shrink-0">Users:</span><span className="text-blue-400 font-bold">{fileInfo.userCount}</span></div>}
               </div>
               <button onClick={() => setModalStep("confirm-merge")}
                 className="w-full text-left rounded-2xl p-4 flex items-start gap-3 transition-all hover:scale-[1.01]"
@@ -2442,7 +2464,7 @@ function AdminSystemBackup({ getToken, users }) {
                   style={{ background:"rgba(52,211,153,0.12)", border:"1px solid rgba(52,211,153,0.3)" }}>🔀</div>
                 <div className="flex flex-col gap-1">
                   <p className="text-white font-black text-sm">Smart Merge — Recommended</p>
-                  <p className="text-gray-400 text-xs leading-relaxed">Backup data will be restored. Records created <span className="text-green-400 font-semibold">after</span> the backup date will <span className="text-green-400 font-semibold">remain safe</span>.</p>
+                  <p className="text-gray-300 text-xs leading-relaxed">Backup data will be restored. Records created <span className="text-green-400 font-semibold">after</span> the backup date will <span className="text-green-400 font-semibold">remain safe</span>.</p>
                   <div className="flex flex-wrap gap-1.5 mt-1">
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background:"rgba(52,211,153,0.12)", color:"#34d399" }}>✅ New data safe</span>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background:"rgba(52,211,153,0.12)", color:"#34d399" }}>✅ Backup restored</span>
@@ -2456,7 +2478,7 @@ function AdminSystemBackup({ getToken, users }) {
                   style={{ background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.3)" }}>🔄</div>
                 <div className="flex flex-col gap-1">
                   <p className="text-white font-black text-sm">Full Replace</p>
-                  <p className="text-gray-400 text-xs leading-relaxed">Your <span className="text-red-400 font-semibold">entire current data will be deleted</span> and only the backup data will remain. Any work done after the backup will be <span className="text-red-400 font-semibold">permanently lost</span>.</p>
+                  <p className="text-gray-300 text-xs leading-relaxed">Your <span className="text-red-400 font-semibold">entire current data will be deleted</span> and only the backup data will remain. Any work done after the backup will be <span className="text-red-400 font-semibold">permanently lost</span>.</p>
                   <div className="flex flex-wrap gap-1.5 mt-1">
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background:"rgba(239,68,68,0.12)", color:"#f87171" }}>⚠️ New data will be deleted</span>
                   </div>
@@ -2480,10 +2502,10 @@ function AdminSystemBackup({ getToken, users }) {
                   style={{ background:"rgba(52,211,153,0.12)", border:"1px solid rgba(52,211,153,0.3)" }}>🔀</div>
                 <div>
                   <p className="text-white font-black text-sm">Confirm Smart Merge</p>
-                  <p className="text-gray-500 text-xs">New data will be kept safe</p>
+                  <p className="text-gray-300 text-xs">New data will be kept safe</p>
                 </div>
               </div>
-              <div className="rounded-xl px-4 py-3 text-xs leading-relaxed text-gray-400"
+              <div className="rounded-xl px-4 py-3 text-xs leading-relaxed text-gray-300"
                 style={{ background:"rgba(52,211,153,0.05)", border:"1px solid rgba(52,211,153,0.2)" }}>
                 📅 Backup date: <span className="text-amber-300 font-semibold">{fmtDT(fileInfo.exportedAt)}</span><br />
                 Records created <span className="text-green-400 font-medium">after this date</span> will be kept safe.<br />
@@ -2513,7 +2535,7 @@ function AdminSystemBackup({ getToken, users }) {
                   style={{ background:"rgba(239,68,68,0.1)", border:"1px solid rgba(239,68,68,0.3)" }}>⚠️</div>
                 <div>
                   <p className="text-white font-black text-sm">Full Replace — Danger!</p>
-                  <p className="text-gray-500 text-xs">This action cannot be undone</p>
+                  <p className="text-gray-300 text-xs">This action cannot be undone</p>
                 </div>
               </div>
               <div className="rounded-xl px-4 py-3 text-xs leading-relaxed"
@@ -2553,7 +2575,7 @@ function AdminSystemBackup({ getToken, users }) {
                 <span className="text-base ">{item.icon}</span>
                 <div>
                   <p className="text-gray-300 font-bold leading-tight">{item.label}</p>
-                  <p className="text-gray-600">{item.sub}</p>
+                  <p className="text-gray-300">{item.sub}</p>
                 </div>
               </div>
             ))}
@@ -2571,11 +2593,11 @@ function AdminSystemBackup({ getToken, users }) {
             style={{ background:"rgba(245,158,11,0.05)", border:"1px solid rgba(245,158,11,0.2)" }}>
             <span className="text-xl flex-shrink-0">🗂️</span>
             <div className="flex-1 min-w-0">
-              <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-0.5">Saved Folder</p>
+              <p className="text-[10px] text-gray-300 uppercase tracking-widest font-bold mb-0.5">Saved Folder</p>
               <p className="text-amber-300 font-semibold text-sm truncate">{folderName}</p>
             </div>
             <button onClick={() => { setDirHandle(null); setFolderName(""); adminIdbDel("dirHandle"); }}
-              title="Forget folder" className="text-gray-600 hover:text-red-400 text-sm flex-shrink-0">✕</button>
+              title="Forget folder" className="text-gray-300 hover:text-red-400 text-sm flex-shrink-0">✕</button>
           </div>
         )}
 
@@ -2583,14 +2605,14 @@ function AdminSystemBackup({ getToken, users }) {
         {running && (
           <div className="flex flex-col gap-3 rounded-2xl p-5" style={cardS}>
             <div className="flex items-center justify-between text-xs">
-              <span className="text-gray-400">{statusMsg}</span>
+              <span className="text-gray-300">{statusMsg}</span>
               <span className="text-indigo-400 font-black">{progress}%</span>
             </div>
             <div className="h-2.5 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.07)" }}>
               <div className="h-full rounded-full transition-all duration-300"
                 style={{ width:`${progress}%`, background:"linear-gradient(90deg,#6366f1,#8b5cf6,#a78bfa)" }} />
             </div>
-            <p className="text-gray-600 text-xs">⏳ Please keep this tab open until the backup completes.</p>
+            <p className="text-gray-300 text-xs">⏳ Please keep this tab open until the backup completes.</p>
           </div>
         )}
 
@@ -2631,8 +2653,8 @@ function AdminSystemBackup({ getToken, users }) {
           <div className="rounded-2xl overflow-hidden" style={cardS}>
             <div className="flex items-center justify-between px-5 py-3"
               style={{ borderBottom:"1px solid rgba(255,255,255,0.05)", background:"rgba(255,255,255,0.02)" }}>
-              <span className="text-[10px] font-black uppercase tracking-widest text-gray-500">Activity Log</span>
-              <button onClick={() => setLog([])} className="text-gray-700 hover:text-gray-500 text-xs">Clear</button>
+              <span className="text-[10px] font-black uppercase tracking-widest text-gray-300">Activity Log</span>
+              <button onClick={() => setLog([])} className="text-gray-300 hover:text-gray-300 text-xs">Clear</button>
             </div>
             <div className="p-4 flex flex-col gap-1 max-h-72 overflow-y-auto">
               {log.map((entry, i) => (
@@ -2653,10 +2675,10 @@ function AdminSystemBackup({ getToken, users }) {
           <div className="rounded-xl p-4 flex flex-col gap-2"
             style={{ background:"rgba(139,92,246,0.04)", border:"1px solid rgba(139,92,246,0.15)" }}>
             <p className="text-gray-300 text-sm">Automatically run a full system backup at a set interval. Each backup saves as a new file — nothing gets overwritten.</p>
-            <p className="text-gray-500 text-xs">✅ Requires a saved folder. ✅ Works only while this browser tab is open.</p>
+            <p className="text-gray-300 text-xs">✅ Requires a saved folder. ✅ Works only while this browser tab is open.</p>
           </div>
           <div className="flex flex-col gap-2">
-            <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Backup Frequency</p>
+            <p className="text-xs text-gray-300 font-semibold uppercase tracking-wider">Backup Frequency</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {ADMIN_AUTO_INTERVALS.map(opt => (
                 <button key={opt.id} onClick={() => setAutoIntervalId(opt.id)} disabled={autoEnabled}
@@ -2679,7 +2701,7 @@ function AdminSystemBackup({ getToken, users }) {
               <span className="text-xl flex-shrink-0">🟣</span>
               <div className="flex-1">
                 <p className="text-purple-300 font-black text-xs uppercase tracking-wider">Auto-Backup Active</p>
-                <p className="text-gray-400 text-xs mt-0.5">
+                <p className="text-gray-300 text-xs mt-0.5">
                   Next backup in <span className="text-purple-200 font-bold">{countdown || "…"}</span>
                   {folderName && <> → <span className="text-amber-300 font-semibold">{folderName}</span></>}
                 </p>
@@ -2720,8 +2742,8 @@ function AdminSystemBackup({ getToken, users }) {
           {history.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-8 text-center">
               <span className="text-4xl opacity-20">🗂️</span>
-              <p className="text-gray-600 text-sm">No backups yet</p>
-              <p className="text-gray-700 text-xs">Every backup (manual or auto) will appear here.</p>
+              <p className="text-gray-300 text-sm">No backups yet</p>
+              <p className="text-gray-300 text-xs">Every backup (manual or auto) will appear here.</p>
             </div>
           ) : (
             <>
@@ -2739,17 +2761,17 @@ function AdminSystemBackup({ getToken, users }) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-white text-xs font-semibold truncate">{entry.fileName}</p>
-                      <p className="text-gray-500 text-[11px] mt-0.5">{fmtDT(entry.at)}</p>
+                      <p className="text-gray-300 text-[11px] mt-0.5">{fmtDT(entry.at)}</p>
                     </div>
                     <div className="flex-shrink-0 text-right">
                       <p className="text-green-400 text-xs font-bold">{entry.docCount?.toLocaleString()}</p>
-                      <p className="text-gray-600 text-[10px]">{entry.userCount} users</p>
+                      <p className="text-gray-300 text-[10px]">{entry.userCount} users</p>
                     </div>
                   </div>
                 ))}
               </div>
               <button onClick={async () => { await adminIdbDel("history"); setHistory([]); }}
-                className="self-end text-xs text-gray-600 hover:text-red-400 transition-colors underline underline-offset-2">
+                className="self-end text-xs text-gray-300 hover:text-red-400 transition-colors underline underline-offset-2">
                 Clear history
               </button>
             </>
@@ -2767,7 +2789,7 @@ function AdminSystemBackup({ getToken, users }) {
               "Store the backup file securely — it contains all user business data.",
               "Restore below supports both admin full-system backups and single-user backups.",
             ].map((t, i) => (
-              <li key={i} className="flex items-start gap-1.5 text-[11px] text-gray-600">
+              <li key={i} className="flex items-start gap-1.5 text-[11px] text-gray-300">
                 <span className="text-red-700 mt-0.5 flex-shrink-0">•</span>{t}
               </li>
             ))}
@@ -2785,7 +2807,7 @@ function AdminSystemBackup({ getToken, users }) {
             <p className="text-gray-300 text-sm leading-relaxed">
               Restore data from a backup file — supports both <span className="text-green-400 font-semibold">full system backups</span> (all users) and <span className="text-blue-400 font-semibold">single-user backups</span>. Choose <span className="text-green-400 font-semibold">Smart Merge</span> to keep new data safe, or <span className="text-red-400 font-semibold">Full Replace</span> to completely overwrite.
             </p>
-            <p className="text-gray-500 text-xs">✅ Accepts <span className="text-white font-medium">.json</span> and password-encrypted <span className="text-indigo-300 font-medium">.novexa</span> files.</p>
+            <p className="text-gray-300 text-xs">✅ Accepts <span className="text-white font-medium">.json</span> and password-encrypted <span className="text-indigo-300 font-medium">.novexa</span> files.</p>
           </div>
 
           {/* Restore progress */}
@@ -2793,14 +2815,14 @@ function AdminSystemBackup({ getToken, users }) {
             <div className="flex flex-col gap-3 rounded-xl p-4"
               style={{ background:"rgba(52,211,153,0.04)", border:"1px solid rgba(52,211,153,0.2)" }}>
               <div className="flex items-center justify-between text-xs">
-                <span className="text-gray-400">{restoreLabel}</span>
+                <span className="text-gray-300">{restoreLabel}</span>
                 <span className="text-green-400 font-black">{restoreProg}%</span>
               </div>
               <div className="h-2.5 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.07)" }}>
                 <div className="h-full rounded-full transition-all duration-300"
                   style={{ width:`${restoreProg}%`, background:"linear-gradient(90deg,#34d399,#059669)" }} />
               </div>
-              <p className="text-gray-600 text-xs">⏳ Please keep this tab open until restore completes.</p>
+              <p className="text-gray-300 text-xs">⏳ Please keep this tab open until restore completes.</p>
             </div>
           )}
 
@@ -2874,7 +2896,7 @@ function StatCard({ icon, label, value, gradient, glow }) {
           {icon}
         </div>
         <p className="text-white font-black text-3xl leading-none mb-1">{value}</p>
-        <p className="text-gray-500 text-xs font-semibold uppercase tracking-wider">{label}</p>
+        <p className="text-gray-300 text-xs font-semibold uppercase tracking-wider">{label}</p>
       </div>
     </div>
   );
@@ -3088,7 +3110,7 @@ export default function AdminPanel() {
         <div className="flex flex-col items-center gap-4">
           <div className="w-14 h-14 rounded-full border-4 border-transparent animate-spin"
             style={{ borderTopColor:"#2563EB", borderRightColor:"#F59E0B" }} />
-          <p className="text-gray-600 text-sm font-medium tracking-widest uppercase">Authenticating...</p>
+          <p className="text-gray-300 text-sm font-medium tracking-widest uppercase">Authenticating...</p>
         </div>
       </div>
     );
@@ -3172,7 +3194,7 @@ export default function AdminPanel() {
           {sidebarOpen && (
             <div className="overflow-hidden">
               <p className="text-white font-black text-sm leading-tight whitespace-nowrap">Super Admin</p>
-              <p className="text-gray-600 text-[9px] font-bold tracking-widest uppercase whitespace-nowrap">Novexa ERP</p>
+              <p className="text-gray-300 text-[9px] font-bold tracking-widest uppercase whitespace-nowrap">Novexa ERP</p>
             </div>
           )}
         </div>
@@ -3201,7 +3223,7 @@ export default function AdminPanel() {
                     ? "linear-gradient(135deg,rgba(37,99,235,0.2),rgba(245,158,11,0.08))"
                     : "transparent",
                   border: isActive ? "1px solid rgba(37,99,235,0.25)" : "1px solid transparent",
-                  color: isActive ? "#fff" : "#6b7280",
+                  color: isActive ? "#fff" : "#9fa0a1ff",
                 }}>
                 {/* active left bar */}
                 {isActive && (
@@ -3237,7 +3259,7 @@ export default function AdminPanel() {
         {/* Collapse toggle */}
         <div className="px-3 pb-4" style={{ borderTop:"1px solid rgba(255,255,255,0.05)" }}>
           <button onClick={() => setSidebarOpen(o => !o)}
-            className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-gray-600 hover:text-gray-400 hover:bg-white/5 transition-all text-xs font-semibold mt-3">
+            className="w-full flex items-center justify-center gap-2 rounded-xl py-2.5 text-gray-300 hover:text-gray-300 hover:bg-white/5 transition-all text-xs font-semibold mt-3">
             <span className="text-base transition-transform duration-300" style={{ transform: sidebarOpen?"rotate(0deg)":"rotate(180deg)" }}>◀</span>
             {sidebarOpen && <span>Collapse</span>}
           </button>
@@ -3257,7 +3279,7 @@ export default function AdminPanel() {
                 {NAV_ITEMS.find(n=>n.id===activeTab)?.icon} {" "}
                 {activeTab==="users"?"User Management":activeTab==="addons"?"Add-on Requests":activeTab==="packages"?"Package Manager":activeTab==="inbox"?"Support Inbox":activeTab==="analytics"?"Analytics Overview":activeTab==="backup"?"System Backup":"Debug Console"}
               </h1>
-              <p className="text-gray-600 text-[10px] font-semibold tracking-widest uppercase">{todayStr()}</p>
+              <p className="text-gray-300 text-[10px] font-semibold tracking-widest uppercase">{todayStr()}</p>
             </div>
             <DigitalClock />
           </div>
@@ -3326,7 +3348,7 @@ export default function AdminPanel() {
                           {timeline.length} user{timeline.length!==1?"s":""}
                         </span>
                       </div>
-                      <p className="text-gray-600 text-[10px] uppercase tracking-widest">Next 30 days</p>
+                      <p className="text-gray-300 text-[10px] uppercase tracking-widest">Next 30 days</p>
                     </div>
 
                     {/* List */}
@@ -3354,13 +3376,13 @@ export default function AdminPanel() {
                             {/* Name + email */}
                             <div className="flex-1 min-w-0">
                               <p className="text-white text-sm font-semibold truncate">{u.name}</p>
-                              <p className="text-gray-500 text-[11px] truncate">{u.email}</p>
+                              <p className="text-gray-300 text-[11px] truncate">{u.email}</p>
                             </div>
 
                             {/* Expiry date */}
                             <div className="hidden sm:block text-right flex-shrink-0">
-                              <p className="text-gray-600 text-[10px] uppercase tracking-widest">Expires</p>
-                              <p className="text-gray-400 text-xs">{fmtDate(u.activeTo)}</p>
+                              <p className="text-gray-300 text-[10px] uppercase tracking-widest">Expires</p>
+                              <p className="text-gray-300 text-xs">{fmtDate(u.activeTo)}</p>
                             </div>
 
                             {/* Countdown pill */}
@@ -3411,12 +3433,12 @@ export default function AdminPanel() {
               {/* Search */}
               <div className="flex items-center gap-3 mb-5">
                 <div className="relative flex-1 max-w-sm">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none">🔍</span>
+                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 text-sm pointer-events-none">🔍</span>
                   <input value={search} onChange={e=>setSearch(e.target.value)}
                     placeholder="Search by name, email, phone..."
                     style={{ ...inputStyle, paddingLeft:34, width:"100%" }} />
                 </div>
-                <span className="text-gray-600 text-xs">{filteredUsers.length} user{filteredUsers.length!==1?"s":""}</span>
+                <span className="text-gray-300 text-xs">{filteredUsers.length} user{filteredUsers.length!==1?"s":""}</span>
               </div>
 
               {/* Table */}
@@ -3436,7 +3458,7 @@ export default function AdminPanel() {
                   <div className="text-center py-16">
                     <p className="text-5xl mb-3">👥</p>
                     <p className="text-white font-semibold text-sm">No users found</p>
-                    <p className="text-gray-500 text-xs mt-1">{search?"Try a different search":"Register your first user"}</p>
+                    <p className="text-gray-300 text-xs mt-1">{search?"Try a different search":"Register your first user"}</p>
                   </div>
                 ) : (
                   <div className="flex flex-col">
@@ -3456,15 +3478,15 @@ export default function AdminPanel() {
                             </div>
                             <div className="min-w-0">
                               <p className="text-white text-sm font-semibold truncate">{u.name}</p>
-                              <p className="text-gray-600 text-[10px] md:hidden truncate">{u.email}</p>
+                              <p className="text-gray-300 text-[10px] md:hidden truncate">{u.email}</p>
                             </div>
                           </div>
 
-                          <p className="text-gray-400 text-xs hidden md:flex items-center truncate">{u.email}</p>
-                          <p className="text-gray-400 text-xs flex items-center">{u.phone||"—"}</p>
+                          <p className="text-gray-300 text-xs hidden md:flex items-center truncate">{u.email}</p>
+                          <p className="text-gray-300 text-xs flex items-center">{u.phone||"—"}</p>
 
                           <div className="flex flex-col justify-center gap-0.5">
-                            <p className="text-gray-400 text-[11px]">{fmtDate(u.activeFrom)} → {fmtDate(u.activeTo)}</p>
+                            <p className="text-gray-300 text-[11px]">{fmtDate(u.activeFrom)} → {fmtDate(u.activeTo)}</p>
                             {dl!==null && (
                               <p className="text-[10px] font-semibold"
                                 style={{ color: isExpiringSoon?"#fbbf24":dl<0?"#f87171":"#4b5563" }}>
@@ -3576,7 +3598,7 @@ export default function AdminPanel() {
                   ].map(item => (
                     <div key={item.label} className="mb-4">
                       <div className="flex justify-between mb-1.5">
-                        <span className="text-gray-400 text-xs font-medium">{item.label}</span>
+                        <span className="text-gray-300 text-xs font-medium">{item.label}</span>
                         <span className="text-white text-xs font-bold">{item.value} / {item.total}</span>
                       </div>
                       <div className="h-2 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.05)" }}>
@@ -3594,7 +3616,7 @@ export default function AdminPanel() {
                   {users.filter(u => { const d=daysLeft(u.activeTo); return d!==null&&d>=0&&d<=7&&u.status==="active"; }).length===0 ? (
                     <div className="flex flex-col items-center justify-center h-32 text-center">
                       <p className="text-3xl mb-2">🎉</p>
-                      <p className="text-gray-500 text-sm">No subscriptions expiring soon</p>
+                      <p className="text-gray-300 text-sm">No subscriptions expiring soon</p>
                     </div>
                   ) : (
                     <div className="flex flex-col gap-2">
@@ -3629,7 +3651,7 @@ export default function AdminPanel() {
               <div className="flex items-center justify-between mb-5">
                 <div>
                   <h2 className="text-white font-bold text-base">Debug Console</h2>
-                  <p className="text-gray-500 text-xs mt-0.5">Inspect API state and admin auth tokens</p>
+                  <p className="text-gray-300 text-xs mt-0.5">Inspect API state and admin auth tokens</p>
                 </div>
                 <button onClick={runDebug}
                   className="flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all hover:scale-[1.02]"
@@ -3642,7 +3664,7 @@ export default function AdminPanel() {
                 <div className="rounded-2xl p-10 text-center"
                   style={{ background:"rgba(245,158,11,0.03)", border:"1px dashed rgba(245,158,11,0.15)" }}>
                   <p className="text-4xl mb-3">🔍</p>
-                  <p className="text-gray-400 text-sm font-medium">Click "Run Debug" to inspect admin state</p>
+                  <p className="text-gray-300 text-sm font-medium">Click "Run Debug" to inspect admin state</p>
                 </div>
               ) : (
                 <div className="rounded-2xl overflow-hidden"
@@ -3650,13 +3672,13 @@ export default function AdminPanel() {
                   <div className="flex items-center justify-between px-5 py-3"
                     style={{ borderBottom:"1px solid rgba(245,158,11,0.12)", background:"rgba(245,158,11,0.05)" }}>
                     <span className="text-amber-400 font-bold text-xs uppercase tracking-widest">🔍 Debug Output</span>
-                    <button onClick={() => setDebugInfo(null)} className="text-gray-600 hover:text-gray-400 transition-colors text-sm">✕</button>
+                    <button onClick={() => setDebugInfo(null)} className="text-gray-300 hover:text-gray-300 transition-colors text-sm">✕</button>
                   </div>
                   <div className="p-5">
                     {Object.entries(debugInfo).map(([k,v]) => (
                       <div key={k} className="flex gap-3 py-1.5 font-mono text-xs"
                         style={{ borderBottom:"1px solid rgba(255,255,255,0.03)" }}>
-                        <span className="text-gray-500 w-44 flex-shrink-0">{k}:</span>
+                        <span className="text-gray-300 w-44 flex-shrink-0">{k}:</span>
                         <span className={String(v).includes("MISSING")||String(v).includes("FAILED")||String(v).includes("Unauthorized")
                           ?"text-red-400":"text-green-400"}>
                           {typeof v==="object"?JSON.stringify(v):String(v)}
@@ -3673,7 +3695,7 @@ export default function AdminPanel() {
 
         {/* Footer */}
         <footer className="px-6 py-3 text-center" style={{ borderTop:"1px solid rgba(255,255,255,0.04)" }}>
-          <p className="text-gray-700 text-[10px] font-mono">🔐 Super Admin-only panel — Novexa ERP v1.0</p>
+          <p className="text-gray-300 text-[10px] font-mono">🔐 Super Admin-only panel — Novexa ERP v1.0</p>
         </footer>
       </div>
 
