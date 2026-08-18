@@ -658,7 +658,7 @@ function DashboardContent() {
               <path fill="white" d="M4 12a8 8 0 018-8v8z" className="opacity-75"/>
             </svg>
           </div>
-          <p className="text-gray-500 text-sm">Loading your dashboard...</p>
+          <p className="text-gray-300 text-sm">Loading your dashboard...</p>
         </div>
       </div>
     );
@@ -680,7 +680,7 @@ function DashboardContent() {
         style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.1)" }}>
         <div className="flex items-center justify-between">
           <h3 className="text-white font-bold text-base">{title}</h3>
-          <button onClick={onClose} className="text-gray-500 hover:text-gray-300 text-lg">✕</button>
+          <button onClick={onClose} className="text-gray-300 hover:text-gray-300 text-lg">✕</button>
         </div>
         <form onSubmit={onSubmit} className="flex flex-col gap-3">
           {children}
@@ -879,7 +879,7 @@ function DashboardContent() {
             )}
             <div className="flex-1 min-w-0">
               <p className="text-white text-xs font-semibold truncate">{displayName}</p>
-              <p className="text-gray-500 text-[10px] truncate">{user?.email}</p>
+              <p className="text-gray-300 text-[10px] truncate">{user?.email}</p>
             </div>
           </div>
           {/* Plan badge — click to see details */}
@@ -940,14 +940,14 @@ function DashboardContent() {
           </button>
 
           {/* Codecoves credit */}
-          <a href="https://codecoves.com" target="_blank" rel="noopener noreferrer"
+          <a href="https://codeverza.com" target="_blank" rel="noopener noreferrer"
             className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl transition-all duration-200 group"
             style={{ background: "rgba(245,158,11,0.04)", marginTop: "15px", border: "1px solid rgba(245,158,11,0.1)" }}
             onMouseEnter={e => { e.currentTarget.style.background = "rgba(245,158,11,0.08)"; e.currentTarget.style.borderColor = "rgba(245,158,11,0.25)"; }}
             onMouseLeave={e => { e.currentTarget.style.background = "rgba(245,158,11,0.04)"; e.currentTarget.style.borderColor = "rgba(245,158,11,0.1)"; }}>
             <span className="text-[10px] text-gray-200 font-medium tracking-wide">A project of</span>
             <span className="text-[11px] font-black tracking-wide transition-colors duration-200 group-hover:text-amber-300"
-              style={{ color: "#F59E0B" }}>Codecoves</span>
+              style={{ color: "#F59E0B" }}>Codeverza</span>
             <span className="text-[10px] text-gray-200 group-hover:text-amber-500 transition-colors duration-200">↗</span>
           </a>
         </div>
@@ -1021,7 +1021,7 @@ function DashboardContent() {
                       ? `⏳ Trial — ${planDetails?.name || userDoc?.plan}`
                       : `${planDetails?.name || userDoc?.plan} Plan`}
                   </h2>
-                  <p className="text-gray-500 text-[11px] mt-0.5">
+                  <p className="text-gray-300 text-[11px] mt-0.5">
                     {userDoc?.subscriptionType === "trial" ? "7-day free trial" : "Aapka current subscription"}
                   </p>
                 </div>
@@ -1044,15 +1044,15 @@ function DashboardContent() {
                 >
                   <span className="text-xl flex-shrink-0">💰</span>
                   <div className="flex-1 min-w-0">
-                    <p className="text-gray-500 text-[10px] uppercase tracking-widest mb-0.5">Monthly Price</p>
+                    <p className="text-gray-300 text-[10px] uppercase tracking-widest mb-0.5">Monthly Price</p>
                     <p className="text-white font-black text-lg leading-tight">
                       Rs. {Number(planDetails.monthlyPrice).toLocaleString()}
-                      <span className="text-gray-500 text-xs font-normal">/mo</span>
+                      <span className="text-gray-300 text-xs font-normal">/mo</span>
                     </p>
                   </div>
                   {planDetails?.yearlyPrice && (
                     <div className="text-right flex-shrink-0">
-                      <p className="text-gray-500 text-[10px] uppercase tracking-widest mb-0.5">Yearly</p>
+                      <p className="text-gray-300 text-[10px] uppercase tracking-widest mb-0.5">Yearly</p>
                       <p className="font-bold text-sm" style={{ color: "#34d399" }}>
                         Rs. {Number(planDetails.yearlyPrice).toLocaleString()}/yr
                       </p>
@@ -1135,7 +1135,7 @@ function DashboardContent() {
                       >
                         <span className="text-base flex-shrink-0">{r.icon}</span>
                         <div className="flex-1 min-w-0">
-                          <p className="text-gray-500 text-[10px] uppercase tracking-widest font-bold">{r.label}</p>
+                          <p className="text-gray-300 text-[10px] uppercase tracking-widest font-bold">{r.label}</p>
                           <p className="text-sm font-semibold mt-0.5" style={{ color: r.color }}>{r.value}</p>
                         </div>
                       </div>
@@ -1349,7 +1349,7 @@ function DashboardContent() {
               <h1 className="text-white font-bold text-base sm:text-lg leading-none">
                 {activeNav === "addons" ? "⚡ Add-ons" : navItems.find(n => n.id === activeNav)?.label ?? "Overview"}
               </h1>
-              <p className="text-gray-500 text-xs mt-0.5">{todayStr()}</p>
+              <p className="text-gray-300 text-xs mt-0.5">{todayStr()}</p>
             </div>
           </div>
           <div className="flex items-center gap-1.5 sm:gap-2">
@@ -1452,7 +1452,7 @@ function DashboardContent() {
                     <span className="font-semibold text-white">{navItems.find(n => n.id === activeNav)?.label}</span> is not included in your current{" "}
                     <span className="font-bold capitalize" style={{ color: "#60a5fa" }}>{userPlan}</span> plan.
                   </p>
-                  <p className="text-gray-500 text-sm mb-8">Upgrade to <span className="font-bold text-amber-400">{planUpgrade}</span> or higher to unlock this feature.</p>
+                  <p className="text-gray-300 text-sm mb-8">Upgrade to <span className="font-bold text-amber-400">{planUpgrade}</span> or higher to unlock this feature.</p>
                   <a href="https://wa.me/923001234567?text=Hello%20Novexa%2C%20I%20want%20to%20upgrade%20my%20plan."
                     target="_blank" rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 px-8 py-3.5 rounded-2xl font-bold text-white transition-all hover:scale-105"
@@ -1561,7 +1561,7 @@ function DashboardContent() {
                       </div>
                     </div>
                     <p className="text-white font-bold text-2xl leading-none mb-1">{s.value}</p>
-                    <p className="text-gray-500 text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1">
+                    <p className="text-gray-300 text-[10px] font-semibold uppercase tracking-wide flex items-center gap-1">
                       {s.label}
                       {s.onClick && <span className="text-amber-400">→</span>}
                     </p>
@@ -1594,7 +1594,7 @@ function DashboardContent() {
               <div className="p-3 flex flex-col gap-1.5">
                 {allInvoices.length === 0 ? (
                   <div className="px-5 py-10 text-center">
-                    <p className="text-gray-500 text-sm">No invoices yet.</p>
+                    <p className="text-gray-300 text-sm">No invoices yet.</p>
                     <button onClick={() => handleNavChange("invoices")} className="text-blue-400 text-xs mt-2 hover:text-blue-300">Create your first invoice →</button>
                   </div>
                 ) : (
@@ -1625,7 +1625,7 @@ function DashboardContent() {
                           </div>
                           <div className="min-w-0">
                             <p className="text-white text-sm font-semibold truncate">{displayName}</p>
-                            <p className="text-gray-500 text-[11px]">INV-{num} · {dateStr}</p>
+                            <p className="text-gray-300 text-[11px]">INV-{num} · {dateStr}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2.5 flex-shrink-0">
@@ -1651,7 +1651,7 @@ function DashboardContent() {
                   <h3 className="text-white font-bold text-sm">Stock Overview</h3>
                 </div>
                 {inventory.length === 0 ? (
-                  <p className="text-gray-500 text-xs">No products in inventory yet.</p>
+                  <p className="text-gray-300 text-xs">No products in inventory yet.</p>
                 ) : (
                   <div className="flex flex-col gap-2.5">
                     {inventory.slice(0, 5).map((item) => {
@@ -1748,7 +1748,7 @@ function DashboardContent() {
                   </button>
                 </div>
                 {customers.length === 0 ? (
-                  <p className="text-gray-500 text-xs">No customers yet.</p>
+                  <p className="text-gray-300 text-xs">No customers yet.</p>
                 ) : (
                   <div className="flex flex-col gap-2">
                     {customers.slice(0, 4).map((c) => {

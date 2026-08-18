@@ -72,7 +72,7 @@ export default function AboutPage() {
             </span>
           </h1>
 
-          <p className="text-gray-400 text-lg md:text-xl leading-relaxed max-w-3xl mx-auto mb-10">
+          <p className="text-gray-200 text-lg md:text-xl leading-relaxed max-w-3xl mx-auto mb-10">
             We started Novexa because we were tired of watching great businesses fail due to paperwork,
             missed payments, and spreadsheet chaos. We built the tool we always wished existed.
           </p>
@@ -96,8 +96,8 @@ export default function AboutPage() {
       {/* ── TIMELINE ── */}
       <TimelineSection />
 
-      {/* ── CODECOVES ── */}
-      <CodecovesSection />
+      {/* ── CODEVERZA ── */}
+      <CodeVerzaSection />
 
       {/* ── CTA ── */}
       <AboutCta />
@@ -177,7 +177,7 @@ function MissionSection() {
               Built Novexa
             </span>
           </h2>
-          <p className="text-gray-400 text-lg max-w-2xl mx-auto">
+          <p className="text-gray-200 text-lg max-w-2xl mx-auto">
             Every line of code has a reason. Here is what drives us.
           </p>
         </div>
@@ -210,7 +210,7 @@ function MissionSection() {
                 {c.icon}
               </div>
               <h3 className="text-white font-bold text-xl mb-3">{c.title}</h3>
-              <p className="text-gray-400 text-sm leading-relaxed">{c.text}</p>
+              <p className="text-gray-200 text-sm leading-relaxed">{c.text}</p>
             </div>
           ))}
         </div>
@@ -234,7 +234,7 @@ function ValuesSection() {
               Stand For
             </span>
           </h2>
-          <p className="text-gray-400 text-lg max-w-xl mx-auto">Our values guide every decision we make.</p>
+          <p className="text-gray-200 text-lg max-w-xl mx-auto">Our values guide every decision we make.</p>
         </div>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-5">
           {values.map((val, i) => (
@@ -351,7 +351,7 @@ function TimelineSection() {
               Different
             </span>
           </h2>
-          <p className="text-gray-400 text-lg max-w-2xl mx-auto leading-relaxed">
+          <p className="text-gray-200 text-lg max-w-2xl mx-auto leading-relaxed">
             Novexa is not just another ERP. It is the software your business actually deserves.
           </p>
         </div>
@@ -455,7 +455,7 @@ function TimelineSection() {
   );
 }
 
-// ── Codecoves Section ─────────────────────────────────────────────────────────
+// ── Codeverza Section ─────────────────────────────────────────────────────────
 const CC_SERVICES = [
   { icon: "🌐", title: "Web Development",      desc: "High-performance, scalable web applications built with modern frameworks and clean architecture.", color: "#2563EB", bg: "rgba(37,99,235,0.08)", border: "rgba(37,99,235,0.25)" },
   { icon: "📱", title: "App Development",       desc: "Native and cross-platform mobile apps that deliver seamless experiences on iOS and Android.", color: "#8B5CF6", bg: "rgba(139,92,246,0.08)", border: "rgba(139,92,246,0.25)" },
@@ -474,7 +474,7 @@ const CC_SOFTWARE = [
   { icon: "⚙️", name: "Custom Software",           desc: "Tailored software solutions built specifically for your business needs.", tag: "Custom Build" },
 ];
 
-function CodecovesSection() {
+function CodeVerzaSection() {
   const [ref, v]       = useInView(0.06);
   const [sRef, sV]     = useInView(0.06);
   const [swRef, swV]   = useInView(0.06);
@@ -511,7 +511,7 @@ function CodecovesSection() {
                 style={{ background: "linear-gradient(135deg,#2563EB,#F59E0B)" }} />
               <div className="relative w-20 h-20 rounded-2xl flex items-center justify-center overflow-hidden"
                 style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.12)" }}>
-                <Image src="/images/cc-logo-new.png" alt="Codecoves Logo" width={64} height={64}
+                <Image src="/images/codeverza-logo.png" alt="Codeverza Logo" width={100} height={100}
                   className="object-contain" style={{ filter: "drop-shadow(0 0 12px rgba(37,99,235,0.5))" }} />
               </div>
             </div>
@@ -520,11 +520,11 @@ function CodecovesSection() {
                 Novexa is a Project of{" "}
                 <span className="bg-clip-text text-transparent"
                   style={{ backgroundImage: "linear-gradient(135deg, #2563EB, #60A5FA 40%, #F59E0B)" }}>
-                  Codecoves
+                  Codeverza
                 </span>
               </h2>
-              <p className="text-gray-400 text-lg max-w-3xl mx-auto leading-relaxed">
-                Codecoves is a full-spectrum software solutions company — building, renting, and selling
+              <p className="text-gray-200 text-lg max-w-3xl mx-auto leading-relaxed">
+                codeverza is a full-spectrum software solutions company — building, renting, and selling
                 digital products that empower businesses of every size.
               </p>
             </div>
@@ -547,7 +547,7 @@ function CodecovesSection() {
           </div>
         </div>
 
-        {/* ── What Codecoves Provides ── */}
+        {/* ── What codeverza Provides ── */}
         <div ref={sRef} className="mb-20 transition-all duration-700"
           style={{ opacity: sV ? 1 : 0, transform: sV ? "translateY(0)" : "translateY(28px)" }}>
 
@@ -642,22 +642,22 @@ function CodecovesSection() {
             <div className="relative z-10 flex flex-col items-center gap-4">
               <div className="w-14 h-14 rounded-2xl overflow-hidden flex-shrink-0"
                 style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.1)" }}>
-                <Image src="/images/cc-logo-new.png" alt="Codecoves" width={56} height={56} className="object-contain w-full h-full" />
+                <Image src="/images/codeverza-logo.png" alt="codeverza" width={56} height={56} className="object-contain w-full h-full" />
               </div>
               <div>
                 <p className="text-white font-black text-xl mb-1">
                   Have a project in mind?
                 </p>
-                <p className="text-gray-400 text-sm max-w-md mx-auto">
+                <p className="text-gray-200 text-sm max-w-md mx-auto">
                   Whether you need a website, a mobile app, a full ERP, or a custom software solution —
-                  <span className="text-blue-400 font-semibold"> Codecoves </span>
+                  <span className="text-blue-400 font-semibold"> codeverza </span>
                   has you covered.
                 </p>
               </div>
-              <a href="https://codecoves.com" target="_blank" rel="noopener noreferrer"
+              <a href="https://codeverza.com" target="_blank" rel="noopener noreferrer"
                 className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-black transition-all hover:scale-105"
                 style={{ background: "linear-gradient(135deg,#2563EB,#1d4ed8)", color: "#fff", boxShadow: "0 8px 24px rgba(37,99,235,0.35)" }}>
-                Visit Codecoves →
+                Visit codeverza →
               </a>
             </div>
           </div>
@@ -690,7 +690,7 @@ function AboutCta() {
                 Novexa Family
               </span>
             </h2>
-            <p className="text-gray-400 text-lg mb-8 max-w-2xl mx-auto">
+            <p className="text-gray-200 text-lg mb-8 max-w-2xl mx-auto">
               500+ businesses already trust Novexa to run their operations. Start your free trial today — no credit card needed.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-4 mb-8">

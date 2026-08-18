@@ -346,6 +346,7 @@ export default function BackupView({ uid }) {
   // ── Folder handle ─────────────────────────────────────────────────────────
   const [savedHandle,     setSavedHandle]     = useState(null);
   const [savedFolderName, setSavedFolderName] = useState("");
+  const savedHandleRef = useRef(null); // mirror for use inside callbacks/intervals
   const [folderPromptStep, setFolderPromptStep] = useState(null);
   // "auto" | "manual" — which flow triggered the folder prompt
   const folderPromptTypeRef = useRef("manual");
@@ -486,7 +487,7 @@ export default function BackupView({ uid }) {
     // folder handle
     if ("showDirectoryPicker" in window) {
       loadDirHandle().then(handle => {
-        if (handle) { setSavedHandle(handle); setSavedFolderName(handle.name || "Saved Folder"); }
+        if (handle) { setSavedHandle(handle); savedHandleRef.current = handle; setSavedFolderName(handle.name || "Saved Folder"); }
       });
     }
     // auto settings
@@ -494,8 +495,26 @@ export default function BackupView({ uid }) {
       if (s?.intervalId) {
         setAutoEnabled(true);
         setAutoIntervalId(s.intervalId);
-        setAutoNextAt(s.nextAt);
-        autoNextAtRef.current = s.nextAt;
+
+        // Agar scheduled time nikal chuka hai (app band thi), nextAt update karo
+        // aur missed backup immediately fire kar do once handle load ho jaye
+        const now = Date.now();
+        const intervalMs = AUTO_INTERVALS.find(i => i.id === s.intervalId)?.ms || 24 * 3600 * 1000;
+        let nextAt = s.nextAt;
+        let missedBackup = false;
+        if (nextAt && nextAt <= now) {
+          missedBackup = true;
+          // advance nextAt to next future slot
+          while (nextAt <= now) nextAt += intervalMs;
+          saveAutoSettings({ intervalId: s.intervalId, nextAt });
+        }
+        setAutoNextAt(nextAt);
+        autoNextAtRef.current = nextAt;
+
+        if (missedBackup) {
+          // Wait briefly for savedHandleRef to be populated from IDB (loads in parallel)
+          setTimeout(() => { runAutoBackup(); }, 2500);
+        }
       }
     });
     // history
@@ -504,9 +523,8 @@ export default function BackupView({ uid }) {
 
   // ── Auto-backup runner (runs a backup silently) ───────────────────────────
   const runAutoBackup = useCallback(async () => {
-    if (!savedHandle && !savedFolderName) return; // no destination — skip silently
-    const dirHandle = savedHandle;
-    if (!dirHandle) return;
+    const dirHandle = savedHandleRef.current;
+    if (!dirHandle) return; // no destination — skip silently
     try {
       const perm = await dirHandle.requestPermission({ mode: "readwrite" });
       if (perm !== "granted") return;
@@ -521,7 +539,7 @@ export default function BackupView({ uid }) {
       setAutoMsg({ type: "error", text: "Auto backup failed: " + err.message });
     }
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [uid, savedHandle]);
+  }, [uid]);
 
   // ── Auto-backup scheduler ─────────────────────────────────────────────────
   useEffect(() => {
@@ -547,7 +565,7 @@ export default function BackupView({ uid }) {
     autoTimerRef.current = setInterval(tick, 1000);
     return () => { if (autoTimerRef.current) clearInterval(autoTimerRef.current); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [autoEnabled, autoNextAt, autoIntervalId]);
+  }, [autoEnabled, autoNextAt, autoIntervalId, runAutoBackup]);
 
   // ── Enable auto-backup ────────────────────────────────────────────────────
   function handleEnableAuto() {
@@ -581,6 +599,7 @@ export default function BackupView({ uid }) {
     try {
       const dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
       setSavedHandle(dirHandle);
+      savedHandleRef.current = dirHandle;
       setSavedFolderName(dirHandle.name || "Saved Folder");
       await saveDirHandle(dirHandle);
     } catch (err) {
@@ -695,6 +714,7 @@ export default function BackupView({ uid }) {
     try {
       const dirHandle = await window.showDirectoryPicker({ mode: "readwrite" });
       setSavedHandle(dirHandle);
+      savedHandleRef.current = dirHandle;
       setSavedFolderName(dirHandle.name || "Saved Folder");
       await saveDirHandle(dirHandle);
       askPasswordThenWrite(dirHandle, json, fileName, totalDocs, type || "manual");
@@ -706,6 +726,7 @@ export default function BackupView({ uid }) {
 
   async function handleForgetFolder() {
     setSavedHandle(null);
+    savedHandleRef.current = null;
     setSavedFolderName("");
     await clearDirHandle();
   }

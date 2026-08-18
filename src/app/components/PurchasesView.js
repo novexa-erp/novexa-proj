@@ -205,7 +205,9 @@ function SupplierCard({ supplier, onClick, onEdit, onDelete, index }) {
           <div className="min-w-0">
             <h3 className="text-white font-bold text-base truncate">{supplier.name}</h3>
             {supplier.supplierNumber && (
-              <p className="text-[10px] font-semibold" style={{ color: "#60A5FA" }}>{supplier.supplierNumber}</p>
+              <p className="text-[10px] font-semibold" style={{ color: "#60A5FA" }}>
+                <span style={{ color: "#6b7280" }}>Supplier No: </span>{supplier.supplierNumber}
+              </p>
             )}
             {supplier.shopName && <p className="text-amber-400 text-xs font-semibold truncate">{supplier.shopName}</p>}
             <p className="text-gray-500 text-[11px]">{supplier.phone}</p>
@@ -356,7 +358,22 @@ export default function PurchasesView({ uid, userDoc }) {
             };
           } catch { return sup; }
         }));
-        setSuppliers(withStats);
+        // ── Auto-assign supplierNumber to old suppliers that don't have one ──
+        const needsNumber = withStats.filter(s => !s.supplierNumber);
+        if (needsNumber.length > 0) {
+          const updated = [...withStats];
+          await Promise.all(needsNumber.map(async sup => {
+            try {
+              const supplierNumber = await getNextSupplierNumber();
+              await updateDoc(doc(db, "users", uid, "suppliers", sup.id), { supplierNumber });
+              const idx = updated.findIndex(s => s.id === sup.id);
+              if (idx !== -1) updated[idx] = { ...updated[idx], supplierNumber };
+            } catch { /* silent fail — will retry next load */ }
+          }));
+          setSuppliers(updated);
+        } else {
+          setSuppliers(withStats);
+        }
         setSuppLoading(false);
       },
       () => setSuppLoading(false)
