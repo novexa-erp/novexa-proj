@@ -1478,7 +1478,7 @@ function DashboardContent() {
           ) : activeNav === "payments" ? (
             <PaymentsView key={`payments-${refreshKey}`} uid={user?.uid} onNavigate={handleNavChange} />
           ) : activeNav === "purchases" ? (
-            <PurchasesView key={`purchases-${refreshKey}`} uid={user?.uid} userDoc={userDoc} />
+            <PurchasesView key={`purchases-${refreshKey}`} uid={user?.uid} userDoc={userDoc} onNavigate={handleNavChange} />
           ) : activeNav === "order-form" ? (
             <OrderFormView key={`orderform-${refreshKey}`} userDoc={userDoc} />
           ) : activeNav === "analytics" ? (

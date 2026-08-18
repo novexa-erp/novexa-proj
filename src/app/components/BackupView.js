@@ -537,20 +537,21 @@ export default function BackupView({ uid }) {
     loadHistory().then(h => setHistory(h));
   }, []);
 
-  // ── Auto-backup runner (runs a backup silently) ───────────────────────────
+  // ── Auto-backup runner (runs a backup silently, always encrypted) ───────────
   const runAutoBackup = useCallback(async () => {
     const dirHandle = savedHandleRef.current;
     if (!dirHandle) return; // no destination — skip silently
     try {
       const perm = await dirHandle.requestPermission({ mode: "readwrite" });
       if (perm !== "granted") return;
-      const data     = await exportUserData(uid, () => {});
-      const total    = countDocs(data);
-      const json     = JSON.stringify(data, null, 2);
-      const fileName = makeFileName();
-      await writeToDir(dirHandle, json, fileName);
-      await recordHistory(fileName, total, "auto");
-      setAutoMsg({ type: "success", text: `Auto backup saved: ${fileName}` });
+      const data      = await exportUserData(uid, () => {});
+      const total     = countDocs(data);
+      const json      = JSON.stringify(data, null, 2);
+      const fileName  = makeFileName();
+      // Always encrypt with default hidden key (same as manual "Skip Password" flow)
+      const savedName = await writeToDirEncrypted(dirHandle, json, fileName, NOVEXA_DEFAULT_KEY);
+      await recordHistory(savedName, total, "auto");
+      setAutoMsg({ type: "success", text: `Auto backup saved: ${savedName}` });
     } catch (err) {
       setAutoMsg({ type: "error", text: "Auto backup failed: " + err.message });
     }

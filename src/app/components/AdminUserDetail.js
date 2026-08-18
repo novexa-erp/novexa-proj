@@ -13,7 +13,9 @@ function fmtDate(val) {
 
 /* ── 15-day countdown for adminTrash items ───────────────────────────────── */
 function calc15DayCountdown(adminTrashedAt) {
-  if (!adminTrashedAt) return { expired: false, daysLeft: 15, hoursLeft: 0, display: "—" };
+  // If no adminTrashedAt at all — item was promoted before this field existed.
+  // Treat as already expired so it gets cleaned up instead of getting a fresh 15-day window.
+  if (!adminTrashedAt) return { expired: true, daysLeft: 0, hoursLeft: 0, display: "⚠️ Expired" };
   const trashedDate = new Date(adminTrashedAt);
   const expiryDate  = new Date(trashedDate.getTime() + (15 * 24 * 60 * 60 * 1000));
   const now         = new Date();
@@ -71,7 +73,7 @@ function InfoCell({ label, value, highlight }) {
   return (
     <div className="rounded-xl px-4 py-3"
       style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)" }}>
-      <p className="text-[10px] uppercase tracking-widest font-bold text-gray-600 mb-1">{label}</p>
+      <p className="text-[10px] uppercase tracking-widest font-bold text-gray-300 mb-1">{label}</p>
       <p className="text-sm font-semibold truncate" style={{ color: highlight||"#fff" }}>{value||"—"}</p>
     </div>
   );
@@ -92,13 +94,13 @@ function Empty({ icon="📭", label="Nothing here yet" }) {
   return (
     <div className="flex flex-col items-center justify-center py-12 gap-2">
       <span className="text-4xl">{icon}</span>
-      <p className="text-gray-500 text-sm">{label}</p>
+      <p className="text-gray-300 text-sm">{label}</p>
     </div>
   );
 }
 function StatusBadge({ status }) {
   const s = STATUS_STYLE[status];
-  if (!s) return <span className="text-gray-500 text-xs">{status||"—"}</span>;
+  if (!s) return <span className="text-gray-300 text-xs">{status||"—"}</span>;
   return (
     <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
       style={{ color:s.color, background:s.bg, border:`1px solid ${s.border}` }}>
@@ -203,13 +205,13 @@ function ProfileTab({ data }) {
                   <div key={f.key} className="flex items-center gap-3 px-4 py-2.5"
                     style={{ borderBottom: i < arr.length - 1 ? "1px solid rgba(255,255,255,0.04)" : "none" }}>
                     <span className="text-sm">{f.icon}</span>
-                    <span className="text-gray-400 text-xs flex-1">{f.label}</span>
+                    <span className="text-gray-300 text-xs flex-1">{f.label}</span>
                     <span className="font-black text-sm" style={{ color:"#fbbf24" }}>+{Number(extras[f.key]).toLocaleString()}</span>
                   </div>
                 ))}
               </div>
             ) : (
-              <p className="text-gray-600 text-xs px-1">Koi extra limits nahi hain is user ke liye.</p>
+              <p className="text-gray-300 text-xs px-1">Koi extra limits nahi hain is user ke liye.</p>
             )}
           </div>
         );
@@ -234,7 +236,7 @@ function ProfileTab({ data }) {
         {gmailHistory.length === 0 ? (
           <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
             style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.06)" }}>
-            <span className="text-gray-600 text-sm">No password change history yet.</span>
+            <span className="text-gray-300 text-sm">No password change history yet.</span>
           </div>
         ) : (
           <div className="rounded-xl overflow-hidden" style={{ border:"1px solid rgba(255,255,255,0.07)" }}>
@@ -348,13 +350,13 @@ function CustomerDetail({ customer, invoices, payments, onBack }) {
         </div>
         <div className="flex-1 min-w-0">
           <p className="text-white font-black text-base">{customer.name}</p>
-          {customer.shopName && <p className="text-gray-500 text-xs">{customer.shopName}</p>}
-          <p className="text-gray-500 text-xs mt-0.5">{customer.phone||""}{customer.email?` · ${customer.email}`:""}</p>
+          {customer.shopName && <p className="text-gray-300 text-xs">{customer.shopName}</p>}
+          <p className="text-gray-300 text-xs mt-0.5">{customer.phone||""}{customer.email?` · ${customer.email}`:""}</p>
         </div>
         <div className="hidden md:flex gap-4">
           {[{ l:"Total Billed",color:"#fff",v:Rs(totalBilled)},{ l:"Total Paid",color:"#34d399",v:Rs(totalPaid)},{ l:"Balance",color:"#fbbf24",v:Rs(totalBalance)}].map(x=>(
             <div key={x.l} className="text-center">
-              <p className="text-[10px] text-gray-600 uppercase tracking-widest">{x.l}</p>
+              <p className="text-[10px] text-gray-300 uppercase tracking-widest">{x.l}</p>
               <p className="text-sm font-bold" style={{ color:x.color }}>{x.v}</p>
             </div>
           ))}
@@ -386,7 +388,7 @@ function CustomerDetail({ customer, invoices, payments, onBack }) {
               <div key={inv.id} className="grid px-4 py-3 hover:bg-white/[0.02] transition-colors items-center"
                 style={{ gridTemplateColumns:"1fr 1fr 1fr 1fr 1fr", borderBottom:i<custInvoices.length-1?"1px solid rgba(255,255,255,0.04)":"none" }}>
                 <p className="text-blue-400 text-xs font-mono font-bold">#{inv.id.slice(-4).toUpperCase()}</p>
-                <p className="text-gray-400 text-xs">{fmtDate(inv.invoiceDate||inv.createdAt)}</p>
+                <p className="text-gray-300 text-xs">{fmtDate(inv.invoiceDate||inv.createdAt)}</p>
                 <p className="text-white text-xs font-semibold">{Rs(inv.amount)}</p>
                 <p className="text-green-400 text-xs">{Rs(inv.amountPaid)}</p>
                 <StatusBadge status={inv.status} />
@@ -411,7 +413,7 @@ function CustomerDetail({ customer, invoices, payments, onBack }) {
                 <p className="text-white text-xs truncate">{p.description||p.invoiceId||"Payment"}</p>
                 <p className="text-green-400 text-xs font-semibold">{Rs(p.paid)}</p>
                 <p className="text-amber-400 text-xs">{Rs(p.balance)}</p>
-                <p className="text-gray-400 text-xs capitalize">{p.method||"cash"}</p>
+                <p className="text-gray-300 text-xs capitalize">{p.method||"cash"}</p>
               </div>
             ))}
           </div>
@@ -431,8 +433,8 @@ function CustomerDetail({ customer, invoices, payments, onBack }) {
                 style={{ gridTemplateColumns:"2fr 1fr 1fr 1fr", borderBottom:i<custReturns.length-1?"1px solid rgba(255,255,255,0.04)":"none" }}>
                 <p className="text-white text-xs truncate">{r.description||"Return"}</p>
                 <p className="text-red-400 text-xs font-semibold">{Rs(r.returnAmount||r.paid)}</p>
-                <p className="text-gray-400 text-xs">{r.qty||"—"}</p>
-                <p className="text-gray-400 text-xs">{fmtDate(r.createdAt)}</p>
+                <p className="text-gray-300 text-xs">{r.qty||"—"}</p>
+                <p className="text-gray-300 text-xs">{fmtDate(r.createdAt)}</p>
               </div>
             ))}
           </div>
@@ -493,13 +495,13 @@ function CustomersTab({ customers, invoices, payments }) {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-sm font-semibold truncate">{c.name}</p>
-                  <p className="text-gray-500 text-xs truncate">{c.shopName||c.phone||c.email||"—"}</p>
+                  <p className="text-gray-300 text-xs truncate">{c.shopName||c.phone||c.email||"—"}</p>
                 </div>
                 <div className="hidden sm:flex flex-col items-end gap-0.5 flex-shrink-0">
-                  <p className="text-[10px] text-gray-600 uppercase tracking-widest">Balance</p>
+                  <p className="text-[10px] text-gray-300 uppercase tracking-widest">Balance</p>
                   <p className="text-sm font-bold" style={{ color: balance>0?"#fbbf24":"#34d399" }}>{Rs(balance)}</p>
                 </div>
-                <span className="text-gray-600 group-hover:text-gray-400 transition-colors ml-2">›</span>
+                <span className="text-gray-300 group-hover:text-gray-300 transition-colors ml-2">›</span>
               </button>
             );
           })}
@@ -522,7 +524,7 @@ function itemUnit(item) {
 }
 
 function ItemsTable({ items, accent="#c4b5fd" }) {
-  if (!items?.length) return <p className="text-gray-600 text-xs px-1 py-2">No items</p>;
+  if (!items?.length) return <p className="text-gray-300 text-xs px-1 py-2">No items</p>;
   return (
     <div className="rounded-lg overflow-hidden" style={{ border:"1px solid rgba(255,255,255,0.07)" }}>
       <div className="grid px-3 py-1.5 text-[9px] font-bold uppercase tracking-widest"
@@ -549,7 +551,7 @@ function ItemsTable({ items, accent="#c4b5fd" }) {
               )}
             </div>
             <p className="text-gray-300 text-xs text-right">{effQty}</p>
-            <p className="text-gray-500 text-xs text-right">{unit}</p>
+            <p className="text-gray-300 text-xs text-right">{unit}</p>
             <p className="text-gray-300 text-xs text-right">{Rs(rate)}</p>
             <p className="text-white text-xs font-semibold text-right">{Rs(total)}</p>
           </div>
@@ -595,11 +597,11 @@ function SupplierDetail({ supplier, orders, receipts, supplierReturns, onBack })
           <p className="text-white font-black text-base">{supplier.name}</p>
           {supplier.shopName && <p className="text-purple-400 text-xs font-semibold">{supplier.shopName}</p>}
           <div className="flex flex-wrap gap-3 mt-1">
-            {supplier.phone && <span className="text-gray-500 text-xs">📞 {supplier.phone}</span>}
-            {supplier.city  && <span className="text-gray-500 text-xs">📍 {supplier.city}</span>}
-            {supplier.email && <span className="text-gray-500 text-xs">✉️ {supplier.email}</span>}
+            {supplier.phone && <span className="text-gray-300 text-xs">📞 {supplier.phone}</span>}
+            {supplier.city  && <span className="text-gray-300 text-xs">📍 {supplier.city}</span>}
+            {supplier.email && <span className="text-gray-300 text-xs">✉️ {supplier.email}</span>}
           </div>
-          {supplier.notes && <p className="text-gray-600 text-xs mt-1">{supplier.notes}</p>}
+          {supplier.notes && <p className="text-gray-300 text-xs mt-1">{supplier.notes}</p>}
         </div>
         <div className="flex flex-wrap gap-3">
           {[
@@ -610,7 +612,7 @@ function SupplierDetail({ supplier, orders, receipts, supplierReturns, onBack })
           ].map(x=>(
             <div key={x.l} className="text-center px-3 py-2 rounded-xl"
               style={{ background:"rgba(255,255,255,0.04)", border:"1px solid rgba(255,255,255,0.07)" }}>
-              <p className="text-[9px] text-gray-600 uppercase tracking-widest mb-0.5">{x.l}</p>
+              <p className="text-[9px] text-gray-300 uppercase tracking-widest mb-0.5">{x.l}</p>
               <p className="text-sm font-bold" style={{ color:x.c }}>{x.v}</p>
             </div>
           ))}
@@ -664,27 +666,27 @@ function SupplierDetail({ supplier, orders, receipts, supplierReturns, onBack })
                           style={{ background:"rgba(167,139,250,0.1)", color:"#a78bfa", border:"1px solid rgba(167,139,250,0.2)" }}>
                           ↩ {Rs(retAmt)} returned</span>}
                       </div>
-                      <p className="text-gray-600 text-[10px] mt-0.5">
+                      <p className="text-gray-300 text-[10px] mt-0.5">
                         {(o.items||[]).length} item{(o.items||[]).length!==1?"s":""} · {fmtDate(o.createdAt||o.orderDate)}
                       </p>
                     </div>
                     <div className="hidden md:flex gap-4 flex-shrink-0">
                       {[{l:"Original",v:Rs(origAmt),c:"#fff"},{l:"Paid",v:Rs(o.paidAmount),c:"#34d399"},{l:"Balance",v:Rs(o.balance),c:"#fbbf24"}].map(x=>(
                         <div key={x.l} className="text-right">
-                          <p className="text-[9px] text-gray-600 uppercase tracking-widest">{x.l}</p>
+                          <p className="text-[9px] text-gray-300 uppercase tracking-widest">{x.l}</p>
                           <p className="text-xs font-bold" style={{ color:x.c }}>{x.v}</p>
                         </div>
                       ))}
                     </div>
-                    <span className="text-gray-600 text-xs ml-2 flex-shrink-0 transition-transform"
+                    <span className="text-gray-300 text-xs ml-2 flex-shrink-0 transition-transform"
                       style={{ display:"inline-block", transform:isOpen?"rotate(90deg)":"rotate(0deg)" }}>›</span>
                   </div>
                   {/* Expanded detail */}
                   {isOpen && (
                     <div className="px-4 pb-4" style={{ borderTop:"1px solid rgba(255,255,255,0.05)" }}>
-                      <p className="text-[10px] text-gray-600 uppercase tracking-widest font-bold mt-3 mb-2">📦 Original Order Items</p>
+                      <p className="text-[10px] text-gray-300 uppercase tracking-widest font-bold mt-3 mb-2">📦 Original Order Items</p>
                       <ItemsTable items={o.items} accent="#c4b5fd" />
-                      {o.note && <p className="text-gray-500 text-xs mt-2">📝 {o.note}</p>}
+                      {o.note && <p className="text-gray-300 text-xs mt-2">📝 {o.note}</p>}
                       {orderRecs.map((r,ri)=>(
                         <div key={r.id} className="mt-4">
                           <p className="text-[10px] uppercase tracking-widest font-bold mb-2" style={{ color:"#fbbf24" }}>
@@ -699,7 +701,7 @@ function SupplierDetail({ supplier, orders, receipts, supplierReturns, onBack })
                             ↩️ Return #{ri+1} — {fmtDate(r.returnDate||r.createdAt)} — {Rs(r.returnTotal)}
                           </p>
                           <ItemsTable items={r.items} accent="#a78bfa" />
-                          {r.note && <p className="text-gray-500 text-xs mt-1">📝 {r.note}</p>}
+                          {r.note && <p className="text-gray-300 text-xs mt-1">📝 {r.note}</p>}
                         </div>
                       ))}
                     </div>
@@ -726,7 +728,7 @@ function SupplierDetail({ supplier, orders, receipts, supplierReturns, onBack })
                       {r.orderRef||`PO-${(r.orderId||"").slice(-4).toUpperCase()}`}
                       <span className="text-amber-400 ml-2">{Rs(r.receiptTotal)}</span>
                     </p>
-                    <p className="text-gray-500 text-xs">{fmtDate(r.createdAt)} · Balance after: {Rs(r.balanceAfter)}</p>
+                    <p className="text-gray-300 text-xs">{fmtDate(r.createdAt)} · Balance after: {Rs(r.balanceAfter)}</p>
                   </div>
                 </div>
                 <div className="px-4 py-3"><ItemsTable items={r.items} accent="#fbbf24" /></div>
@@ -751,7 +753,7 @@ function SupplierDetail({ supplier, orders, receipts, supplierReturns, onBack })
                       {r.orderRef||`PO-${(r.orderId||"").slice(-4).toUpperCase()}`}
                       <span className="text-purple-400 ml-2">-{Rs(r.returnTotal)}</span>
                     </p>
-                    <p className="text-gray-500 text-xs">
+                    <p className="text-gray-300 text-xs">
                       {fmtDate(r.returnDate||r.createdAt)}
                       {r.balanceBefore!=null&&` · Before: ${Rs(r.balanceBefore)}`}
                       {r.balanceAfter!=null&&` → After: ${Rs(r.balanceAfter)}`}
@@ -760,7 +762,7 @@ function SupplierDetail({ supplier, orders, receipts, supplierReturns, onBack })
                 </div>
                 <div className="px-4 py-3">
                   <ItemsTable items={r.items} accent="#a78bfa" />
-                  {r.note && <p className="text-gray-500 text-xs mt-2">📝 {r.note}</p>}
+                  {r.note && <p className="text-gray-300 text-xs mt-2">📝 {r.note}</p>}
                 </div>
               </div>
             ))}
@@ -811,14 +813,14 @@ function SuppliersTab({ suppliers, orders, receipts, supplierReturns }) {
                 </div>
                 <div className="flex-1 min-w-0">
                   <p className="text-white text-sm font-semibold truncate">{s.name}</p>
-                  <p className="text-gray-500 text-xs">{s.phone||s.city||"—"} · {suppOrders.length} order{suppOrders.length!==1?"s":""}</p>
+                  <p className="text-gray-300 text-xs">{s.phone||s.city||"—"} · {suppOrders.length} order{suppOrders.length!==1?"s":""}</p>
                 </div>
                 <div className="hidden sm:flex flex-col items-end gap-0.5 flex-shrink-0">
-                  <p className="text-[10px] text-gray-600 uppercase tracking-widest">Total · Balance</p>
+                  <p className="text-[10px] text-gray-300 uppercase tracking-widest">Total · Balance</p>
                   <p className="text-white text-xs font-semibold">{Rs(total)}</p>
                   <p className="text-xs font-bold" style={{ color: balance>0?"#fbbf24":"#34d399" }}>{Rs(balance)}</p>
                 </div>
-                <span className="text-gray-600 group-hover:text-gray-400 transition-colors ml-2">›</span>
+                <span className="text-gray-300 group-hover:text-gray-300 transition-colors ml-2">›</span>
               </button>
             );
           })}
@@ -836,7 +838,7 @@ function InvoicesTab({ invoices }) {
   return (
     <div>
       <SectionHead icon="🧾" label="Direct Invoices" count={direct.length} />
-      <p className="text-gray-600 text-xs mb-4">Invoices not linked to any customer. Customer invoices are shown inside each customer&apos;s detail.</p>
+      <p className="text-gray-300 text-xs mb-4">Invoices not linked to any customer. Customer invoices are shown inside each customer&apos;s detail.</p>
       {direct.length === 0 ? <Empty icon="🧾" label="No direct invoices" /> : (
         <div className="rounded-xl overflow-hidden" style={{ border:"1px solid rgba(255,255,255,0.07)" }}>
           <div className="hidden md:grid px-4 py-2 text-[10px] font-bold uppercase tracking-widest"
@@ -848,7 +850,7 @@ function InvoicesTab({ invoices }) {
               style={{ gridTemplateColumns:"1fr 2fr 1fr 1fr 1fr 1fr", borderBottom:i<direct.length-1?"1px solid rgba(255,255,255,0.04)":"none" }}>
               <p className="text-blue-400 text-xs font-mono font-bold">#{inv.id.slice(-4).toUpperCase()}</p>
               <p className="text-white text-xs font-medium truncate">{inv.customerName||inv.customer||"—"}</p>
-              <p className="text-gray-400 text-xs">{fmtDate(inv.invoiceDate||inv.createdAt)}</p>
+              <p className="text-gray-300 text-xs">{fmtDate(inv.invoiceDate||inv.createdAt)}</p>
               <p className="text-white text-xs font-semibold">{Rs(inv.amount)}</p>
               <p className="text-green-400 text-xs">{Rs(inv.amountPaid)}</p>
               <StatusBadge status={inv.status} />
@@ -918,7 +920,7 @@ function ProductsTab({ products }) {
                   {/* name */}
                   <div className="flex-1 min-w-0">
                     <p className="text-white text-sm font-semibold truncate">{p.name}</p>
-                    {p.description && <p className="text-gray-600 text-[10px] truncate">{p.description}</p>}
+                    {p.description && <p className="text-gray-300 text-[10px] truncate">{p.description}</p>}
                   </div>
 
                   {/* type badge */}
@@ -929,15 +931,15 @@ function ProductsTab({ products }) {
 
                   {/* price */}
                   <div className="text-right flex-shrink-0 min-w-[70px]">
-                    <p className="text-[10px] text-gray-600 uppercase tracking-widest">Price</p>
-                    <p className="text-gray-500 text-xs font-semibold tracking-widest">
+                    <p className="text-[10px] text-gray-300 uppercase tracking-widest">Price</p>
+                    <p className="text-gray-300 text-xs font-semibold tracking-widest">
                       ••••••
                     </p>
                   </div>
 
                   {/* stock */}
                   <div className="text-right flex-shrink-0 min-w-[60px]">
-                    <p className="text-[10px] text-gray-600 uppercase tracking-widest">Stock</p>
+                    <p className="text-[10px] text-gray-300 uppercase tracking-widest">Stock</p>
                     <p className="text-sm font-bold" style={{ color: (hasVariants ? totalV : (p.stock??0)) > 0 ? "#fbbf24" : "#f87171" }}>
                       {hasVariants ? totalV : (p.stock ?? 0)}
                     </p>
@@ -945,7 +947,7 @@ function ProductsTab({ products }) {
 
                   {/* expand chevron */}
                   {hasVariants && (
-                    <span className="text-gray-500 text-xs ml-1 transition-transform flex-shrink-0"
+                    <span className="text-gray-300 text-xs ml-1 transition-transform flex-shrink-0"
                       style={{ transform: isOpen ? "rotate(90deg)" : "rotate(0deg)", display:"inline-block" }}>
                       ›
                     </span>
@@ -955,12 +957,12 @@ function ProductsTab({ products }) {
                 {/* Variants expanded */}
                 {hasVariants && isOpen && (
                   <div className="px-4 pb-3" style={{ borderTop:"1px solid rgba(255,255,255,0.05)" }}>
-                    <p className="text-[10px] uppercase tracking-widest text-gray-600 font-bold mt-3 mb-2">
+                    <p className="text-[10px] uppercase tracking-widest text-gray-300 font-bold mt-3 mb-2">
                       Variants ({variants.length})
                     </p>
                     <div className="flex flex-col gap-1.5">
                       {variants.length === 0 ? (
-                        <p className="text-gray-600 text-xs">No variants defined</p>
+                        <p className="text-gray-300 text-xs">No variants defined</p>
                       ) : (
                         variants.map((v, vi) => (
                           <div key={vi} className="flex items-center justify-between px-3 py-2 rounded-lg"
@@ -972,11 +974,11 @@ function ProductsTab({ products }) {
                             </div>
                             <div className="flex items-center gap-4">
                               <div className="text-right">
-                                <p className="text-[10px] text-gray-600 uppercase tracking-widest">Price</p>
-                                <p className="text-gray-500 text-xs font-semibold tracking-widest">••••••</p>
+                                <p className="text-[10px] text-gray-300 uppercase tracking-widest">Price</p>
+                                <p className="text-gray-300 text-xs font-semibold tracking-widest">••••••</p>
                               </div>
                               <div className="text-right">
-                                <p className="text-[10px] text-gray-600 uppercase tracking-widest">Stock</p>
+                                <p className="text-[10px] text-gray-300 uppercase tracking-widest">Stock</p>
                                 <p className="text-sm font-bold"
                                   style={{ color: (Number(v.stock)||0) > 0 ? "#fbbf24" : "#f87171" }}>
                                   {v.stock ?? 0}
@@ -1068,7 +1070,7 @@ function PaymentsTab({ payments }) {
       {/* Filters */}
       <div className="flex flex-col sm:flex-row gap-3 mb-4">
         <div className="relative flex-1 max-w-sm">
-          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-500 text-sm pointer-events-none">🔍</span>
+          <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-300 text-sm pointer-events-none">🔍</span>
           <input value={search} onChange={e=>setSearch(e.target.value)}
             placeholder="Search name, invoice, description..."
             className="w-full rounded-xl text-white text-sm outline-none"
@@ -1124,7 +1126,7 @@ function PaymentsTab({ payments }) {
                   <div className="min-w-0">
                     <p className="text-white text-xs font-semibold truncate">{getName(p)}</p>
                     {p.description && p.description !== getName(p) && (
-                      <p className="text-gray-600 text-[10px] truncate">{p.description}</p>
+                      <p className="text-gray-300 text-[10px] truncate">{p.description}</p>
                     )}
                   </div>
                 </div>
@@ -1152,8 +1154,8 @@ function PaymentsTab({ payments }) {
 
                 {/* Method + Date */}
                 <div>
-                  <p className="text-gray-400 text-xs capitalize">{p.method||"cash"}</p>
-                  <p className="text-gray-600 text-[10px]">{dateStr}</p>
+                  <p className="text-gray-300 text-xs capitalize">{p.method||"cash"}</p>
+                  <p className="text-gray-300 text-[10px]">{dateStr}</p>
                 </div>
               </div>
             );
@@ -1180,10 +1182,10 @@ function ActivityTab({ activityLogs }) {
           {activityLogs.map((log,i)=>(
             <div key={log.id} className="grid px-4 py-2.5 hover:bg-white/[0.02] transition-colors"
               style={{ gridTemplateColumns:"2fr 1fr 1fr 1fr", borderBottom:i<activityLogs.length-1?"1px solid rgba(255,255,255,0.04)":"none" }}>
-              <span className="text-gray-400 text-xs">{fmtDT(log.timestamp)}</span>
-              <span className="text-gray-500 font-mono text-[10px]">{log.ip||"—"}</span>
-              <span className="text-gray-400 text-xs">{log.browser||"—"}</span>
-              <span className="text-gray-400 text-xs">{log.device||"—"}</span>
+              <span className="text-gray-300 text-xs">{fmtDT(log.timestamp)}</span>
+              <span className="text-gray-300 font-mono text-[10px]">{log.ip||"—"}</span>
+              <span className="text-gray-300 text-xs">{log.browser||"—"}</span>
+              <span className="text-gray-300 text-xs">{log.device||"—"}</span>
             </div>
           ))}
         </div>
@@ -1331,7 +1333,7 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
         <div className="flex items-center justify-between">
           <div>
             <p className="text-white font-bold text-sm">🗑️ Admin Trash Archive</p>
-            <p className="text-gray-500 text-xs mt-0.5">Items permanently deleted by user — admin can still restore within 15 days. After expiry they are deleted from database forever.</p>
+            <p className="text-gray-300 text-xs mt-0.5">Items permanently deleted by user — admin can still restore within 15 days. After expiry they are deleted from database forever.</p>
           </div>
           <span className="px-3 py-1.5 rounded-xl text-xs font-bold"
             style={{ background:"rgba(248,113,113,0.1)", border:"1px solid rgba(248,113,113,0.2)", color:"#f87171" }}>
@@ -1342,11 +1344,11 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
         <div className="flex gap-4 mt-3 flex-wrap">
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-purple-400" />
-            <span className="text-gray-500 text-[10px]">Permanently deleted by user — ⏰ 15-day recovery window (admin can restore)</span>
+            <span className="text-gray-300 text-[10px]">Permanently deleted by user — ⏰ 15-day recovery window (admin can restore)</span>
           </div>
           <div className="flex items-center gap-1.5">
             <div className="w-2 h-2 rounded-full bg-red-400" />
-            <span className="text-gray-500 text-[10px]">⚠️ Expired — will be permanently deleted from database</span>
+            <span className="text-gray-300 text-[10px]">⚠️ Expired — will be permanently deleted from database</span>
           </div>
         </div>
       </div>
@@ -1397,16 +1399,16 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
                       Perm. deleted by user
                     </span>
                   </div>
-                  <p className="text-gray-500 text-[11px] truncate">{trashSub(item)}</p>
+                  <p className="text-gray-300 text-[11px] truncate">{trashSub(item)}</p>
                 </div>
 
                 {/* Date + countdown */}
                 <div className="hidden sm:flex flex-col items-end flex-shrink-0 mr-2 gap-0.5">
-                  <p className="text-gray-600 text-[10px] uppercase tracking-wide">Auto-delete in</p>
+                  <p className="text-gray-300 text-[10px] uppercase tracking-wide">Auto-delete in</p>
                   <p className={`text-xs font-bold ${countdown.expired ? "text-red-400" : countdown.daysLeft <= 3 ? "text-amber-400" : "text-purple-400"}`}>
                     {countdown.display}
                   </p>
-                  <p className="text-gray-600 text-[10px]">Deleted: {fmtDate(item.adminTrashedAt)}</p>
+                  <p className="text-gray-300 text-[10px]">Deleted: {fmtDate(item.adminTrashedAt)}</p>
                 </div>
 
                 {/* Restore button */}
@@ -1434,13 +1436,13 @@ function TrashTab({ uid, data, getToken, onToast, onRefresh }) {
               <h3 className="text-white font-black text-lg">Restore Item?</h3>
               <div className="rounded-xl px-4 py-3" style={{ background:"rgba(52,211,153,0.06)", border:"1px solid rgba(52,211,153,0.15)" }}>
                 <p className="text-white font-semibold text-sm">{trashLabel(item)}</p>
-                <p className="text-gray-500 text-xs mt-0.5">{trashSub(item)}</p>
+                <p className="text-gray-300 text-xs mt-0.5">{trashSub(item)}</p>
               </div>
-              <p className="text-gray-400 text-sm">
+              <p className="text-gray-300 text-sm">
                 Item will be fully restored to its original section on the user&apos;s dashboard.
               </p>
-              {item._col==="customers" && <p className="text-gray-500 text-xs">Their invoices &amp; payments will also be restored.</p>}
-              {item._col==="suppliers" && <p className="text-gray-500 text-xs">Their orders will also be restored.</p>}
+              {item._col==="customers" && <p className="text-gray-300 text-xs">Their invoices &amp; payments will also be restored.</p>}
+              {item._col==="suppliers" && <p className="text-gray-300 text-xs">Their orders will also be restored.</p>}
               <div className="flex gap-3">
                 <button onClick={()=>setRestoreId(null)} disabled={restoring}
                   className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all"
@@ -1590,19 +1592,19 @@ function TicketConversation({ ticket, getToken, onToast, onRefresh }) {
                 style={{ background:"rgba(52,211,153,0.12)", border:"1px solid rgba(52,211,153,0.3)" }}>✅</div>
               <div>
                 <p className="text-white font-black text-base">Mark as Resolved</p>
-                <p className="text-gray-500 text-xs mt-0.5">{ticket.ticketId} · {ticket.name}</p>
+                <p className="text-gray-300 text-xs mt-0.5">{ticket.ticketId} · {ticket.name}</p>
               </div>
             </div>
             <div className="flex flex-col gap-2">
-              <label className="text-xs font-bold uppercase tracking-widest text-gray-500">
-                Resolution Summary <span className="text-gray-600 normal-case tracking-normal font-normal">(sent to user)</span>
+              <label className="text-xs font-bold uppercase tracking-widest text-gray-300">
+                Resolution Summary <span className="text-gray-300 normal-case tracking-normal font-normal">(sent to user)</span>
               </label>
               <textarea rows={4} value={resolveMsg} onChange={e => setResolveMsg(e.target.value)}
                 placeholder="Describe what was the issue and how it was resolved..."
                 style={{ width:"100%", outline:"none", resize:"vertical",
                   background:"rgba(255,255,255,0.04)", border:"1.5px solid rgba(52,211,153,0.3)",
                   borderRadius:12, padding:"10px 14px", color:"#fff", fontSize:13, lineHeight:1.7 }} />
-              <p className="text-gray-600 text-[10px]">Ticket auto-closes after marking resolved.</p>
+              <p className="text-gray-300 text-[10px]">Ticket auto-closes after marking resolved.</p>
             </div>
             <div className="flex gap-3">
               <button onClick={() => { setResolvePopup(false); setResolveMsg(""); }}
@@ -1634,7 +1636,7 @@ function TicketConversation({ ticket, getToken, onToast, onRefresh }) {
             </span>
           </div>
           <p className="text-white text-sm font-semibold">{ticket.subject}</p>
-          <p className="text-gray-600 text-[10px] mt-0.5">{fmtDT(ticket.createdAt)}</p>
+          <p className="text-gray-300 text-[10px] mt-0.5">{fmtDT(ticket.createdAt)}</p>
         </div>
         <button onClick={handleDelete} disabled={acting}
           className="text-xs px-3 py-1.5 rounded-lg font-bold transition-all hover:scale-105"
@@ -1690,7 +1692,7 @@ function TicketConversation({ ticket, getToken, onToast, onRefresh }) {
                   {isAdmin ? "🛡 Novexa Support" : "👤 User"}
                 </p>
                 <p className="text-xs text-white leading-relaxed" style={{ whiteSpace:"pre-wrap" }}>{msg.text}</p>
-                <p className="text-[9px] text-gray-600 mt-1">{fmtDT(msg.createdAt)}</p>
+                <p className="text-[9px] text-gray-300 mt-1">{fmtDT(msg.createdAt)}</p>
               </div>
             </div>
           );
@@ -1746,7 +1748,7 @@ function TicketsTab({ uid, getToken, onToast }) {
   if (tickets.length === 0) return (
     <div className="flex flex-col items-center justify-center py-16 gap-3">
       <span className="text-5xl">📭</span>
-      <p className="text-gray-500 text-sm">No support tickets from this user yet.</p>
+      <p className="text-gray-300 text-sm">No support tickets from this user yet.</p>
     </div>
   );
 
@@ -1979,7 +1981,7 @@ function AddonsTab({ uid, user, getToken, onToast }) {
       <div className="flex items-start justify-between gap-3">
         <div>
           <h2 className="text-white font-black text-lg flex items-center gap-2">⚡ Add-on Quota</h2>
-          <p className="text-gray-500 text-xs mt-1">User ke existing plan limits ke upar extra quota add karein. 1 mahine ke liye valid.</p>
+          <p className="text-gray-300 text-xs mt-1">User ke existing plan limits ke upar extra quota add karein. 1 mahine ke liye valid.</p>
         </div>
         {/* Recalculate button — fixes any data inconsistency */}
         <button
@@ -2026,7 +2028,7 @@ function AddonsTab({ uid, user, getToken, onToast }) {
               <p className="text-sm font-black" style={{ color: expired ? "#f87171" : "#fbbf24" }}>
                 {expired ? "Add-on Expired" : `Active Add-on — ${dLeft}d left`}
               </p>
-              <div className="ml-auto flex gap-3 text-xs text-gray-500 flex-wrap">
+              <div className="ml-auto flex gap-3 text-xs text-gray-300 flex-wrap">
                 {purchAt && <span>Purchased: <span className="text-gray-300 font-medium">{fmtD(purchAt)}</span>{pymeth ? ` · ${pymeth === "online" ? "🌐 Online" : pymeth === "cheque" ? "🧾 Cheque" : "💵 Cash"}` : ""}</span>}
                 {exp     && <span>Expires: <span className="font-medium" style={{ color: expired ? "#f87171" : "#fbbf24" }}>{fmtD(userMeta.extraLimitsExpiresAt)}</span></span>}
               </div>
@@ -2037,7 +2039,7 @@ function AddonsTab({ uid, user, getToken, onToast }) {
                   style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", opacity: expired ? 0.55 : 1 }}>
                   <span className="text-sm">{cat.icon}</span>
                   <div className="min-w-0">
-                    <p className="text-gray-400 text-[10px] truncate">{cat.label}</p>
+                    <p className="text-gray-300 text-[10px] truncate">{cat.label}</p>
                     <p className="font-black text-sm" style={{ color: expired ? "#f87171" : "#fbbf24" }}>+{(existingLims[cat.limitKey]||0).toLocaleString()}</p>
                   </div>
                 </div>
@@ -2047,7 +2049,7 @@ function AddonsTab({ uid, user, getToken, onToast }) {
                   style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)", opacity: expired ? 0.55 : 1 }}>
                   <span className="text-sm">🧑‍💼</span>
                   <div className="min-w-0">
-                    <p className="text-gray-400 text-[10px] truncate">Extra User Seats</p>
+                    <p className="text-gray-300 text-[10px] truncate">Extra User Seats</p>
                     <p className="font-black text-sm" style={{ color: expired ? "#f87171" : "#6366f1" }}>+{(existingLims["extraUsers"]||0).toLocaleString()}</p>
                   </div>
                 </div>
@@ -2059,7 +2061,7 @@ function AddonsTab({ uid, user, getToken, onToast }) {
 
       {/* Add new quota — per category — 2 column grid */}
       <div className="flex flex-col gap-4">
-        <p className="text-gray-500 text-[11px] uppercase tracking-widest font-bold">⚡ Add New Quota</p>
+        <p className="text-gray-300 text-[11px] uppercase tracking-widest font-bold">⚡ Add New Quota</p>
         <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
         {ADDON_CATS.map(cat => {
           const adding = Number(addQtys[cat.limitKey]) || 0;
@@ -2098,7 +2100,7 @@ function AddonsTab({ uid, user, getToken, onToast }) {
 
               {/* Custom qty input */}
               <div className="flex items-center gap-3">
-                <span className="text-gray-500 text-xs w-24 flex-shrink-0">Custom qty:</span>
+                <span className="text-gray-300 text-xs w-24 flex-shrink-0">Custom qty:</span>
                 <button type="button" onClick={() => setAddQtys(prev => ({ ...prev, [cat.limitKey]: String(Math.max(0, adding - 1)) }))}
                   className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold"
                   style={{ background:"rgba(245,158,11,0.12)", border:"1px solid rgba(245,158,11,0.25)", color:"#fbbf24" }}>−</button>
@@ -2114,7 +2116,7 @@ function AddonsTab({ uid, user, getToken, onToast }) {
                     className="w-6 h-6 rounded-lg flex items-center justify-center text-xs"
                     style={{ background:"rgba(248,113,113,0.12)", border:"1px solid rgba(248,113,113,0.25)", color:"#f87171" }}>✕</button>
                 )}
-                <div className="text-gray-600 text-[10px] flex-shrink-0">
+                <div className="text-gray-300 text-[10px] flex-shrink-0">
                   Existing: <span className="text-gray-300 font-bold">{existingLims[cat.limitKey]||0}</span>
                   {adding > 0 && <> → Total: <span className="text-emerald-400 font-bold">{(existingLims[cat.limitKey]||0)+adding}</span></>}
                 </div>
@@ -2139,7 +2141,7 @@ function AddonsTab({ uid, user, getToken, onToast }) {
                 <p className="text-gray-200 text-sm font-bold flex-1">Extra User Seats</p>
                 {cost > 0 && <span className="text-indigo-300 font-black text-sm">Rs. {cost.toLocaleString()}</span>}
               </div>
-              <p className="text-gray-600 text-[10px] mb-3">Flat rate: Rs.{perPrice.toLocaleString()} / user / month. User ka maxDevices bhi automatically update hoga.</p>
+              <p className="text-gray-300 text-[10px] mb-3">Flat rate: Rs.{perPrice.toLocaleString()} / user / month. User ka maxDevices bhi automatically update hoga.</p>
 
               {/* Preset buttons */}
               <div className="flex flex-wrap gap-2 mb-3">
@@ -2159,7 +2161,7 @@ function AddonsTab({ uid, user, getToken, onToast }) {
 
               {/* Custom qty input */}
               <div className="flex items-center gap-3">
-                <span className="text-gray-500 text-xs w-24 flex-shrink-0">Custom qty:</span>
+                <span className="text-gray-300 text-xs w-24 flex-shrink-0">Custom qty:</span>
                 <button type="button" onClick={() => setAddQtys(prev => ({ ...prev, extraUsers: String(Math.max(0, adding - 1)) }))}
                   className="w-7 h-7 rounded-lg flex items-center justify-center text-sm font-bold"
                   style={{ background:"rgba(99,102,241,0.12)", border:"1px solid rgba(99,102,241,0.25)", color:"#a5b4fc" }}>−</button>
@@ -2175,7 +2177,7 @@ function AddonsTab({ uid, user, getToken, onToast }) {
                     className="w-6 h-6 rounded-lg flex items-center justify-center text-xs"
                     style={{ background:"rgba(248,113,113,0.12)", border:"1px solid rgba(248,113,113,0.25)", color:"#f87171" }}>✕</button>
                 )}
-                <div className="text-gray-600 text-[10px] flex-shrink-0">
+                <div className="text-gray-300 text-[10px] flex-shrink-0">
                   Existing: <span className="text-gray-300 font-bold">{existingLims["extraUsers"]||0}</span>
                   {adding > 0 && <> → Total: <span className="text-indigo-400 font-bold">{(existingLims["extraUsers"]||0)+adding}</span></>}
                 </div>
@@ -2195,7 +2197,7 @@ function AddonsTab({ uid, user, getToken, onToast }) {
             </div>
             <p className="text-amber-300 font-black text-2xl">Rs. {grandTotal.toLocaleString()}</p>
           </div>
-          <p className="text-gray-500 text-[10px] uppercase tracking-widest font-bold mb-2">💳 Payment Method</p>
+          <p className="text-gray-300 text-[10px] uppercase tracking-widest font-bold mb-2">💳 Payment Method</p>
           <div className="grid grid-cols-3 gap-2 mb-4">
             {[{id:"online",label:"🌐 Online",desc:"Card / Bank"},{id:"cash",label:"💵 Cash",desc:"Naqad"},{id:"cheque",label:"🧾 Cheque",desc:"Cheque"}].map(opt => (
               <button key={opt.id} type="button" onClick={() => setPayMethod(opt.id)}
@@ -2221,19 +2223,19 @@ function AddonsTab({ uid, user, getToken, onToast }) {
             <div className="px-6 pt-6 pb-4 text-center" style={{ background:"linear-gradient(135deg,rgba(245,158,11,0.1),transparent)" }}>
               <div className="text-4xl mb-3">⚡</div>
               <h3 className="text-white font-black text-lg">Confirm Add-on</h3>
-              <p className="text-gray-400 text-sm mt-1">{user?.name} ke liye activate karein?</p>
+              <p className="text-gray-300 text-sm mt-1">{user?.name} ke liye activate karein?</p>
             </div>
             <div className="px-6 py-4 flex flex-col gap-1.5">
               {lines.map(l => (
                 <div key={l.cat.limitKey} className="flex items-center gap-2 py-1.5" style={{ borderBottom:"1px solid rgba(255,255,255,0.05)" }}>
                   <span className="text-sm">{l.cat.icon}</span>
                   <span className="text-gray-300 text-xs flex-1">{l.cat.label}</span>
-                  <span className="text-gray-500 text-xs">+{l.adding}</span>
+                  <span className="text-gray-300 text-xs">+{l.adding}</span>
                   <span className="text-amber-300 text-xs font-bold">Rs. {l.total.toLocaleString()}</span>
                 </div>
               ))}
               <div className="flex items-center justify-between pt-2">
-                <span className="text-gray-400 text-xs font-bold uppercase tracking-widest">Total</span>
+                <span className="text-gray-300 text-xs font-bold uppercase tracking-widest">Total</span>
                 <span className="text-amber-300 font-black text-base">Rs. {grandTotal.toLocaleString()}</span>
               </div>
               <div className="flex items-center gap-2 px-3 py-2 rounded-lg mt-1" style={{ background:"rgba(245,158,11,0.07)", border:"1px solid rgba(245,158,11,0.2)" }}>
@@ -2262,21 +2264,21 @@ function AddonsTab({ uid, user, getToken, onToast }) {
             <div className="px-6 pt-6 pb-3 text-center">
               <div className="w-14 h-14 rounded-full flex items-center justify-center text-3xl mx-auto mb-3" style={{ background:"rgba(245,158,11,0.15)", border:"2px solid rgba(245,158,11,0.4)" }}>✅</div>
               <h3 className="text-white font-black text-xl">Add-on Activated!</h3>
-              <p className="text-gray-400 text-sm mt-1">{user?.name}&apos;s extra quota is now active.</p>
+              <p className="text-gray-300 text-sm mt-1">{user?.name}&apos;s extra quota is now active.</p>
             </div>
             <div className="px-6 py-3 mx-2 rounded-xl mb-4" style={{ background:"rgba(245,158,11,0.07)", border:"1px solid rgba(245,158,11,0.2)" }}>
               {success.lines.map(l => (
                 <div key={l.cat.limitKey} className="flex items-center justify-between py-1.5" style={{ borderBottom:"1px solid rgba(245,158,11,0.1)" }}>
-                  <span className="text-gray-400 text-[11px]">{l.cat.icon} +{l.adding} {l.cat.label}</span>
+                  <span className="text-gray-300 text-[11px]">{l.cat.icon} +{l.adding} {l.cat.label}</span>
                   <span className="text-amber-300 text-xs font-bold">Rs. {l.total.toLocaleString()}</span>
                 </div>
               ))}
               <div className="flex items-center justify-between py-1.5" style={{ borderBottom:"1px solid rgba(245,158,11,0.1)" }}>
-                <span className="text-gray-500 text-[11px] uppercase font-bold">Total Paid</span>
+                <span className="text-gray-300 text-[11px] uppercase font-bold">Total Paid</span>
                 <span className="text-amber-300 font-black">Rs. {success.grandTotal.toLocaleString()}</span>
               </div>
               <div className="flex items-center justify-between py-1.5">
-                <span className="text-gray-500 text-[11px] uppercase font-bold">Expires On</span>
+                <span className="text-gray-300 text-[11px] uppercase font-bold">Expires On</span>
                 <span className="text-amber-300 text-xs font-semibold">⏰ {new Date(success.expiresAt).toLocaleDateString("en-PK",{day:"2-digit",month:"long",year:"numeric"})}</span>
               </div>
             </div>
@@ -2460,10 +2462,11 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
     if(backup.customerNested) Object.values(backup.customerNested).forEach(s=>Object.values(s).forEach(a=>{totalDocs+=a.length;}));
     if(backup.supplierNested) Object.values(backup.supplierNested).forEach(s=>Object.values(s).forEach(a=>{totalDocs+=a.length;}));
     const json=JSON.stringify(backup,null,2);
-    const now=new Date(); const fileName=`novexa-backup-${targetUid.slice(0,8)}-${now.toISOString().split("T")[0]}_${now.toTimeString().slice(0,8).replace(/:/g,"-")}.json`;
-    await writeToDirHandle(dh, json, fileName);
-    await addHistEntry(fileName, totalDocs, "auto");
-    return { fileName, totalDocs };
+    const now=new Date(); const baseFileName=`novexa-backup-${targetUid.slice(0,8)}-${now.toISOString().split("T")[0]}_${now.toTimeString().slice(0,8).replace(/:/g,"-")}`;
+    // Always encrypt auto-backups with default hidden key
+    const savedName = await writeToDirEncrypted(dh, json, baseFileName, NOVEXA_DEFAULT_KEY);
+    await addHistEntry(savedName, totalDocs, "auto");
+    return { fileName: savedName, totalDocs };
   }
 
   async function runAutoBackupSilent() {
@@ -2601,13 +2604,15 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
         return;
       }
 
-      // Fallback: browser download
-      const blob = new Blob([json], { type:"application/json" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a"); a.href = url; a.download = fileName;
+      // Fallback: browser download (encrypted with default key)
+      const encName   = encryptedFileName(fileName.replace(/\.json$/, ""));
+      const buffer    = await encryptJson(json, NOVEXA_DEFAULT_KEY);
+      const blob      = new Blob([buffer], { type: "application/octet-stream" });
+      const url       = URL.createObjectURL(blob);
+      const a = document.createElement("a"); a.href = url; a.download = encName;
       document.body.appendChild(a); a.click(); document.body.removeChild(a); URL.revokeObjectURL(url);
       setExportMsg({ type:"success", text:`✅ Downloaded! ${totalDocs.toLocaleString()} records.` });
-      await addHistEntry(fileName, totalDocs, "manual");
+      await addHistEntry(encName, totalDocs, "manual");
     } catch (err) { setExportMsg({ type:"error", text:"Export failed: " + err.message }); }
     setExporting(false); setExportProg(0); setExportLabel("");
   }
@@ -2672,9 +2677,10 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
     if (!json || !dh) return;
     setExporting(true);
     try {
-      await writeToDirHandle(dh, json, fileName);
+      // Always encrypt with default hidden key — same as BackupView "skip password" flow
+      const savedName = await writeToDirEncrypted(dh, json, fileName, NOVEXA_DEFAULT_KEY);
       setExportMsg({ type:"success", text:`✅ Saved to "${dh.name}" — ${totalDocs?.toLocaleString()} records.` });
-      await addHistEntry(fileName, totalDocs, type || "manual");
+      await addHistEntry(savedName, totalDocs, type || "manual");
     } catch (err) {
       setExportMsg({ type:"error", text:"Save failed: " + err.message });
     }
@@ -2911,12 +2917,12 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
                 <span className="text-2xl">🔐</span>
                 <div>
                   <p className="text-white font-black text-sm">Protect this backup?</p>
-                  <p className="text-gray-500 text-xs">Encrypt with a password before saving</p>
+                  <p className="text-gray-300 text-xs">Encrypt with a password before saving</p>
                 </div>
                 <button onClick={() => { setPwModal("idle"); pwPendingRef.current = null; }}
-                  className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+                  className="ml-auto text-gray-300 hover:text-gray-300 text-lg">✕</button>
               </div>
-              <div className="rounded-xl px-4 py-3 text-xs leading-relaxed text-gray-400"
+              <div className="rounded-xl px-4 py-3 text-xs leading-relaxed text-gray-300"
                 style={{ background:"rgba(99,102,241,0.06)", border:"1px solid rgba(99,102,241,0.18)" }}>
                 🔒 <span className="text-indigo-300 font-semibold">Encrypted (.novexa)</span> — unlock via restore on this page.<br />
                 📄 <span className="text-gray-300 font-semibold">Unencrypted (.json)</span> — plain readable JSON.
@@ -2949,11 +2955,11 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
                 <span className="text-2xl">🔑</span>
                 <div>
                   <p className="text-white font-black text-sm">Set Backup Password</p>
-                  <p className="text-gray-500 text-xs">AES-256 encryption — remember this password!</p>
+                  <p className="text-gray-300 text-xs">AES-256 encryption — remember this password!</p>
                 </div>
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Password</label>
+                <label className="text-[10px] text-gray-300 uppercase tracking-widest font-bold">Password</label>
                 <div className="relative">
                   <input type={pwShow ? "text" : "password"} value={pwInput}
                     onChange={e => { setPwInput(e.target.value); setPwError(""); }}
@@ -2964,13 +2970,13 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
                     autoFocus
                   />
                   <button type="button" onClick={() => setPwShow(v => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs">
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-300 text-xs">
                     {pwShow ? "Hide" : "Show"}
                   </button>
                 </div>
               </div>
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Confirm Password</label>
+                <label className="text-[10px] text-gray-300 uppercase tracking-widest font-bold">Confirm Password</label>
                 <input type={pwShow ? "text" : "password"} value={pwConfirm}
                   onChange={e => { setPwConfirm(e.target.value); setPwError(""); }}
                   onKeyDown={e => e.key === "Enter" && handlePwSet()}
@@ -3006,14 +3012,14 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
                 <span className="text-2xl">🔐</span>
                 <div>
                   <p className="text-white font-black text-sm">Encrypted Backup</p>
-                  <p className="text-gray-500 text-xs truncate max-w-[180px]">{pwRestoreRef.current?.fileName}</p>
+                  <p className="text-gray-300 text-xs truncate max-w-[180px]">{pwRestoreRef.current?.fileName}</p>
                 </div>
                 <button onClick={() => { setPwModal("idle"); pwRestoreRef.current = null; }}
-                  className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+                  className="ml-auto text-gray-300 hover:text-gray-300 text-lg">✕</button>
               </div>
-              <p className="text-gray-400 text-xs">Enter the password used when creating this backup.</p>
+              <p className="text-gray-300 text-xs">Enter the password used when creating this backup.</p>
               <div className="flex flex-col gap-1">
-                <label className="text-[10px] text-gray-500 uppercase tracking-widest font-bold">Password</label>
+                <label className="text-[10px] text-gray-300 uppercase tracking-widest font-bold">Password</label>
                 <div className="relative">
                   <input type={pwShow ? "text" : "password"} value={pwInput}
                     onChange={e => { setPwInput(e.target.value); setPwError(""); }}
@@ -3024,7 +3030,7 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
                     autoFocus
                   />
                   <button type="button" onClick={() => setPwShow(v => !v)}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-500 hover:text-gray-300 text-xs">
+                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-gray-300 text-xs">
                     {pwShow ? "Hide" : "Show"}
                   </button>
                 </div>
@@ -3051,10 +3057,10 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
                 <span className="text-2xl">📁</span>
                 <div>
                   <p className="text-white font-black text-sm">Where to save?</p>
-                  <p className="text-gray-500 text-xs">A folder is already saved</p>
+                  <p className="text-gray-300 text-xs">A folder is already saved</p>
                 </div>
                 <button onClick={() => { setFolderModal(false); pendingRef.current = null; }}
-                  className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+                  className="ml-auto text-gray-300 hover:text-gray-300 text-lg">✕</button>
               </div>
               <div className="px-4 py-3 rounded-xl flex items-center gap-3"
                 style={{ background:"rgba(245,158,11,0.06)", border:"1px solid rgba(245,158,11,0.2)" }}>
@@ -3090,16 +3096,16 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
                 <span className="text-2xl">♻️</span>
                 <div>
                   <p className="text-white font-black text-sm">Choose Restore Mode</p>
-                  <p className="text-gray-500 text-xs">Restoring to: <span className="text-amber-300 font-semibold">{userName || targetUid}</span></p>
+                  <p className="text-gray-300 text-xs">Restoring to: <span className="text-amber-300 font-semibold">{userName || targetUid}</span></p>
                 </div>
                 <button onClick={() => { setModalStep(null); setPendingFile(null); setFileInfo(null); }}
-                  className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+                  className="ml-auto text-gray-300 hover:text-gray-300 text-lg">✕</button>
               </div>
               <div className="rounded-xl px-4 py-3 flex flex-col gap-1.5"
                 style={{ background:"rgba(255,255,255,0.03)", border:"1px solid rgba(255,255,255,0.07)" }}>
-                <div className="flex gap-2 text-xs"><span className="text-gray-500 w-20">File:</span><span className="text-white font-medium truncate">{fileInfo.name}</span>{fileInfo.encrypted && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0" style={{ background:"rgba(99,102,241,0.15)", color:"#818cf8", border:"1px solid rgba(99,102,241,0.3)" }}>🔐 Encrypted</span>}</div>
-                <div className="flex gap-2 text-xs"><span className="text-gray-500 w-20">Backup Date:</span><span className="text-amber-300 font-medium">{fmtDTLocal(fileInfo.exportedAt)}</span></div>
-                <div className="flex gap-2 text-xs"><span className="text-gray-500 w-20">Records:</span><span className="text-green-400 font-bold">{fileInfo.docCount?.toLocaleString()}</span></div>
+                <div className="flex gap-2 text-xs"><span className="text-gray-300 w-20">File:</span><span className="text-white font-medium truncate">{fileInfo.name}</span>{fileInfo.encrypted && <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold flex-shrink-0" style={{ background:"rgba(99,102,241,0.15)", color:"#818cf8", border:"1px solid rgba(99,102,241,0.3)" }}>🔐 Encrypted</span>}</div>
+                <div className="flex gap-2 text-xs"><span className="text-gray-300 w-20">Backup Date:</span><span className="text-amber-300 font-medium">{fmtDTLocal(fileInfo.exportedAt)}</span></div>
+                <div className="flex gap-2 text-xs"><span className="text-gray-300 w-20">Records:</span><span className="text-green-400 font-bold">{fileInfo.docCount?.toLocaleString()}</span></div>
                 {fileInfo.originalUid && fileInfo.originalUid !== targetUid && (
                   <div className="flex gap-2 text-xs mt-1 px-2 py-1.5 rounded-lg" style={{ background:"rgba(245,158,11,0.08)", border:"1px solid rgba(245,158,11,0.25)" }}>
                     <span className="text-amber-400">⚠️</span>
@@ -3113,7 +3119,7 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
                 <span className="text-xl mt-0.5 flex-shrink-0">🔀</span>
                 <div>
                   <p className="text-white font-black text-sm">Smart Merge — Recommended</p>
-                  <p className="text-gray-400 text-xs leading-relaxed mt-1">Backup data restored. Records created <span className="text-green-400 font-semibold">after</span> the backup date remain safe.</p>
+                  <p className="text-gray-300 text-xs leading-relaxed mt-1">Backup data restored. Records created <span className="text-green-400 font-semibold">after</span> the backup date remain safe.</p>
                   <div className="flex gap-1.5 mt-1.5">
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background:"rgba(52,211,153,0.12)", color:"#34d399" }}>✅ New data safe</span>
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background:"rgba(52,211,153,0.12)", color:"#34d399" }}>✅ Backup restored</span>
@@ -3126,7 +3132,7 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
                 <span className="text-xl mt-0.5 flex-shrink-0">🔄</span>
                 <div>
                   <p className="text-white font-black text-sm">Full Replace</p>
-                  <p className="text-gray-400 text-xs leading-relaxed mt-1">User&apos;s <span className="text-red-400 font-semibold">entire current data deleted</span> and replaced with backup. Any work after the backup is <span className="text-red-400 font-semibold">permanently lost</span>.</p>
+                  <p className="text-gray-300 text-xs leading-relaxed mt-1">User&apos;s <span className="text-red-400 font-semibold">entire current data deleted</span> and replaced with backup. Any work after the backup is <span className="text-red-400 font-semibold">permanently lost</span>.</p>
                   <div className="flex gap-1.5 mt-1.5">
                     <span className="px-2 py-0.5 rounded-full text-[10px] font-bold" style={{ background:"rgba(239,68,68,0.12)", color:"#f87171" }}>⚠️ New data deleted</span>
                   </div>
@@ -3149,10 +3155,10 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
                 <span className="text-2xl">🔀</span>
                 <div>
                   <p className="text-white font-black text-sm">Confirm Smart Merge</p>
-                  <p className="text-gray-500 text-xs">Into: <span className="text-amber-300">{userName || targetUid}</span></p>
+                  <p className="text-gray-300 text-xs">Into: <span className="text-amber-300">{userName || targetUid}</span></p>
                 </div>
               </div>
-              <div className="rounded-xl px-4 py-3 text-xs leading-relaxed text-gray-400"
+              <div className="rounded-xl px-4 py-3 text-xs leading-relaxed text-gray-300"
                 style={{ background:"rgba(52,211,153,0.05)", border:"1px solid rgba(52,211,153,0.2)" }}>
                 📅 Backup date: <span className="text-amber-300 font-semibold">{fmtDTLocal(fileInfo.exportedAt)}</span><br />
                 Records created <span className="text-green-400 font-medium">after this date</span> will be kept.<br />
@@ -3181,7 +3187,7 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
                 <span className="text-2xl">⚠️</span>
                 <div>
                   <p className="text-white font-black text-sm">Full Replace — Danger!</p>
-                  <p className="text-gray-500 text-xs">Into: <span className="text-amber-300">{userName || targetUid}</span></p>
+                  <p className="text-gray-300 text-xs">Into: <span className="text-amber-300">{userName || targetUid}</span></p>
                 </div>
               </div>
               <div className="rounded-xl px-4 py-3 text-xs leading-relaxed"
@@ -3216,7 +3222,7 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
               <p className="text-gray-300 text-sm leading-relaxed">
                 Download a full backup of <span className="text-green-400 font-semibold">{userName || targetUid}</span>&apos;s data — invoices, customers, inventory, payments, suppliers, and all nested records.
               </p>
-              <p className="text-gray-500 text-xs">Saved directly to your machine. Use it later to restore this user&apos;s data.</p>
+              <p className="text-gray-300 text-xs">Saved directly to your machine. Use it later to restore this user&apos;s data.</p>
             </div>
 
             {folderName && (
@@ -3224,18 +3230,18 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
                 style={{ background:"rgba(245,158,11,0.05)", border:"1px solid rgba(245,158,11,0.2)" }}>
                 <span className="text-base flex-shrink-0">🗂️</span>
                 <div className="flex-1 min-w-0">
-                  <p className="text-[10px] text-gray-500 uppercase tracking-widest font-bold mb-0.5">Saved Folder</p>
+                  <p className="text-[10px] text-gray-300 uppercase tracking-widest font-bold mb-0.5">Saved Folder</p>
                   <p className="text-amber-300 font-semibold text-xs truncate">{folderName}</p>
                 </div>
                 <button onClick={() => { setDirHandle(null); setFolderName(""); btIdbDel(IDB_DIR_KEY); }}
-                  title="Forget folder" className="text-gray-600 hover:text-red-400 text-sm flex-shrink-0">✕</button>
+                  title="Forget folder" className="text-gray-300 hover:text-red-400 text-sm flex-shrink-0">✕</button>
               </div>
             )}
 
             {exporting && (
               <div className="flex flex-col gap-2">
                 <div className="flex justify-between text-xs">
-                  <span className="text-gray-400 truncate">{exportLabel}</span>
+                  <span className="text-gray-300 truncate">{exportLabel}</span>
                   <span className="text-green-400 font-bold ml-2 flex-shrink-0">{exportProg}%</span>
                 </div>
                 <div className="h-2 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.07)" }}>
@@ -3285,12 +3291,12 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
                 <div className="flex items-start gap-2 px-3 py-2 rounded-xl text-xs"
                   style={{ background:"rgba(52,211,153,0.06)", border:"1px solid rgba(52,211,153,0.2)" }}>
                   <span className="flex-shrink-0">🔀</span>
-                  <div><p className="text-green-400 font-bold">Smart Merge</p><p className="text-gray-500">New work after backup date stays safe.</p></div>
+                  <div><p className="text-green-400 font-bold">Smart Merge</p><p className="text-gray-300">New work after backup date stays safe.</p></div>
                 </div>
                 <div className="flex items-start gap-2 px-3 py-2 rounded-xl text-xs"
                   style={{ background:"rgba(239,68,68,0.05)", border:"1px solid rgba(239,68,68,0.2)" }}>
                   <span className="flex-shrink-0">🔄</span>
-                  <div><p className="text-red-400 font-bold">Full Replace</p><p className="text-gray-500">All current data deleted, replaced with backup.</p></div>
+                  <div><p className="text-red-400 font-bold">Full Replace</p><p className="text-gray-300">All current data deleted, replaced with backup.</p></div>
                 </div>
               </div>
             </div>
@@ -3298,7 +3304,7 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
             {restoring && (
               <div className="flex flex-col gap-2">
                 <div className="flex justify-between text-xs">
-                  <span className="text-gray-400 truncate">{restoreLabel}</span>
+                  <span className="text-gray-300 truncate">{restoreLabel}</span>
                   <span className="text-amber-400 font-bold ml-2 flex-shrink-0">{restoreProg}%</span>
                 </div>
                 <div className="h-2 rounded-full overflow-hidden" style={{ background:"rgba(255,255,255,0.07)" }}>
@@ -3340,7 +3346,7 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
               <ul className="flex flex-col gap-0.5 mt-1">
                 {["Always export a fresh backup before restoring.","Encrypted .novexa files unlock only via restore on this page.","Smart Merge preserves data added after the backup.","Full Replace permanently deletes post-backup data.","Cross-user restores allowed (admin override)."]
                   .map((t,i) => (
-                  <li key={i} className="flex items-start gap-1.5 text-[11px] text-gray-600">
+                  <li key={i} className="flex items-start gap-1.5 text-[11px] text-gray-300">
                     <span className="text-red-700 mt-0.5 flex-shrink-0">•</span>{t}
                   </li>
                 ))}
@@ -3358,7 +3364,7 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
           <div className="rounded-xl p-4 flex flex-col gap-2"
             style={{ background:"rgba(139,92,246,0.04)", border:"1px solid rgba(139,92,246,0.15)" }}>
             <p className="text-gray-300 text-sm">Automatically back up this user&apos;s data at a set interval. Each backup saves as a new file — nothing is overwritten.</p>
-            <p className="text-gray-500 text-xs">✅ Requires a saved folder. ✅ Works only while this tab is open.</p>
+            <p className="text-gray-300 text-xs">✅ Requires a saved folder. ✅ Works only while this tab is open.</p>
           </div>
 
           {/* Auto-dest modal */}
@@ -3373,15 +3379,15 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
                     <span className="text-2xl">⏱️</span>
                     <div>
                       <p className="text-white font-black text-sm">Auto-Backup Destination</p>
-                      <p className="text-gray-500 text-xs">Where should auto-backups be saved?</p>
+                      <p className="text-gray-300 text-xs">Where should auto-backups be saved?</p>
                     </div>
-                    <button onClick={() => setAutoDestModal(false)} className="ml-auto text-gray-600 hover:text-gray-400 text-lg">✕</button>
+                    <button onClick={() => setAutoDestModal(false)} className="ml-auto text-gray-300 hover:text-gray-300 text-lg">✕</button>
                   </div>
                   <div className="px-4 py-3 rounded-xl flex items-center gap-3"
                     style={{ background:"rgba(245,158,11,0.06)", border:"1px solid rgba(245,158,11,0.2)" }}>
                     <span className="text-xl">🗂️</span>
                     <div className="flex-1 min-w-0">
-                      <p className="text-[10px] text-gray-500 uppercase font-bold mb-0.5">Current Folder</p>
+                      <p className="text-[10px] text-gray-300 uppercase font-bold mb-0.5">Current Folder</p>
                       <p className="text-amber-300 font-bold text-sm truncate">{folderName}</p>
                     </div>
                   </div>
@@ -3404,7 +3410,7 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
 
           {/* Interval picker */}
           <div className="flex flex-col gap-2">
-            <p className="text-xs text-gray-500 font-semibold uppercase tracking-wider">Backup Frequency</p>
+            <p className="text-xs text-gray-300 font-semibold uppercase tracking-wider">Backup Frequency</p>
             <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
               {AUTO_INTERVALS.map(opt => (
                 <button key={opt.id} onClick={() => setAutoIntervalId(opt.id)} disabled={autoEnabled}
@@ -3429,7 +3435,7 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
               <span className="text-xl flex-shrink-0">🟣</span>
               <div className="flex-1">
                 <p className="text-purple-300 font-black text-xs uppercase tracking-wider">Auto-Backup Active</p>
-                <p className="text-gray-400 text-xs mt-0.5">
+                <p className="text-gray-300 text-xs mt-0.5">
                   Next backup in <span className="text-purple-200 font-bold">{countdown || "…"}</span>
                   {folderName && <> → <span className="text-amber-300 font-semibold">{folderName}</span></>}
                 </p>
@@ -3473,8 +3479,8 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
           {history.length === 0 ? (
             <div className="flex flex-col items-center gap-2 py-6 text-center">
               <span className="text-4xl opacity-20">🗂️</span>
-              <p className="text-gray-600 text-sm">No backups yet</p>
-              <p className="text-gray-700 text-xs">Every backup (manual or auto) for this user will appear here.</p>
+              <p className="text-gray-300 text-sm">No backups yet</p>
+              <p className="text-gray-300 text-xs">Every backup (manual or auto) for this user will appear here.</p>
             </div>
           ) : (
             <>
@@ -3492,17 +3498,17 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
                     </div>
                     <div className="flex-1 min-w-0">
                       <p className="text-white text-xs font-semibold truncate">{entry.fileName}</p>
-                      <p className="text-gray-500 text-[11px] mt-0.5">{fmtDTLocal(entry.at)}</p>
+                      <p className="text-gray-300 text-[11px] mt-0.5">{fmtDTLocal(entry.at)}</p>
                     </div>
                     <div className="flex-shrink-0 text-right">
                       <p className="text-green-400 text-xs font-bold">{entry.docCount?.toLocaleString()}</p>
-                      <p className="text-gray-600 text-[10px]">records</p>
+                      <p className="text-gray-300 text-[10px]">records</p>
                     </div>
                   </div>
                 ))}
               </div>
               <button onClick={async () => { await btIdbDel(IDB_HIST_KEY); setHistory([]); }}
-                className="self-end text-xs text-gray-600 hover:text-red-400 transition-colors underline underline-offset-2">
+                className="self-end text-xs text-gray-300 hover:text-red-400 transition-colors underline underline-offset-2">
                 Clear history
               </button>
             </>
@@ -3595,7 +3601,7 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
                     </span>
                   )}
                 </div>
-                <p className="text-gray-500 text-xs truncate">{data.user?.email} · {data.user?.phone||"No phone"}</p>
+                <p className="text-gray-300 text-xs truncate">{data.user?.email} · {data.user?.phone||"No phone"}</p>
               </div>
             </div>
           )}
@@ -3652,7 +3658,7 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
               <div className="flex flex-col items-center justify-center h-64 gap-4">
                 <div className="w-10 h-10 rounded-full border-4 border-transparent animate-spin"
                   style={{ borderTopColor:"#2563EB", borderRightColor:"#F59E0B" }} />
-                <p className="text-gray-500 text-sm">Loading user data...</p>
+                <p className="text-gray-300 text-sm">Loading user data...</p>
               </div>
             )}
             {error && (

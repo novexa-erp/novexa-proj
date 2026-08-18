@@ -25,7 +25,7 @@ export function calcTotals(form) {
   const isPrevBal = it => (it.description || "").startsWith("Previous Balance · INV-");
   const subtotal = form.items.reduce(
     (s, it) => {
-      const varMult = it.variantLabel ? getVariantMultiplier(it.variantLabel) : 1;
+      const varMult = it.variantLabel ? getVariantMultiplier(it.variantLabel, !!it.productId) : 1;
       return s + (Number(it.qty) || 0) * varMult * (Number(it.unitPrice) || 0);
     }, 0
   );
@@ -42,7 +42,7 @@ export function calcTotals(form) {
   const actualSubtotal = form.items
     .filter(it => !isPrevBal(it))
     .reduce((s, it) => {
-      const varMult = it.variantLabel ? getVariantMultiplier(it.variantLabel) : 1;
+      const varMult = it.variantLabel ? getVariantMultiplier(it.variantLabel, !!it.productId) : 1;
       return s + (Number(it.qty) || 0) * varMult * (Number(it.unitPrice) || 0);
     }, 0);
   const actualDiscount = form.discountType === "percent"
@@ -199,7 +199,12 @@ const VARIANT_TYPES_INV = [
 ];
 
 // Helper: extract numeric multiplier from variantLabel (e.g. "0.5 kg" → 0.5, "XL" → 1)
-function getVariantMultiplier(variantLabel) {
+// ONLY used for custom (non-inventory) variants where user enters price-per-unit
+// and the label contains the quantity multiplier (e.g. "0.5 kg" at Rs.600/kg = Rs.300).
+// For inventory product variants, price is already fixed — multiplier must be 1.
+function getVariantMultiplier(variantLabel, hasProductId) {
+  // If this item comes from inventory (productId set), price is fixed — never multiply
+  if (hasProductId) return 1;
   if (!variantLabel) return 1;
   const num = parseFloat(variantLabel);
   return (!isNaN(num) && num > 0) ? num : 1;
@@ -324,7 +329,7 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
     return () => document.removeEventListener("mousedown", handler);
   }, []);
 
-  const variantMultiplier = item.variantLabel ? getVariantMultiplier(item.variantLabel) : 1;
+  const variantMultiplier = item.variantLabel ? getVariantMultiplier(item.variantLabel, !!item.productId) : 1;
   const lineTotal = (Number(item.qty) || 0) * variantMultiplier * (Number(item.unitPrice) || 0);
   const stock = Number(item.stock) || 0;
   const qty = Number(item.qty) || 0;
@@ -1003,7 +1008,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
               {/* Edit mode: all existing items fully locked (read-only display rows) */}
               {initial ? (
                 form.items.map((item, idx) => {
-                  const varMult = item.variantLabel ? getVariantMultiplier(item.variantLabel) : 1;
+                  const varMult = item.variantLabel ? getVariantMultiplier(item.variantLabel, !!item.productId) : 1;
                   const lineTotal = (Number(item.qty) || 0) * varMult * (Number(item.unitPrice) || 0);
                   return (
                     <div key={idx}>

@@ -251,7 +251,7 @@ function SupplierCard({ supplier, onClick, onEdit, onDelete, index }) {
 }
 
 // ── Main PurchasesView ────────────────────────────────────────────────────────
-export default function PurchasesView({ uid, userDoc }) {
+export default function PurchasesView({ uid, userDoc, onNavigate }) {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const [suppliers, setSuppliers]         = useState([]);
@@ -609,14 +609,14 @@ export default function PurchasesView({ uid, userDoc }) {
                       <div className="flex items-center gap-1.5">
                         <span className="text-gray-300 text-xs">Quick:</span>
                         {[5, 10, 25].map(pg => (
-                          <button key={pg} onClick={() => setShowOrderForm(true)}
+                          <button key={pg} onClick={() => onNavigate ? onNavigate("order-form") : setShowOrderForm(true)}
                             className="px-3 py-1 rounded-lg text-xs font-bold transition-all hover:scale-105"
                             style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.3)", color: "#f59e0b" }}>
                             {pg}pg
                           </button>
                         ))}
                       </div>
-                      <button onClick={() => setShowOrderForm(true)}
+                      <button onClick={() => onNavigate ? onNavigate("order-form") : setShowOrderForm(true)}
                         className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105"
                         style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#000", boxShadow: "0 4px 16px rgba(245,158,11,0.35)" }}>
                         📥 Open Form

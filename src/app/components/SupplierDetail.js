@@ -1566,23 +1566,34 @@ export function PurchaseOrderPDFTemplate({ order, supplier, userDoc = {}, receip
 }
 
 // ── Purchase Order View Modal ─────────────────────────────────────────────────
-function PurchaseOrderViewModal({ order, supplier, userDoc = {}, receipts, returns, payments, onClose }) {
+function PurchaseOrderViewModal({ order, supplier, userDoc = {}, receipts, returns, payments, onClose, onSendEmail, uid }) {
   const printRef     = useRef(null);
+  const formRef      = useRef(null);
   const containerRef = useRef(null);
-  const [loading, setLoading] = useState(false);
-  const [scale,   setScale]   = useState(1);
+  const formContainerRef = useRef(null);
+  const [loading,      setLoading]      = useState(false);
+  const [formLoading,  setFormLoading]  = useState(false);
+  const [emailSending, setEmailSending] = useState(false);
+  const [waLoading,    setWaLoading]    = useState(false); // WA PDF upload state
+  const [scale,        setScale]        = useState(1);
+  const [formScale,    setFormScale]    = useState(1);
+  const [activeView,   setActiveView]   = useState("po"); // "po" | "form"
 
   useEffect(() => {
     function updateScale() {
-      if (!containerRef.current) return;
-      setScale(Math.min(1, containerRef.current.clientWidth / 794));
+      if (containerRef.current)
+        setScale(Math.min(1, containerRef.current.clientWidth / 794));
+      if (formContainerRef.current)
+        setFormScale(Math.min(1, formContainerRef.current.clientWidth / 794));
     }
     updateScale();
     const ro = new ResizeObserver(updateScale);
-    if (containerRef.current) ro.observe(containerRef.current);
+    if (containerRef.current)     ro.observe(containerRef.current);
+    if (formContainerRef.current) ro.observe(formContainerRef.current);
     return () => ro.disconnect();
-  }, []);
+  }, [activeView]);
 
+  // ── PO PDF download ──────────────────────────────────────────────────────
   async function downloadPDF() {
     if (!printRef.current || loading) return;
     setLoading(true);
@@ -1593,7 +1604,7 @@ function PurchaseOrderViewModal({ order, supplier, userDoc = {}, receipts, retur
         scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false, width: 794,
       });
       const imgData = canvas.toDataURL("image/jpeg", 0.95);
-      const pdf = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+      const pdf  = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
       const pdfW = pdf.internal.pageSize.getWidth();
       const pdfH = (canvas.height / canvas.width) * pdfW;
       const pageH = pdf.internal.pageSize.getHeight();
@@ -1613,10 +1624,39 @@ function PurchaseOrderViewModal({ order, supplier, userDoc = {}, receipts, retur
     setLoading(false);
   }
 
+  // ── Order Form PDF download ──────────────────────────────────────────────
+  async function downloadFormPDF() {
+    if (!formRef.current || formLoading) return;
+    setFormLoading(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const jsPDF       = (await import("jspdf")).default;
+      // formRef → FilledOrderFormTemplate outer div → per-page children
+      const pages = Array.from(formRef.current.children);
+      const pdf   = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+      const pdfW  = pdf.internal.pageSize.getWidth();
+      const pdfH  = pdf.internal.pageSize.getHeight();
+      for (let i = 0; i < pages.length; i++) {
+        const canvas = await html2canvas(pages[i], {
+          scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false, width: 794,
+        });
+        const imgData = canvas.toDataURL("image/jpeg", 0.95);
+        const imgH = (canvas.height / canvas.width) * pdfW;
+        if (i > 0) pdf.addPage();
+        pdf.addImage(imgData, "JPEG", 0, 0, pdfW, Math.min(imgH, pdfH));
+      }
+      const num = orderRef(order);
+      pdf.save(`OrderForm-${num}-${(supplier?.name||"").replace(/\s+/g,"-")}-${new Date().toISOString().slice(0,10)}.pdf`);
+    } catch (err) { alert("PDF failed: " + err.message); }
+    setFormLoading(false);
+  }
+
+  // ── PO print ────────────────────────────────────────────────────────────
   function printOrder() {
     const content = printRef.current?.innerHTML;
     if (!content) return;
     const w = window.open("", "_blank", "width=900,height=700");
+    if (!w) { alert("Print blocked. Please allow popups."); return; }
     w.document.write(`<!DOCTYPE html><html><head><title>Purchase Order</title>
       <style>body{margin:0;padding:0;background:#fff;}</style>
       </head><body>${content}</body></html>`);
@@ -1624,7 +1664,32 @@ function PurchaseOrderViewModal({ order, supplier, userDoc = {}, receipts, retur
     setTimeout(() => { w.print(); w.close(); }, 400);
   }
 
-  function shareWhatsApp() {
+  // ── Order Form print ────────────────────────────────────────────────────
+  function printOrderForm() {
+    if (!formRef.current) return;
+    const w = window.open("", "_blank", "width=900,height=900");
+    if (!w) { alert("Print blocked. Please allow popups."); return; }
+    const pages = Array.from(formRef.current.children);
+    w.document.write(`<!DOCTYPE html><html><head><title>Order Form</title>
+    <style>
+      * { box-sizing: border-box; }
+      html, body { margin:0; padding:0; background:#fff; }
+      @page { size:A4 portrait; margin:0; }
+      .of-page { width:794px; min-height:1123px; overflow:hidden; page-break-after:always; break-after:page; }
+      .of-page:last-child { page-break-after:avoid; break-after:avoid; }
+    </style></head><body></body></html>`);
+    const doc = w.document; doc.close();
+    pages.forEach(pg => {
+      const clone = pg.cloneNode(true);
+      clone.className = "of-page";
+      doc.body.appendChild(clone);
+    });
+    w.focus();
+    setTimeout(() => { w.print(); w.close(); }, 800);
+  }
+
+  // ── WhatsApp share — generate image, upload to Cloudinary, open WA with link ──
+  async function shareWhatsApp() {
     const num       = orderRef(order);
     const balance   = Number(order.balance) || 0;
     const totalPaid = Number(order.paidAmount) || 0;
@@ -1637,69 +1702,178 @@ function PurchaseOrderViewModal({ order, supplier, userDoc = {}, receipts, retur
       return s + effQty * (Number(it.unitPrice) || 0);
     }, 0);
     const grossTotal = origItems + receiptsTotal;
-    const text = encodeURIComponent(
+
+    const baseText =
       `*Purchase Order ${num}*\nSupplier: ${supplier.name}\n\n` +
       `📦 Items:\n${(order.items || []).map(it => `  • ${it.description}`).join("\n")}\n\n` +
       `💰 Gross Total: *Rs. ${grossTotal.toLocaleString("en-PK")}*\n` +
       (totalPaid > 0 ? `✅ Paid: *Rs. ${totalPaid.toLocaleString("en-PK")}*\n` : "") +
       (returnsTotal > 0 ? `↩ Returns: *Rs. ${returnsTotal.toLocaleString("en-PK")}*\n` : "") +
       `⏳ Balance: *Rs. ${balance.toLocaleString("en-PK")}*\n\n` +
-      `— ${userDoc?.business || userDoc?.name || "Novexa ERP"}`
+      `— ${userDoc?.business || userDoc?.name || "Novexa ERP"}`;
+
+    // Try to generate image → upload → share with link
+    const refEl = activeView === "form" ? formRef.current : printRef.current;
+    if (refEl && uid) {
+      setWaLoading(true);
+      try {
+        const html2canvas = (await import("html2canvas")).default;
+
+        // For multi-page form, use first page only for the preview image
+        const targetEl = activeView === "form"
+          ? (Array.from(refEl.children)[0] || refEl)
+          : refEl;
+
+        const canvas   = await html2canvas(targetEl, {
+          scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false, width: 794,
+        });
+        const imageDataUrl = canvas.toDataURL("image/jpeg", 0.92);
+        const filename     = `${num}-${(supplier?.name || "order").replace(/\s+/g, "-")}-${new Date().toISOString().slice(0, 10)}`;
+
+        // Get Firebase token
+        const { auth: fbAuth } = await import("@/lib/firebase");
+        const token = await fbAuth.currentUser?.getIdToken();
+
+        if (token) {
+          const res  = await fetch("/api/upload-pdf", {
+            method:  "POST",
+            headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+            body:    JSON.stringify({ dataUrl: imageDataUrl, uid, filename }),
+          });
+          const data = await res.json();
+
+          if (res.ok && data.url) {
+            const textWithLink = `${baseText}\n\n🖼️ *Order Preview:*\n${data.url}`;
+            window.open(
+              `https://wa.me/${(supplier.phone || "").replace(/[^0-9]/g, "")}?text=${encodeURIComponent(textWithLink)}`,
+              "_blank"
+            );
+            setWaLoading(false);
+            return;
+          }
+        }
+      } catch (err) {
+        console.warn("WA image upload failed, falling back to text only:", err.message);
+      }
+      setWaLoading(false);
+    }
+
+    // Fallback — text only
+    window.open(
+      `https://wa.me/${(supplier.phone || "").replace(/[^0-9]/g, "")}?text=${encodeURIComponent(baseText)}`,
+      "_blank"
     );
-    window.open(`https://wa.me/${(supplier.phone || "").replace(/[^0-9]/g, "")}?text=${text}`, "_blank");
   }
+
+  const isPO   = activeView === "po";
+  const isForm = activeView === "form";
 
   return (
     <div className="fixed inset-0 z-[70] flex items-start justify-center p-2 sm:p-4 overflow-y-auto"
       style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(6px)" }}>
       <div className="w-full max-w-[820px] mx-auto my-2 sm:my-4">
-        {/* Toolbar */}
+
+        {/* ── Toolbar ── */}
         <div className="flex flex-wrap items-center justify-between gap-2 mb-3 px-1">
-          <h3 className="text-white font-bold text-sm sm:text-base truncate max-w-[60%]">
+          <h3 className="text-white font-bold text-sm sm:text-base truncate max-w-[55%]">
             📄 {orderRef(order)} · {supplier.name}
           </h3>
           <div className="flex flex-wrap items-center gap-1.5">
-            <button onClick={shareWhatsApp}
+            {/* WhatsApp + PDF */}
+            <button onClick={shareWhatsApp} disabled={waLoading}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold hover:scale-105 transition-all"
-              style={{ background: "rgba(37,211,102,0.1)", border: "1px solid rgba(37,211,102,0.3)", color: "#25D366" }}>
-              💬 WA
+              style={{ background: "rgba(37,211,102,0.1)", border: "1px solid rgba(37,211,102,0.3)", color: "#25D366", opacity: waLoading ? 0.7 : 1 }}>
+              {waLoading ? "⏳ Uploading..." : "💬 WA + PDF"}
             </button>
-            <button onClick={printOrder}
+            {/* Email */}
+            {supplier?.email && onSendEmail && (
+              <button onClick={() => onSendEmail(order)} disabled={emailSending}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold hover:scale-105 transition-all"
+                style={{ background: "rgba(99,102,241,0.1)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc", opacity: emailSending ? 0.5 : 1 }}>
+                {emailSending ? "⏳" : "📧"} Email
+              </button>
+            )}
+            {/* Print */}
+            <button onClick={isPO ? printOrder : printOrderForm}
               className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold hover:scale-105 transition-all"
               style={{ background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }}>
               🖨️
             </button>
-            <button onClick={downloadPDF} disabled={loading}
+            {/* PDF */}
+            <button onClick={isPO ? downloadPDF : downloadFormPDF} disabled={loading || formLoading}
               className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold hover:scale-105 transition-all"
-              style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#000", opacity: loading ? 0.7 : 1 }}>
-              {loading ? "⏳..." : "⬇️ PDF"}
+              style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#000", opacity: (loading || formLoading) ? 0.7 : 1 }}>
+              {(loading || formLoading) ? "⏳..." : "⬇️ PDF"}
             </button>
             <button onClick={onClose}
               className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 text-lg flex-shrink-0">✕</button>
           </div>
         </div>
 
-        {/* PDF Preview — scales on mobile */}
-        <div ref={containerRef} style={{ width: "100%", overflow: "hidden", borderRadius: 12, border: "1px solid rgba(245,158,11,0.3)", boxShadow: "0 20px 40px rgba(0,0,0,0.4)" }}>
-          <div style={{
-            width: 794,
-            transformOrigin: "top left",
-            transform: `scale(${scale})`,
-            marginBottom: scale < 1 ? `${(scale - 1) * 100}%` : 0,
-          }}>
-            <div ref={printRef}>
-              <PurchaseOrderPDFTemplate
-                order={order}
-                supplier={supplier}
-                userDoc={userDoc}
-                receipts={receipts}
-                returns={returns}
-                payments={payments}
-              />
+        {/* ── View Tabs ── */}
+        <div className="flex gap-1 p-1 rounded-xl mb-3"
+          style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", width: "fit-content" }}>
+          {[
+            { id: "po",   label: "📄 PO / Invoice View" },
+            { id: "form", label: "📋 Order Form (Filled)" },
+          ].map(tab => (
+            <button key={tab.id} onClick={() => setActiveView(tab.id)}
+              className="px-4 py-2 rounded-lg text-xs font-bold transition-all"
+              style={{
+                background: activeView === tab.id ? "linear-gradient(135deg,#f59e0b,#d97706)" : "transparent",
+                color:      activeView === tab.id ? "#000" : "#9ca3af",
+              }}>
+              {tab.label}
+            </button>
+          ))}
+        </div>
+
+        {/* ── PO View ── */}
+        {isPO && (
+          <div ref={containerRef} style={{ width: "100%", overflow: "hidden", borderRadius: 12, border: "1px solid rgba(245,158,11,0.3)", boxShadow: "0 20px 40px rgba(0,0,0,0.4)" }}>
+            <div style={{
+              width: 794,
+              transformOrigin: "top left",
+              transform: `scale(${scale})`,
+              marginBottom: scale < 1 ? `${(scale - 1) * 100}%` : 0,
+            }}>
+              <div ref={printRef}>
+                <PurchaseOrderPDFTemplate
+                  order={order}
+                  supplier={supplier}
+                  userDoc={userDoc}
+                  receipts={receipts}
+                  returns={returns}
+                  payments={payments}
+                />
+              </div>
             </div>
           </div>
-        </div>
-        <p className="text-center text-gray-600 text-xs mt-3">Scroll to preview · Download PDF or share via WhatsApp</p>
+        )}
+
+        {/* ── Filled Order Form View ── */}
+        {isForm && (
+          <div ref={formContainerRef} style={{ width: "100%", overflow: "hidden", borderRadius: 12, border: "1px solid rgba(245,158,11,0.3)", boxShadow: "0 20px 40px rgba(0,0,0,0.4)" }}>
+            <div style={{
+              width: 794,
+              transformOrigin: "top left",
+              transform: `scale(${formScale})`,
+              marginBottom: formScale < 1 ? `${(formScale - 1) * 1123}px` : 0,
+            }}>
+              <div ref={formRef}>
+                <FilledOrderFormTemplate
+                  order={order}
+                  supplier={supplier}
+                  userDoc={userDoc}
+                />
+              </div>
+            </div>
+          </div>
+        )}
+
+        <p className="text-center text-gray-600 text-xs mt-3">
+          {isPO ? "PO / Invoice view · Print, PDF, or share" : "Filled order form · Print or download PDF"}
+        </p>
       </div>
     </div>
   );
@@ -2705,6 +2879,10 @@ export function OrderFormView({ userDoc = {} }) {
     }).join("\n");
 
     const w = window.open("", "_blank", "width=900,height=900");
+    if (!w) {
+      alert("Print blocked by browser. Please allow popups for this site and try again.");
+      return;
+    }
     w.document.write(`<!DOCTYPE html>
 <html><head><title>Order Form</title>
 <style>
@@ -3044,6 +3222,10 @@ export function OrderFormModal({ order, userDoc = {}, onClose }) {
     if (!printRef.current) return;
 
     const w = window.open("", "_blank", "width=900,height=900");
+    if (!w) {
+      alert("Print blocked by browser. Please allow popups for this site and try again.");
+      return;
+    }
     w.document.write(`<!DOCTYPE html>
 <html><head><title>Order Form</title>
 <style>
@@ -3100,13 +3282,11 @@ export function OrderFormModal({ order, userDoc = {}, onClose }) {
     
     // Extract and add pages with proper class
     const pageWrappers = Array.from(printRef.current.children);
-    pageWrappers.forEach((wrapper, idx) => {
+    pageWrappers.forEach((wrapper) => {
       const page = wrapper.firstElementChild;
       if (page) {
         const clonedPage = page.cloneNode(true);
         clonedPage.className = 'print-page';
-        // Preserve inline flex styles but remove pageBreak inline styles
-        // (they'll be handled by CSS class)
         doc.body.appendChild(clonedPage);
       }
     });
@@ -3584,8 +3764,9 @@ function SupplierHistoryModal({ supplier, orders, payments, receipts, returns, u
 
 // ── Purchase Order Preview Modal ──────────────────────────────────────────────
 // Auto-shows after a new order is saved — pre-filled printable order form
-function PurchaseOrderPreviewModal({ order, supplier, userDoc, onClose }) {
-  const printRef = useRef(null);
+function PurchaseOrderPreviewModal({ order, supplier, userDoc, onClose, onSendEmail }) {
+  const printRef  = useRef(null);
+  const [pdfLoading, setPdfLoading] = useState(false);
   const num = orderRef(order);
   const MONTHS = ["Jan","Feb","Mar","Apr","May","Jun","Jul","Aug","Sep","Oct","Nov","Dec"];
   const now = new Date();
@@ -3598,6 +3779,7 @@ function PurchaseOrderPreviewModal({ order, supplier, userDoc, onClose }) {
     const content = printRef.current;
     if (!content) return;
     const win = window.open("", "_blank");
+    if (!win) { alert("Print blocked by browser. Please allow popups and try again."); return; }
     win.document.write(`
       <html><head><title>PO-${num}</title>
       <style>
@@ -3634,6 +3816,25 @@ function PurchaseOrderPreviewModal({ order, supplier, userDoc, onClose }) {
     setTimeout(() => { win.print(); win.close(); }, 400);
   }
 
+  async function handleDownloadPDF() {
+    if (!printRef.current || pdfLoading) return;
+    setPdfLoading(true);
+    try {
+      const html2canvas = (await import("html2canvas")).default;
+      const jsPDF       = (await import("jspdf")).default;
+      const canvas = await html2canvas(printRef.current, {
+        scale: 2, useCORS: true, backgroundColor: "#ffffff", logging: false,
+      });
+      const imgData = canvas.toDataURL("image/jpeg", 0.95);
+      const pdf  = new jsPDF({ orientation: "portrait", unit: "pt", format: "a4" });
+      const pdfW = pdf.internal.pageSize.getWidth();
+      const pdfH = (canvas.height / canvas.width) * pdfW;
+      pdf.addImage(imgData, "JPEG", 0, 0, pdfW, Math.min(pdfH, pdf.internal.pageSize.getHeight()));
+      pdf.save(`PO-${num}-${(supplier?.name||"order").replace(/\s+/g,"-")}-${new Date().toISOString().slice(0,10)}.pdf`);
+    } catch (err) { alert("PDF failed: " + err.message); }
+    setPdfLoading(false);
+  }
+
   const items = (order.items || []).filter(it => it.description);
 
   return (
@@ -3652,7 +3853,7 @@ function PurchaseOrderPreviewModal({ order, supplier, userDoc, onClose }) {
             </div>
             <div>
               <h3 className="text-white font-black text-base">Purchase Order Ready!</h3>
-              <p className="text-gray-500 text-xs">PO-{num} · {supplier.name} ko bhejne ke liye ready hai</p>
+              <p className="text-gray-500 text-xs">PO-{num} · {supplier.name}</p>
             </div>
           </div>
           <button onClick={onClose}
@@ -3660,12 +3861,24 @@ function PurchaseOrderPreviewModal({ order, supplier, userDoc, onClose }) {
         </div>
 
         {/* Action Buttons */}
-        <div className="flex gap-2 px-5 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
+        <div className="flex flex-wrap gap-2 px-5 py-3" style={{ borderBottom: "1px solid rgba(255,255,255,0.06)" }}>
           <button onClick={handlePrint}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105"
-            style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#000" }}>
-            🖨️ Print / Save PDF
+            style={{ background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.3)", color: "#a78bfa" }}>
+            🖨️ Print
           </button>
+          <button onClick={handleDownloadPDF} disabled={pdfLoading}
+            className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105"
+            style={{ background: "linear-gradient(135deg,#f59e0b,#d97706)", color: "#000", opacity: pdfLoading ? 0.7 : 1 }}>
+            {pdfLoading ? "⏳ Generating..." : "⬇️ Download PDF"}
+          </button>
+          {supplier?.email && onSendEmail && (
+            <button onClick={() => { onClose(); onSendEmail(order); }}
+              className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-bold transition-all hover:scale-105"
+              style={{ background: "rgba(99,102,241,0.12)", border: "1px solid rgba(99,102,241,0.3)", color: "#a5b4fc" }}>
+              📧 Send Email
+            </button>
+          )}
           <button onClick={onClose}
             className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:bg-white/10"
             style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
@@ -4628,10 +4841,15 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
           order={viewOrder}
           supplier={supplier}
           userDoc={userDoc}
+          uid={uid}
           receipts={supplierReceipts.filter(r => r.orderId === viewOrder.id)}
           returns={supplierReturns.filter(r => r.orderId === viewOrder.id)}
           payments={supplierPayments.filter(p => p.orderId === viewOrder.id)}
           onClose={() => setViewOrder(null)}
+          onSendEmail={(ord) => {
+            setViewOrder(null);
+            setEmailConfirm({ show: true, order: ord, isUpdate: true });
+          }}
         />
       )}
 
@@ -4687,15 +4905,27 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
       <EmailConfirmationDialog
         show={emailConfirm.show}
         recipientEmail={supplier?.email}
+        recipientPhone={supplier?.phone}
+        invoice={emailConfirm.order}
+        userDoc={userDoc}
+        isUpdate={emailConfirm.isUpdate}
         documentType="order"
+        getInvoiceImageFn={emailConfirm.order ? async () => {
+          const { generateSupplierOrderImageBase64 } = await import("@/lib/emailUtils");
+          const orderId       = emailConfirm.order.id;
+          const orderReceipts = supplierReceipts.filter(r => r.orderId === orderId);
+          const orderReturns  = supplierReturns.filter(r  => r.orderId === orderId);
+          const statePayments = supplierPayments.filter(p => p.orderId === orderId);
+          const orderPayments = emailConfirm.extraPayment
+            ? [...statePayments.filter(p => p.id !== emailConfirm.extraPayment.id), emailConfirm.extraPayment]
+            : statePayments;
+          return generateSupplierOrderImageBase64(emailConfirm.order, supplier, userDoc, orderReceipts, orderReturns, orderPayments);
+        } : undefined}
         onConfirm={async () => {
-          // User clicked "Yes" - send email with proper PO PDF
           if (emailConfirm.order) {
-            // filter receipts/returns/payments for this order
-            const orderId = emailConfirm.order.id;
+            const orderId       = emailConfirm.order.id;
             const orderReceipts = supplierReceipts.filter(r => r.orderId === orderId);
-            const orderReturns  = supplierReturns.filter(r => r.orderId === orderId);
-            // Merge state payments with any extraPayment (new payment not yet in state)
+            const orderReturns  = supplierReturns.filter(r  => r.orderId === orderId);
             const statePayments = supplierPayments.filter(p => p.orderId === orderId);
             const orderPayments = emailConfirm.extraPayment
               ? [...statePayments.filter(p => p.id !== emailConfirm.extraPayment.id), emailConfirm.extraPayment]
@@ -4715,15 +4945,15 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
           }
           setEmailConfirm({ show: false, order: null, isUpdate: false });
         }}
-        onCancel={() => {
-          // User clicked "No" - show success without email
+        onCancel={(reason) => {
           const docType = emailConfirm.isUpdate ? "Updated" : "Created";
-          setAlert({
-            show: true,
-            type: "success",
-            title: `Order ${docType}! 🛒`,
-            message: `Purchase order has been ${docType.toLowerCase()} successfully. Email was not sent.`,
-          });
+          if (reason === "whatsapp") {
+            setAlert({ show: true, type: "success", title: `Order ${docType}! 🛒💬`, message: `Purchase order ${docType.toLowerCase()} ho gayi. WhatsApp khul gaya — message bhej dein.` });
+          } else if (reason === "both") {
+            setAlert({ show: true, type: "success", title: `Order ${docType}! 🛒📧💬`, message: `Email bhej di gayi aur WhatsApp khul gaya.` });
+          } else {
+            setAlert({ show: true, type: "success", title: `Order ${docType}! 🛒`, message: `Purchase order ${docType.toLowerCase()} ho gayi. Koi notification nahi bheja.` });
+          }
           setEmailConfirm({ show: false, order: null, isUpdate: false });
         }}
       />
@@ -4735,6 +4965,10 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
           supplier={poPreview.supplier}
           userDoc={userDoc}
           onClose={() => setPoPreview(null)}
+          onSendEmail={(ord) => {
+            setPoPreview(null);
+            setEmailConfirm({ show: true, order: ord, isUpdate: false });
+          }}
         />
       )}
     </>

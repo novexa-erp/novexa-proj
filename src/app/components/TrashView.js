@@ -107,15 +107,18 @@ export default function TrashView({ uid }) {
     // Promote them to adminTrash — they'll disappear from user trash and appear in admin trash
     (async () => {
       try {
-        const { updateDoc, doc: fsDoc, serverTimestamp: st } = await import("firebase/firestore");
+        const { updateDoc, doc: fsDoc } = await import("firebase/firestore");
         const { db: fdb } = await import("@/lib/firebase");
-        const now = new Date().toISOString();
         await Promise.allSettled(
           expiredRegular.map(item => {
             const ref = item._col === "orders"
               ? fsDoc(fdb, "users", uid, "suppliers", item._supplierId, "orders", item.id)
               : fsDoc(fdb, "users", uid, item._col, item.id);
-            return updateDoc(ref, { adminTrash: true, adminTrashedAt: now });
+            // Use original deletedAt as adminTrashedAt so the 15-day admin window
+            // starts from when the user permanently deleted it — not from now.
+            // This prevents items that were deleted long ago from getting a fresh 15-day timer.
+            const adminTrashedAt = item.deletedAt || new Date().toISOString();
+            return updateDoc(ref, { adminTrash: true, adminTrashedAt });
           })
         );
       } catch {

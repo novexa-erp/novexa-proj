@@ -19,6 +19,15 @@ const STATUS_STYLE = {
   Partial: { color: "#fbbf24", bg: "rgba(251,191,36,0.1)",  border: "rgba(251,191,36,0.25)"  },
 };
 
+// ── Variant multiplier helper ─────────────────────────────────────────────────
+// For inventory product variants (productId set), price is already fixed — multiplier = 1.
+// For custom/manual variants (no productId), the label may encode a quantity (e.g. "0.5 kg").
+function getVarMult(item) {
+  if (!item.variantLabel || item.productId) return 1;
+  const n = parseFloat(item.variantLabel);
+  return (!isNaN(n) && n > 0) ? n : 1;
+}
+
 // ── Global invoice serial counter ─────────────────────────────────────────────
 // Format: INV-01140726  (serial 2-digit + DD + MM + YY)
 async function getNextInvoiceNumber() {
@@ -160,7 +169,6 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
   // filter — use effectiveStatus (recalculated from actualAmount) not stored status
   const filtered = directInvoices.filter(inv => {
     const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
-    const getVarMult    = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
     const invActualAmt = inv.actualAmount != null
       ? Number(inv.actualAmount)
       : (inv.items || []).filter(it => !isPrevBalItem(it))
@@ -186,7 +194,6 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
 
     const inv = payTarget;
     const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
-    const getVarMult    = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
     const invActualAmt  = inv.actualAmount != null
       ? Number(inv.actualAmount)
       : (inv.items || []).filter(it => !isPrevBalItem(it))
@@ -276,7 +283,6 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
 
       // Recalculate invoice amounts
       const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
-      const getVarMult    = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
       const totalPastRet  = pastReturns.reduce((s, r) => s + (Number(r.returnAmount) || 0), 0);
       const invActualAmt  = inv.actualAmount != null
         ? Number(inv.actualAmount)
@@ -961,7 +967,6 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
         ) : (
           filtered.map((inv) => {
             const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
-            const getVarMult    = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
             const invActualAmt = inv.actualAmount != null
               ? Number(inv.actualAmount)
               : (inv.items || []).filter(it => !isPrevBalItem(it))
@@ -1023,47 +1028,45 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
                     )}
                   </div>
 
-                  {/* Row 3: action tabs — View + Actions dropdown */}
-                  <div className="flex gap-1.5 pl-12">
+                  {/* Row 3: action buttons — inline on mobile (no dropdown, avoids z-index/overflow issues) */}
+                  <div className="flex flex-wrap gap-1.5 pl-12">
                     {/* View */}
                     <button onClick={() => setPdfInvoice(inv)}
-                      className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all hover:scale-105"
+                      className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95"
                       style={{ background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.25)", color: "#34d399" }}>
                       👁 View
                     </button>
-                    {/* Actions dropdown */}
-                    <div className="relative">
-                      <button onClick={() => setOpenMenuId(openMenuId === inv.id ? null : inv.id)}
-                        className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all hover:scale-105"
-                        style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)" }}>
-                        ⚡ Actions ▾
+                    {/* Edit */}
+                    <button onClick={() => { setEditTarget({ id: inv.id, form: docToForm(inv) }); setShowModal(true); }}
+                      className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95"
+                      style={{ background: "rgba(96,165,250,0.1)", border: "1px solid rgba(96,165,250,0.25)", color: "#60A5FA" }}>
+                      ✏️ Edit
+                    </button>
+                    {/* Pay — only if balance > 0 */}
+                    {invActualBalance > 0 && (
+                      <button onClick={() => { setPayForm({ amount: "", method: "cash", payerName: inv.customerName || "", payerContact: inv.phone || "", receiverName: "", receiverContact: "" }); setPayTarget(inv); }}
+                        className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95"
+                        style={{ background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.25)", color: "#34d399" }}>
+                        💰 Pay
                       </button>
-                      {openMenuId === inv.id && (
-                        <div className="absolute left-0 top-full mt-1 z-30 rounded-xl overflow-hidden"
-                          style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 8px 32px rgba(0,0,0,0.6)", minWidth: 150 }}>
-                          <button onClick={() => { setOpenMenuId(null); setEditTarget({ id: inv.id, form: docToForm(inv) }); setShowModal(true); }}
-                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold hover:bg-white/[0.05]"
-                            style={{ color: "#60A5FA" }}>✏️ Edit</button>
-                          {invActualBalance > 0 && (
-                            <button onClick={() => { setOpenMenuId(null); setPayForm({ amount: "", method: "cash", payerName: inv.customerName || "", payerContact: inv.phone || "", receiverName: "", receiverContact: "" }); setPayTarget(inv); }}
-                              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold hover:bg-white/[0.05]"
-                              style={{ color: "#34d399" }}>💰 Pay</button>
-                          )}
-                          {(() => {
-                            const realItems = (inv.items || []).filter(it => it.description && !it.description.startsWith("Previous Balance · INV-"));
-                            return realItems.length > 0 ? (
-                              <button onClick={() => { setOpenMenuId(null); const pastReturns = inv._pastReturns || []; const firstItem = realItems[0]; const alreadyRet = pastReturns.filter(r => r.description === firstItem.description).reduce((s,r) => s + (Number(r.qty)||0), 0); const maxQty = Math.max(0, (Number(firstItem.qty)||0) - alreadyRet); setReturnForm({ description: firstItem.description, qty: maxQty > 0 ? String(maxQty) : "", rate: firstItem.unitPrice || "", productId: firstItem.productId || "", variantId: firstItem.variantId || "", variantLabel: firstItem.variantLabel || "", variantUnit: firstItem.variantUnit || "", maxQty }); setReturnTarget(inv); }}
-                                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold hover:bg-white/[0.05]"
-                                style={{ color: "#f87171" }}>↩️ Return</button>
-                            ) : null;
-                          })()}
-                          <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }} />
-                          <button onClick={() => { setOpenMenuId(null); setDeleteConf(inv.id); }}
-                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold hover:bg-white/[0.05]"
-                            style={{ color: "#f87171" }}>🗑️ Delete</button>
-                        </div>
-                      )}
-                    </div>
+                    )}
+                    {/* Return — only if real items exist */}
+                    {(() => {
+                      const realItems = (inv.items || []).filter(it => it.description && !it.description.startsWith("Previous Balance · INV-"));
+                      return realItems.length > 0 ? (
+                        <button onClick={() => { const pastReturns = inv._pastReturns || []; const firstItem = realItems[0]; const alreadyRet = pastReturns.filter(r => r.description === firstItem.description).reduce((s,r) => s + (Number(r.qty)||0), 0); const maxQty = Math.max(0, (Number(firstItem.qty)||0) - alreadyRet); setReturnForm({ description: firstItem.description, qty: maxQty > 0 ? String(maxQty) : "", rate: firstItem.unitPrice || "", productId: firstItem.productId || "", variantId: firstItem.variantId || "", variantLabel: firstItem.variantLabel || "", variantUnit: firstItem.variantUnit || "", maxQty }); setReturnTarget(inv); }}
+                          className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95"
+                          style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171" }}>
+                          ↩️ Return
+                        </button>
+                      ) : null;
+                    })()}
+                    {/* Delete */}
+                    <button onClick={() => setDeleteConf(inv.id)}
+                      className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95"
+                      style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>
+                      🗑️
+                    </button>
                   </div>
                 </div>
 
@@ -1208,7 +1211,6 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
       {payTarget && (() => {
         const inv = payTarget;
         const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
-        const getVarMult    = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
         const invActualAmt  = inv.actualAmount != null
           ? Number(inv.actualAmount)
           : (inv.items || []).filter(it => !isPrevBalItem(it))
@@ -1542,7 +1544,6 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
       {deleteConf && (() => {
         const inv = invoices.find(i => i.id === deleteConf);
         const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
-        const getVarMult    = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
         const invActualAmt = inv
           ? (inv.actualAmount != null
               ? Number(inv.actualAmount)
@@ -1640,11 +1641,19 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
         userDoc={userDoc}
         isUpdate={emailConfirm.isUpdate}
         documentType="invoice"
+        getInvoiceImageFn={emailConfirm.invoice ? async () => {
+          const { generateInvoiceImageBase64 } = await import("@/lib/emailUtils");
+          let invPayments = [];
+          try {
+            const { getDocs, collection: col, query: q, where } = await import("firebase/firestore");
+            const snap = await getDocs(q(col(db, "users", uid, "payments"), where("invoiceId", "==", emailConfirm.invoice.id)));
+            invPayments = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+          } catch (_) {}
+          return generateInvoiceImageBase64(emailConfirm.invoice, userDoc, invPayments);
+        } : undefined}
         onConfirm={async () => {
-          // Send email — dialog stays open (shows spinner) until done
           if (emailConfirm.invoice) {
             try {
-              // Fetch payments so email shows full payment history
               let invPayments = [];
               try {
                 const { getDocs, collection: col, query: q, where } = await import("firebase/firestore");
@@ -1667,11 +1676,7 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
                 });
               }
             } catch (e) {
-              setAlert({
-                show: true, type: "error",
-                title: "Email Failed",
-                message: "An error occurred while sending the email.",
-              });
+              setAlert({ show: true, type: "error", title: "Email Failed", message: "An error occurred while sending the email." });
             }
           }
           setEmailConfirm({ show: false, invoice: null, isUpdate: false });
@@ -1679,19 +1684,11 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
         onCancel={(reason) => {
           const docType = emailConfirm.isUpdate ? "Updated" : "Created";
           if (reason === "whatsapp") {
-            // WhatsApp opened — show success with WhatsApp note
-            setAlert({
-              show: true, type: "success",
-              title: `Invoice ${docType}! 🧾💬`,
-              message: `Invoice ${docType.toLowerCase()} successfully. WhatsApp khul gaya — message bhej dein.`,
-            });
+            setAlert({ show: true, type: "success", title: `Invoice ${docType}! 🧾💬`, message: `Invoice ${docType.toLowerCase()} ho gayi. WhatsApp khul gaya — message bhej dein.` });
+          } else if (reason === "both") {
+            setAlert({ show: true, type: "success", title: `Invoice ${docType}! 🧾📧💬`, message: `Email bhej di gayi aur WhatsApp khul gaya.` });
           } else {
-            // Skipped — show plain success
-            setAlert({
-              show: true, type: "success",
-              title: `Invoice ${docType}! 🧾`,
-              message: `Invoice ${docType.toLowerCase()} successfully. Koi notification nahi bheja.`,
-            });
+            setAlert({ show: true, type: "success", title: `Invoice ${docType}! 🧾`, message: `Invoice ${docType.toLowerCase()} ho gayi. Koi notification nahi bheja.` });
           }
           setEmailConfirm({ show: false, invoice: null, isUpdate: false });
         }}

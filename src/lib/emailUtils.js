@@ -3,6 +3,98 @@
  * Client-side only (uses html2canvas + jsPDF in browser)
  */
 
+// ── Generate JPEG image base64 from invoice (for Cloudinary → WhatsApp link) ─
+// Returns a base64 data URI string (image/jpeg), NOT a PDF.
+// Cloudinary free plan supports images — this is what gets uploaded for WA links.
+export async function generateInvoiceImageBase64(invoice, userDoc, payments = []) {
+  try {
+    const html2canvas = (await import("html2canvas")).default;
+
+    const container = document.createElement("div");
+    container.style.cssText =
+      "position:fixed;top:-9999px;left:-9999px;width:794px;background:#fff;z-index:-1;";
+    document.body.appendChild(container);
+
+    const { createRoot } = await import("react-dom/client");
+    const React = (await import("react")).default;
+    const { InvoiceTemplateForEmail } = await import("@/app/components/InvoicePDF");
+
+    await new Promise(resolve => {
+      const root = createRoot(container);
+      root.render(React.createElement(InvoiceTemplateForEmail, { inv: invoice, userDoc, payments }));
+      setTimeout(resolve, 400);
+    });
+
+    const canvas = await html2canvas(container, {
+      scale: 2, useCORS: true, backgroundColor: "#ffffff",
+      logging: false, width: 794,
+    });
+    document.body.removeChild(container);
+
+    // Return full data URI so Cloudinary can accept it directly
+    return canvas.toDataURL("image/jpeg", 0.92);
+  } catch (err) {
+    console.error("[generateInvoiceImageBase64]", err);
+    return null;
+  }
+}
+
+// ── Generate JPEG image base64 from Supplier Purchase Order ──────────────────
+export async function generateSupplierOrderImageBase64(order, supplier, userDoc, receipts = [], returns = [], payments = []) {
+  try {
+    const html2canvas = (await import("html2canvas")).default;
+
+    const container = document.createElement("div");
+    container.style.cssText =
+      "position:fixed;top:-9999px;left:-9999px;width:794px;background:#fff;z-index:-1;";
+    document.body.appendChild(container);
+
+    const { createRoot } = await import("react-dom/client");
+    const React = (await import("react")).default;
+    const { PurchaseOrderPDFTemplate } = await import("@/app/components/SupplierDetail");
+
+    await new Promise(resolve => {
+      const root = createRoot(container);
+      root.render(React.createElement(PurchaseOrderPDFTemplate, {
+        order, supplier, userDoc, receipts, returns, payments,
+      }));
+      setTimeout(resolve, 500);
+    });
+
+    const canvas = await html2canvas(container, {
+      scale: 2, useCORS: true, backgroundColor: "#ffffff",
+      logging: false, width: 794,
+    });
+    document.body.removeChild(container);
+
+    return canvas.toDataURL("image/jpeg", 0.92);
+  } catch (err) {
+    console.error("[generateSupplierOrderImageBase64]", err);
+    return null;
+  }
+}
+
+// ── Upload invoice image to Cloudinary → returns public URL ──────────────────
+// Uses /api/upload-pdf route (server-side, keeps API secret safe).
+export async function uploadInvoiceImage(imageDataUri, invoiceId) {
+  try {
+    const res = await fetch("/api/upload-pdf", {
+      method:  "POST",
+      headers: { "Content-Type": "application/json" },
+      body:    JSON.stringify({
+        imageBase64: imageDataUri,
+        fileName:    `inv-${invoiceId || Date.now()}`,
+      }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Upload failed");
+    return data.url;
+  } catch (err) {
+    console.error("[uploadInvoiceImage]", err);
+    return null;
+  }
+}
+
 // ── Generate PDF base64 from invoice/order data ───────────────────────────────
 export async function generateInvoicePdfBase64(invoice, userDoc, payments = []) {
   try {

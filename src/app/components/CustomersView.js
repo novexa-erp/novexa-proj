@@ -46,6 +46,13 @@ function fmtDate(ts) {
 function initials(name) {
   return (name || "?").split(" ").map(w => w[0]).join("").toUpperCase().slice(0, 2);
 }
+
+// ── Variant multiplier — inventory product variants have fixed prices, never multiply ──
+function getVarMult(item) {
+  if (!item.variantLabel || item.productId) return 1;
+  const n = parseFloat(item.variantLabel);
+  return (!isNaN(n) && n > 0) ? n : 1;
+}
 const AVATAR_COLORS = [
   "linear-gradient(135deg,#2563EB,#60A5FA)",
   "linear-gradient(135deg,#F59E0B,#FCD34D)",
@@ -355,12 +362,11 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
   // Helper: get actual balance of an invoice (excluding previous-balance carry-forward items)
   // Also subtracts goods returns from payments collection
   const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
-  const getVarMultFn  = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
   const getActualBalance = inv => {
     const actualAmt = inv.actualAmount != null
       ? Number(inv.actualAmount)
       : (inv.items || []).filter(it => !isPrevBalItem(it))
-          .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMultFn(it) * (Number(it.unitPrice) || 0), 0);
+          .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0);
     const invReturnsTotal = customerPayments
       .filter(p => p.type === "return" && p.invoiceId === inv.id)
       .reduce((s, p) => s + (Number(p.returnAmount) || 0), 0);
@@ -386,7 +392,7 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
     const amt = i.actualAmount != null
       ? Number(i.actualAmount)
       : (i.items || []).filter(it => !isPrevBalItem(it))
-          .reduce((sum, it) => sum + (Number(it.qty) || 0) * getVarMultFn(it) * (Number(it.unitPrice) || 0), 0);
+          .reduce((sum, it) => sum + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0);
     return s + amt;
   }, 0);
   const totalPaid = custInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
@@ -471,7 +477,6 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
       // Calculate actual amount excluding "Previous Balance · INV-" carry-forward items
       // These items are bookkeeping only — history should show real sale amount
       const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
-      const getVarMult    = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
       const actualItems   = (formData.items || []).filter(it => !isPrevBalItem(it));
       const actualAmount  = actualItems.reduce(
         (s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0
@@ -1372,12 +1377,11 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             {custInvoices.map(inv => {
               // Actual purchase amount — exclude "Previous Balance · INV-" carry-forward items
               const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
-              const getVMult      = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
               const displayAmount = inv.actualAmount != null
                 ? Number(inv.actualAmount)
                 : (inv.items || [])
                     .filter(it => !isPrevBalItem(it))
-                    .reduce((s, it) => s + (Number(it.qty) || 0) * getVMult(it) * (Number(it.unitPrice) || 0), 0)
+                    .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0)
                   || Number(inv.amount) || 0;
               const amtPaid = Number(inv.amountPaid) || 0;
               // Include goods returns from payments for accurate balance
@@ -1435,97 +1439,76 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
                     </span>
                   </div>
 
-                  {/* Row 2: amounts + action buttons */}
-                  <div className="flex items-center justify-between gap-2 pl-12">
-                    <div>
-                      <p className="text-white text-sm font-bold">{formatRs(displayAmount)}</p>
-                      <div className="flex flex-wrap gap-x-3">
-                        {amtPaid > 0 && (
-                          <p className="text-[10px]" style={{ color: "#34d399" }}>Paid: {formatRs(amtPaid)}</p>
-                        )}
-                        {invReturnsTotal > 0 && (
-                          <p className="text-[10px]" style={{ color: "#f87171" }}>Return: -{formatRs(invReturnsTotal)}</p>
-                        )}
-                        {displayBalance > 0 && (
-                          <p className="text-[10px] font-semibold" style={{ color: "#f87171" }}>Bal: {formatRs(displayBalance)}</p>
-                        )}
-                      </div>
+                  {/* Row 2: amounts */}
+                  <div className="pl-12">
+                    <p className="text-white text-sm font-bold">{formatRs(displayAmount)}</p>
+                    <div className="flex flex-wrap gap-x-3">
+                      {amtPaid > 0 && (
+                        <p className="text-[10px]" style={{ color: "#34d399" }}>Paid: {formatRs(amtPaid)}</p>
+                      )}
+                      {invReturnsTotal > 0 && (
+                        <p className="text-[10px]" style={{ color: "#f87171" }}>Return: -{formatRs(invReturnsTotal)}</p>
+                      )}
+                      {displayBalance > 0 && (
+                        <p className="text-[10px] font-semibold" style={{ color: "#f87171" }}>Bal: {formatRs(displayBalance)}</p>
+                      )}
                     </div>
-                    <div className="flex gap-1.5 items-center">
-                      {/* View */}
-                      <button onClick={() => setPdfInv(inv)}
-                        title="View Invoice"
-                        className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all hover:scale-105 whitespace-nowrap"
+                  </div>
+
+                  {/* Row 3: inline action buttons — no dropdown (avoids overflow-hidden clip + mobile tap issues) */}
+                  <div className="flex flex-wrap gap-1.5 pl-12">
+                    {/* View */}
+                    <button onClick={() => setPdfInv(inv)}
+                      className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
+                      style={{ background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.25)", color: "#34d399" }}>
+                      👁 View
+                    </button>
+                    {/* History */}
+                    <button onClick={() => setShowHistoryModal(inv.id)}
+                      className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
+                      style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.25)", color: "#a78bfa" }}>
+                      📊 History
+                    </button>
+                    {/* Edit */}
+                    <button onClick={() => {
+                        const invReturns = customerPayments.filter(p => p.type === "return" && p.invoiceId === inv.id);
+                        setEditInv({ id: inv.id, form: docToForm(inv, invReturns) });
+                        setShowInvModal(true);
+                      }}
+                      className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
+                      style={{ background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.25)", color: "#60A5FA" }}>
+                      ✏️ Edit
+                    </button>
+                    {/* Pay — only when balance > 0 */}
+                    {displayBalance > 0 && (
+                      <button onClick={() => {
+                          const invReturns = customerPayments.filter(p => p.type === "return" && p.invoiceId === inv.id);
+                          setEditInv({ id: inv.id, form: docToForm(inv, invReturns) });
+                          setShowInvModal(true);
+                        }}
+                        className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
                         style={{ background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.25)", color: "#34d399" }}>
-                        👁 View
+                        💰 Pay
                       </button>
-                      {/* History */}
-                      <button onClick={() => setShowHistoryModal(inv.id)}
-                        title="Invoice Payment History"
-                        className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all hover:scale-105 whitespace-nowrap"
-                        style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.25)", color: "#a78bfa" }}>
-                        📊 History
+                    )}
+                    {/* Return — only when real items exist */}
+                    {realItems.length > 0 && (
+                      <button onClick={() => {
+                          const invReturns = customerPayments.filter(p => p.type === "return" && p.invoiceId === inv.id);
+                          setEditInv({ id: inv.id, form: docToForm(inv, invReturns) });
+                          setShowInvModal(true);
+                        }}
+                        className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
+                        style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171" }}>
+                        ↩️ Return
                       </button>
-                      {/* Actions dropdown */}
-                      <div className="relative" ref={openMenuId === inv.id ? invMenuRef : null}>
-                        <button onClick={() => setOpenMenuId(openMenuId === inv.id ? null : inv.id)}
-                          title="More Actions"
-                          className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all hover:scale-105 whitespace-nowrap"
-                          style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)" }}>
-                          ⚡ Actions ▾
-                        </button>
-                        {openMenuId === inv.id && (
-                          <div className="absolute right-0 top-full mt-1 z-30 rounded-xl overflow-hidden"
-                            style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 8px 32px rgba(0,0,0,0.6)", minWidth: 160 }}>
-                            {/* Edit */}
-                            <button onClick={() => {
-                                setOpenMenuId(null);
-                                const invReturns = customerPayments.filter(p => p.type === "return" && p.invoiceId === inv.id);
-                                setEditInv({ id: inv.id, form: docToForm(inv, invReturns) });
-                                setShowInvModal(true);
-                              }}
-                              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
-                              style={{ color: "#60A5FA" }}>
-                              ✏️ Edit
-                            </button>
-                            {/* Pay — only when balance > 0 */}
-                            {displayBalance > 0 && (
-                              <button onClick={() => {
-                                  setOpenMenuId(null);
-                                  const invReturns = customerPayments.filter(p => p.type === "return" && p.invoiceId === inv.id);
-                                  setEditInv({ id: inv.id, form: docToForm(inv, invReturns) });
-                                  setShowInvModal(true);
-                                }}
-                                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
-                                style={{ color: "#34d399" }}>
-                                💰 Pay
-                              </button>
-                            )}
-                            {/* Return */}
-                            {realItems.length > 0 && (
-                              <button onClick={() => {
-                                  setOpenMenuId(null);
-                                  const invReturns = customerPayments.filter(p => p.type === "return" && p.invoiceId === inv.id);
-                                  setEditInv({ id: inv.id, form: docToForm(inv, invReturns) });
-                                  setShowInvModal(true);
-                                }}
-                                className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
-                                style={{ color: "#f87171" }}>
-                                ↩️ Return
-                              </button>
-                            )}
-                            {/* Divider */}
-                            <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }} />
-                            {/* Delete */}
-                            <button onClick={() => { setOpenMenuId(null); setDeleteInvId(inv.id); }}
-                              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
-                              style={{ color: "#f87171" }}>
-                              🗑️ Delete
-                            </button>
-                          </div>
-                        )}
-                      </div>
-                    </div>
+                    )}
+                    {/* Delete */}
+                    <button onClick={() => setDeleteInvId(inv.id)}
+                      className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95"
+                      style={{ background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>
+                      🗑️
+                    </button>
                   </div>
                 </div>
               );
@@ -1776,11 +1759,10 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose, userDoc, 
   function getActualAmount(inv) {
     if (inv.actualAmount != null) return Number(inv.actualAmount);
     if (inv.originalAmount != null) return Number(inv.originalAmount);
-    const isPrevBal  = (desc) => (desc || "").startsWith("Previous Balance · INV-");
-    const getVMult2  = it => it.variantLabel ? (parseFloat(it.variantLabel) > 0 ? parseFloat(it.variantLabel) : 1) : 1;
+    const isPrevBal = (desc) => (desc || "").startsWith("Previous Balance · INV-");
     return (inv.items || [])
       .filter(it => !isPrevBal(it.description))
-      .reduce((s, it) => s + (Number(it.qty) || 0) * getVMult2(it) * (Number(it.unitPrice) || 0), 0)
+      .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0)
       || Number(inv.amount) || 0;
   }
   const totalInvoices  = invoices.length;
@@ -2481,10 +2463,14 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
           userDoc={userDoc}
           isUpdate={emailConfirm.isUpdate}
           documentType={emailConfirm.documentType}
+          getInvoiceImageFn={emailConfirm.invoice ? async () => {
+            const { generateInvoiceImageBase64 } = await import("@/lib/emailUtils");
+            const invPayments = await fetchInvoicePayments(db, uid, emailConfirm.invoice.id);
+            return generateInvoiceImageBase64(emailConfirm.invoice, userDoc, invPayments);
+          } : undefined}
           onConfirm={async () => {
             if (emailConfirm.invoice) {
               try {
-                // Fetch payments so PDF shows full payment history
                 const invPayments = await fetchInvoicePayments(db, uid, emailConfirm.invoice.id);
                 const pdfBase64 = await generateInvoicePdfBase64(emailConfirm.invoice, userDoc, invPayments);
                 const result    = await sendInvoiceEmail(emailConfirm.invoice, userDoc, pdfBase64, uid, emailConfirm.isUpdate, invPayments);
@@ -2497,11 +2483,7 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
                     message: `${emailConfirm.documentType === "return" ? "Return" : "Invoice"} emailed to ${emailConfirm.invoice.email}.`,
                   });
                 } else {
-                  setAlert({
-                    show: true, type: "warning",
-                    title: `Saved ✓ (Email Failed)`,
-                    message: `Saved successfully, but email could not be sent: ${result.error}`,
-                  });
+                  setAlert({ show: true, type: "warning", title: `Saved ✓ (Email Failed)`, message: `Saved successfully, but email could not be sent: ${result.error}` });
                 }
               } catch (e) {
                 setAlert({ show: true, type: "error", title: "Email Failed", message: "An error occurred while sending the email." });
@@ -2513,17 +2495,11 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
             const docType = emailConfirm.isUpdate ? "Updated" : "Created";
             const docTypeText = emailConfirm.documentType === "return" ? "Return Recorded" : `Invoice ${docType}`;
             if (reason === "whatsapp") {
-              setAlert({
-                show: true, type: "success",
-                title: `${docTypeText}! 💬`,
-                message: `Saved successfully. WhatsApp khul gaya — message bhej dein.`,
-              });
+              setAlert({ show: true, type: "success", title: `${docTypeText}! 💬`, message: `Saved successfully. WhatsApp khul gaya — message bhej dein.` });
+            } else if (reason === "both") {
+              setAlert({ show: true, type: "success", title: `${docTypeText}! 📧💬`, message: `Email bhej di gayi aur WhatsApp khul gaya.` });
             } else {
-              setAlert({
-                show: true, type: "success",
-                title: `${docTypeText}! ${emailConfirm.documentType === "return" ? "↩️" : "🧾"}`,
-                message: `${emailConfirm.documentType === "return" ? "Return has been" : "Invoice has been"} ${docType.toLowerCase()} successfully. Koi notification nahi bheja.`,
-              });
+              setAlert({ show: true, type: "success", title: `${docTypeText}! ${emailConfirm.documentType === "return" ? "↩️" : "🧾"}`, message: `${emailConfirm.documentType === "return" ? "Return" : "Invoice"} ${docType.toLowerCase()} ho gayi. Koi notification nahi bheja.` });
             }
             setEmailConfirm({ show: false, invoice: null, isUpdate: false, documentType: "invoice" });
           }}
@@ -2806,10 +2782,14 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
         userDoc={userDoc}
         isUpdate={emailConfirm.isUpdate}
         documentType={emailConfirm.documentType}
+        getInvoiceImageFn={emailConfirm.invoice ? async () => {
+          const { generateInvoiceImageBase64 } = await import("@/lib/emailUtils");
+          const invPayments = await fetchInvoicePayments(db, uid, emailConfirm.invoice.id);
+          return generateInvoiceImageBase64(emailConfirm.invoice, userDoc, invPayments);
+        } : undefined}
         onConfirm={async () => {
           if (emailConfirm.invoice) {
             try {
-              // Fetch payments so PDF shows full payment history
               const invPayments = await fetchInvoicePayments(db, uid, emailConfirm.invoice.id);
               const pdfBase64 = await generateInvoicePdfBase64(emailConfirm.invoice, userDoc, invPayments);
               const result    = await sendInvoiceEmail(emailConfirm.invoice, userDoc, pdfBase64, uid, emailConfirm.isUpdate, invPayments);
@@ -2822,11 +2802,7 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
                   message: `${emailConfirm.documentType === "return" ? "Return" : "Invoice"} emailed to ${emailConfirm.invoice.email}.`,
                 });
               } else {
-                setAlert({
-                  show: true, type: "warning",
-                  title: `Saved ✓ (Email Failed)`,
-                  message: `Saved successfully, but email could not be sent: ${result.error}`,
-                });
+                setAlert({ show: true, type: "warning", title: `Saved ✓ (Email Failed)`, message: `Saved successfully, but email could not be sent: ${result.error}` });
               }
             } catch (e) {
               setAlert({ show: true, type: "error", title: "Email Failed", message: "An error occurred while sending the email." });
@@ -2838,17 +2814,11 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
           const docType = emailConfirm.isUpdate ? "Updated" : "Created";
           const docTypeText = emailConfirm.documentType === "return" ? "Return Recorded" : `Invoice ${docType}`;
           if (reason === "whatsapp") {
-            setAlert({
-              show: true, type: "success",
-              title: `${docTypeText}! 💬`,
-              message: `Saved successfully. WhatsApp khul gaya — message bhej dein.`,
-            });
+            setAlert({ show: true, type: "success", title: `${docTypeText}! 💬`, message: `Saved successfully. WhatsApp khul gaya — message bhej dein.` });
+          } else if (reason === "both") {
+            setAlert({ show: true, type: "success", title: `${docTypeText}! 📧💬`, message: `Email bhej di gayi aur WhatsApp khul gaya.` });
           } else {
-            setAlert({
-              show: true, type: "success",
-              title: `${docTypeText}! ${emailConfirm.documentType === "return" ? "↩️" : "🧾"}`,
-              message: `${emailConfirm.documentType === "return" ? "Return has been" : "Invoice has been"} ${docType.toLowerCase()} successfully. Koi notification nahi bheja.`,
-            });
+            setAlert({ show: true, type: "success", title: `${docTypeText}! ${emailConfirm.documentType === "return" ? "↩️" : "🧾"}`, message: `${emailConfirm.documentType === "return" ? "Return" : "Invoice"} ${docType.toLowerCase()} ho gayi. Koi notification nahi bheja.` });
           }
           setEmailConfirm({ show: false, invoice: null, isUpdate: false, documentType: "invoice" });
         }}
