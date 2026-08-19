@@ -23,7 +23,8 @@ const STATUS_STYLE = {
 // For inventory product variants (productId set), price is already fixed — multiplier = 1.
 // For custom/manual variants (no productId), the label may encode a quantity (e.g. "0.5 kg").
 function getVarMult(item) {
-  if (!item.variantLabel || item.productId) return 1;
+  if (item.productId) return 1;  // inventory — price fixed, never multiply
+  if (!item.variantLabel) return 1;
   const n = parseFloat(item.variantLabel);
   return (!isNaN(n) && n > 0) ? n : 1;
 }
@@ -67,7 +68,7 @@ function docToForm(inv) {
   };
 }
 
-export default function InvoicesView({ uid, invoices, loading, products = [], userDoc, payments = [], highlightId = null }) {
+export default function InvoicesView({ uid, invoices, loading, products = [], locations = [], userDoc, payments = [], highlightId = null }) {
   const [activeTab,    setActiveTab]    = useState("All");
   const [showModal,    setShowModal]    = useState(false);
   const [editTarget,   setEditTarget]   = useState(null);
@@ -253,8 +254,11 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
     if (!description || !Number(qty) || !Number(rate)) return;
 
     const inv    = returnTarget;
-    const retVarMult     = variantLabel ? (parseFloat(variantLabel) > 0 ? parseFloat(variantLabel) : 1) : 1;
-    const returnAmount   = (Number(qty) || 0) * retVarMult * (Number(rate) || 0);
+    // inventory product variants (productId set) — price already fixed, no multiply
+    // custom variants (no productId) — label encodes quantity e.g. "0.5 kg" → multiply
+    const retVarMult   = (!productId && variantLabel && parseFloat(variantLabel) > 0)
+      ? parseFloat(variantLabel) : 1;
+    const returnAmount = (Number(qty) || 0) * retVarMult * (Number(rate) || 0);
 
     setSavingReturn(true);
     try {
@@ -304,7 +308,12 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
       // Payment record for return
       await addDoc(collection(db, "users", uid, "payments"), {
         type:          "return",
-        amount:        returnAmount,
+        returnAmount,                          // ← PDF uses p.returnAmount
+        amount:        returnAmount,           // ← backward compat
+        qty:           Number(qty),
+        rate:          Number(rate),
+        variantLabel:  variantLabel || "",
+        variantUnit:   variantUnit  || "",
         invoiceId:     inv.id,
         invoiceNumber: inv.invoiceNumber || `INV-${inv.id.slice(-4).toUpperCase()}`,
         customer:      inv.customerName || inv.customer || "",
@@ -589,7 +598,7 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
             message: `New invoice for ${formData.customerName} has been created successfully. Stock updated.`,
           });
         } else {
-          const invoiceForSend = { ...payload, id: newDocRef.id };
+          const invoiceForSend = { ...payload, id: newDocRef.id, invoiceNumber };
           setEmailConfirm({ show: true, invoice: invoiceForSend, isUpdate: false });
         }
       }
@@ -1203,6 +1212,7 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
           saving={saving}
           initial={editTarget?.form || null}
           products={products}
+          locations={locations}
           settingsLogo={userDoc?.logoDataUrl || ""}
         />
       )}
@@ -1364,7 +1374,8 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
           return Math.max(0, (Number(it.qty) || 0) - done);
         }
 
-        const retVarMult   = returnForm.variantLabel ? (parseFloat(returnForm.variantLabel) > 0 ? parseFloat(returnForm.variantLabel) : 1) : 1;
+        const retVarMult   = (!returnForm.productId && returnForm.variantLabel && parseFloat(returnForm.variantLabel) > 0)
+          ? parseFloat(returnForm.variantLabel) : 1;
         const returnTotal  = (Number(returnForm.qty) || 0) * retVarMult * (Number(returnForm.rate) || 0);
         const canSave      = returnForm.description && Number(returnForm.qty) > 0 && Number(returnForm.rate) > 0;
 
@@ -1534,6 +1545,7 @@ export default function InvoicesView({ uid, invoices, loading, products = [], us
       {pdfInvoice && (
         <InvoicePDFModal
           inv={pdfInvoice}
+          uid={uid}
           userDoc={userDoc}
           onClose={() => setPdfInvoice(null)}
           payments={payments.filter(p => p.invoiceId === pdfInvoice.id)}

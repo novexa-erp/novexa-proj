@@ -60,6 +60,9 @@ service cloud.firestore {
       match /products/{productId} {
         allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
+      match /locations/{locationId} {
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+      }
       match /payments/{paymentId} {
         allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
@@ -106,6 +109,12 @@ service cloud.firestore {
         allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
       match /settings/{settingId} {
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+      }
+      match /billBookTemplates/{tplId} {
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+      }
+      match /billBookHistory/{histId} {
         allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
       match /activityLogs/{logId} {
@@ -171,11 +180,14 @@ service cloud.firestore {
       allow delete: if isAdmin();
     }
 
-    // ── Global Counters (invoice serial, customer serial, supplier order number) ───
+    // ── Global Counters (invoice serial, customer serial) ─────────────────────
     // All signed-in users can read + write (atomic runTransaction ke liye zaroori)
     match /globalCounters/{docId} {
       allow read, write: if isSignedIn();
     }
+
+    // ── App Counters (supplier order numbers, etc.) ───────────────────────────
+    // All signed-in users can read + write (atomic runTransaction ke liye zaroori)
     match /_counters/{docId} {
       allow read, write: if isSignedIn();
     }

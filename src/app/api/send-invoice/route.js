@@ -51,11 +51,24 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
   const bizPhone      = userDoc?.phone || "";
   const bizAddr       = userDoc?.address || "";
   const amountPaid      = Number(invoice.amountPaid)     || 0;
-  // Calculate goodsReturn from payments array (return records) — same as PDF
+  // Return data — primary source: invoice._pastReturns (always has qty/rate/returnAmount)
+  // Fallback: payments array (type=return) for old records
   const allPayments     = invoice.payments || [];
-  const returnRecords   = allPayments.filter(p => p.type === "return");
+  const pastReturnsArr  = (invoice._pastReturns || []).filter(r => (r.returnAmount || 0) > 0 || (r.qty || 0) > 0);
+  const returnRecords   = pastReturnsArr.length > 0
+    ? pastReturnsArr.map(r => ({
+        createdAt:    r.returnedAt || null,
+        description:  r.description || "",
+        qty:          r.qty,
+        rate:         r.rate,
+        returnAmount: r.returnAmount,
+        variantLabel: r.variantLabel || "",
+        variantUnit:  r.variantUnit  || "",
+      }))
+    : allPayments.filter(p => p.type === "return");
   const paymentRecords  = allPayments.filter(p => p.type === "received" || (p.type !== "purchase" && p.type !== "return"));
-  const goodsReturn     = returnRecords.reduce((s, p) => s + (Number(p.returnAmount) || 0), 0);
+  // goodsReturn — always from _pastReturns for accuracy
+  const goodsReturn     = (invoice._pastReturns || []).reduce((s, r) => s + (Number(r.returnAmount) || 0), 0);
   // Previous balance — DISPLAY ONLY, never added to calculations
   // _resolvedPrevBalance = live sum of all OTHER customer invoices' outstanding balance (not current)
   // _resolvedTotalBalance = grand total across ALL invoices including current (for summary display)
@@ -73,9 +86,11 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
   // Current invoice real items only (excluding any stored previous balance carry-forward row)
   const currentItems    = allItems.filter(it => !(it.description || "").startsWith("Previous Balance"));
 
-  // Helper: get variant multiplier from variantLabel (e.g. "0.5 kg" → 0.5, "XL" → 1)
-  // Works for BOTH custom variants (no productId) AND inventory variants (with productId)
+  // Helper: get variant multiplier from variantLabel
+  // inventory products (productId set) → price already fixed, multiplier = 1
+  // custom variants (no productId) → label encodes quantity e.g. "0.5 kg" → 0.5
   function getVarMult(it) {
+    if (it.productId) return 1;
     if (!it.variantLabel) return 1;
     const num = parseFloat(it.variantLabel);
     return (!isNaN(num) && num > 0) ? num : 1;
@@ -117,9 +132,10 @@ function buildInvoiceEmailHTML({ invoice, userDoc, isUpdate }) {
 
   const itemRows = items.map((it, i) => {
     const varMult     = getVarMult(it);
+    // hasCustomVar: only for non-inventory items with numeric variant label (e.g. "0.5 kg")
     const hasCustomVar = !it.productId && it.variantLabel && it.variantUnit && varMult !== 1;
-    const totalQty    = (Number(it.qty) || 0) * varMult;  // e.g. 250 × 0.5 = 125 kg
-    const lineTotal   = totalQty * (Number(it.unitPrice) || 0);
+    const totalQty    = hasCustomVar ? (Number(it.qty) || 0) * varMult : (Number(it.qty) || 0);
+    const lineTotal   = (Number(it.qty) || 0) * varMult * (Number(it.unitPrice) || 0);
 
     // Qty cell: "0.5 kg × 250 = 125 kg" for custom variants, plain qty otherwise
     const qtyCell = hasCustomVar

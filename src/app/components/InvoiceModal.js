@@ -128,12 +128,30 @@ function StyledTextarea({ placeholder, value, onChange, rows = 2 }) {
   );
 }
 
+// ── Location icon helper ──────────────────────────────────────────────────────
+function getLocIcon(type) {
+  if (type === "shop")      return "🏪";
+  if (type === "warehouse") return "🏭";
+  return "📍";
+}
+
 // ── Product picker modal ──────────────────────────────────────────────────────
-function ProductPickerModal({ products, onSelect, onClose }) {
+function ProductPickerModal({ products, locations = [], onSelect, onClose }) {
   const [search, setSearch] = useState("");
   const filtered = products.filter(p =>
     (p.name || "").toLowerCase().includes(search.toLowerCase())
   );
+
+  // Group by name so same-name products from different locations appear together
+  const grouped = {};
+  filtered.forEach(p => {
+    const key = (p.name || "").toLowerCase().trim();
+    if (!grouped[key]) grouped[key] = [];
+    grouped[key].push(p);
+  });
+
+  const activeLocations = (locations || []).filter(l => !l.deleted);
+
   return (
     <div className="fixed inset-0 z-[60] flex items-center justify-center p-4"
       style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(4px)" }}>
@@ -152,34 +170,51 @@ function ProductPickerModal({ products, onSelect, onClose }) {
           {filtered.length === 0 ? (
             <p className="text-gray-500 text-sm text-center py-8">No products found.</p>
           ) : (
-            filtered.map(p => {
-              const hasVariants = p.variantType !== "none" && p.variants?.length > 0;
-              const totalStock = hasVariants 
-                ? p.variants.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0)
-                : (p.stock || 0);
-              
-              return (
-                <button key={p.id} type="button"
-                  onClick={() => onSelect(p)}
-                  className="w-full flex items-center justify-between px-5 py-3 text-left border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors">
-                  <div>
-                    <p className="text-white text-sm font-medium">
-                      {p.name}
-                      {hasVariants && <span className="ml-2 text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 font-semibold">{p.variants.length} variants</span>}
-                    </p>
-                    <p className="text-gray-500 text-xs mt-0.5">
-                      Total Stock: <span style={{ color: totalStock <= (Number(p.lowStockThreshold) || 10) ? "#fbbf24" : "#34d399" }}>
-                        {totalStock}
-                      </span>
-                    </p>
-                  </div>
-                  <div className="text-right flex-shrink-0 ml-4">
-                    <p className="text-amber-400 font-bold text-sm">
-                      {hasVariants ? "Select →" : formatRs(p.price)}
-                    </p>
-                  </div>
-                </button>
-              );
+            Object.values(grouped).map(group => {
+              // Multiple products with same name (different locations) — show all
+              return group.map(p => {
+                const hasVariants = p.variantType !== "none" && p.variants?.length > 0;
+                const totalStock = hasVariants
+                  ? p.variants.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0)
+                  : (p.stock || 0);
+                const loc = activeLocations.find(l => l.id === p.locationId);
+
+                return (
+                  <button key={p.id} type="button"
+                    onClick={() => onSelect(p)}
+                    className="w-full flex items-center justify-between px-5 py-3 text-left border-b border-white/[0.04] hover:bg-white/[0.03] transition-colors">
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-white text-sm font-medium">
+                          {p.name}
+                        </p>
+                        {hasVariants && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-amber-500/10 text-amber-400 font-semibold">
+                            {p.variants.length} variants
+                          </span>
+                        )}
+                        {/* Location badge */}
+                        {loc && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                            style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
+                            {getLocIcon(loc.type)} {loc.name}
+                          </span>
+                        )}
+                      </div>
+                      <p className="text-gray-500 text-xs mt-0.5">
+                        Stock: <span style={{ color: totalStock <= (Number(p.lowStockThreshold) || 10) ? "#fbbf24" : "#34d399" }}>
+                          {totalStock}
+                        </span>
+                      </p>
+                    </div>
+                    <div className="text-right flex-shrink-0 ml-4">
+                      <p className="text-amber-400 font-bold text-sm">
+                        {hasVariants ? "Select →" : formatRs(p.price)}
+                      </p>
+                    </div>
+                  </button>
+                );
+              });
             })
           )}
         </div>
@@ -211,7 +246,7 @@ function getVariantMultiplier(variantLabel, hasProductId) {
 }
 
 // ── Item row with autocomplete + variant support ─────────────────────────────
-function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPicker, onStockError }) {
+function ItemRow({ item, idx, products, locations = [], onChange, onRemove, canRemove, onOpenPicker, onStockError }) {
   // Custom variant state for non-inventory items
   const [showVariantSetup, setShowVariantSetup] = useState(false);
   const [customVarType,    setCustomVarType]    = useState("none");
@@ -231,12 +266,13 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
     onChange(idx, "productId", ""); // clear link when manually typing
     onChange(idx, "variantId", "");
     onChange(idx, "stock", "");
-    
+    onChange(idx, "locationId", "");
+
     if (val.trim().length > 0) {
       const matches = products.filter(p =>
         (p.name || "").toLowerCase().startsWith(val.toLowerCase()) ||
         (p.name || "").toLowerCase().includes(val.toLowerCase())
-      ).slice(0, 6);
+      ).slice(0, 8);
       setSuggestions(matches);
       setShowSug(matches.length > 0);
     } else {
@@ -248,7 +284,8 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
   function selectSuggestion(p) {
     onChange(idx, "description", p.name);
     onChange(idx, "productId", p.id);
-    
+    onChange(idx, "locationId", p.locationId || "");
+
     // Check if product has variants
     if (p.variantType !== "none" && p.variants?.length > 0) {
       // Has variants - don't fill price/stock/label yet, wait for variant selection
@@ -265,7 +302,7 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
       onChange(idx, "variantLabel", "");
       onChange(idx, "variantUnit",  "");
     }
-    
+
     setSuggestions([]);
     setShowSug(false);
   }
@@ -373,18 +410,27 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
                 boxShadow: "0 8px 32px rgba(0,0,0,0.6)" }}>
               {suggestions.map(p => {
                 const hasVars = p.variantType !== "none" && p.variants?.length > 0;
-                const totalStock = hasVars 
+                const totalStock = hasVars
                   ? p.variants.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0)
                   : (p.stock || 0);
-                
+                const loc = (locations || []).find(l => l.id === p.locationId && !l.deleted);
+
                 return (
                   <button key={p.id} type="button"
                     onMouseDown={() => selectSuggestion(p)}
                     className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-white/[0.04] transition-colors border-b border-white/[0.04] last:border-0">
                     <div>
-                      <p className="text-white text-xs font-medium">
-                        {p.name} {hasVars && <span className="text-gray-500 text-[10px]">({p.variants.length} variants)</span>}
-                      </p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-white text-xs font-medium">
+                          {p.name} {hasVars && <span className="text-gray-500 text-[10px]">({p.variants.length} variants)</span>}
+                        </p>
+                        {loc && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                            style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
+                            {getLocIcon(loc.type)} {loc.name}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-gray-500 text-[10px]">Stock: {totalStock}</p>
                     </div>
                     <p className="text-amber-400 text-xs font-bold ml-2 flex-shrink-0">
@@ -472,12 +518,21 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
               {suggestions.map(p => {
                 const hasVars = p.variantType !== "none" && p.variants?.length > 0;
                 const totalStock = hasVars ? p.variants.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0) : (p.stock || 0);
+                const loc = (locations || []).find(l => l.id === p.locationId && !l.deleted);
                 return (
                   <button key={p.id} type="button"
                     onMouseDown={() => selectSuggestion(p)}
                     className="w-full flex items-center justify-between px-3 py-2.5 text-left hover:bg-white/[0.04] transition-colors border-b border-white/[0.04] last:border-0">
                     <div>
-                      <p className="text-white text-xs font-medium">{p.name} {hasVars && <span className="text-gray-500 text-[10px]">({p.variants.length} variants)</span>}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-white text-xs font-medium">{p.name} {hasVars && <span className="text-gray-500 text-[10px]">({p.variants.length} variants)</span>}</p>
+                        {loc && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                            style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
+                            {getLocIcon(loc.type)} {loc.name}
+                          </span>
+                        )}
+                      </div>
                       <p className="text-gray-500 text-[10px]">Stock: {totalStock}</p>
                     </div>
                     <p className="text-amber-400 text-xs font-bold ml-2 flex-shrink-0">{hasVars ? "Select variant →" : formatRs(p.price)}</p>
@@ -708,7 +763,7 @@ function ItemRow({ item, idx, products, onChange, onRemove, canRemove, onOpenPic
 }
 
 // ── Main Modal ────────────────────────────────────────────────────────────────
-export default function InvoiceModal({ onClose, onSave, saving, initial, defaultValues, products = [], settingsLogo = "", customerTotalBalance = null }) {
+export default function InvoiceModal({ onClose, onSave, saving, initial, defaultValues, products = [], locations = [], settingsLogo = "", customerTotalBalance = null }) {
   // filter out deleted products — they should not show in suggestions or picker
   const activeProducts = products.filter(p => !p.deleted);
 
@@ -788,6 +843,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
     if (addPickerIdx === null) return;
     setAddItem(addPickerIdx, "description", p.name);
     setAddItem(addPickerIdx, "productId", p.id);
+    setAddItem(addPickerIdx, "locationId", p.locationId || "");
     if (p.variantType !== "none" && p.variants?.length > 0) {
       setAddItem(addPickerIdx, "unitPrice", "");
       setAddItem(addPickerIdx, "variantId", "");
@@ -824,6 +880,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
     if (pickerIdx === null) return;
     setItem(pickerIdx, "description", p.name);
     setItem(pickerIdx, "productId", p.id);
+    setItem(pickerIdx, "locationId", p.locationId || "");
     if (p.variantType !== "none" && p.variants?.length > 0) {
       setItem(pickerIdx, "unitPrice",    "");
       setItem(pickerIdx, "variantId",    "");
@@ -1073,6 +1130,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
                 <>
                   {form.items.map((item, idx) => (
                     <ItemRow key={idx} item={item} idx={idx} products={activeProducts}
+                      locations={locations}
                       onChange={setItem} onRemove={removeItem}
                       canRemove={form.items.length > 1}
                       onOpenPicker={(i) => setPickerIdx(i)}
@@ -1578,6 +1636,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
     {pickerIdx !== null && (
       <ProductPickerModal
         products={activeProducts}
+        locations={locations}
         onSelect={handlePickerSelect}
         onClose={() => setPickerIdx(null)}
       />
@@ -1586,6 +1645,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
     {addPickerIdx !== null && (
       <ProductPickerModal
         products={activeProducts}
+        locations={locations}
         onSelect={handleAddPickerSelect}
         onClose={() => setAddPickerIdx(null)}
       />

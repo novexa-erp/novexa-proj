@@ -105,10 +105,10 @@ export function getLimits(plan, firestorePlans = null) {
  */
 export function getPlanPermissions(plan) {
   const map = {
-    starter:      new Set(["overview","invoices","customers","inventory","payments","purchases","settings","contact","my-tickets","trash"]),
-    business:     new Set(["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","settings","contact","my-tickets","trash"]),
-    professional: new Set(["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","hr","branches","settings","contact","my-tickets","trash"]),
-    enterprise:   new Set(["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","hr","branches","settings","contact","my-tickets","trash"]),
+    starter:      new Set(["overview","invoices","customers","inventory","payments","purchases","settings","contact","my-tickets","trash","bill-book"]),
+    business:     new Set(["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","settings","contact","my-tickets","trash","bill-book"]),
+    professional: new Set(["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","hr","branches","settings","contact","my-tickets","trash","bill-book"]),
+    enterprise:   new Set(["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","hr","branches","settings","contact","my-tickets","trash","bill-book"]),
   };
   return map[plan] || map.starter;
 }

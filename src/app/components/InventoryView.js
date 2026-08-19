@@ -3,6 +3,7 @@ import { useState, useEffect, useRef } from "react";
 import { collection, getDocs, addDoc, updateDoc, doc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/lib/firebase";
 import SweetAlert from "./SweetAlert";
+import LocationsManager, { getLocationIcon, getLocationLabel } from "./LocationsManager";
 
 const cardStyle = { 
   background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", 
@@ -41,15 +42,17 @@ const PRODUCT_CATEGORIES = [
   "Other",
 ];
 
-export default function InventoryView({ uid }) {
+export default function InventoryView({ uid, locations = [] }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editProduct, setEditProduct] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
+  const [filterLocation, setFilterLocation] = useState("all");
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, name }
   const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
+  const [showLocationsManager, setShowLocationsManager] = useState(false);
 
   useEffect(() => {
     if (uid) loadProducts();
@@ -126,7 +129,8 @@ export default function InventoryView({ uid }) {
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.name?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = filterType === "all" || p.variantType === filterType;
-    return matchesSearch && matchesFilter;
+    const matchesLocation = filterLocation === "all" || (filterLocation === "none" ? !p.locationId : p.locationId === filterLocation);
+    return matchesSearch && matchesFilter && matchesLocation;
   });
 
   const totalProducts = products.length;
@@ -166,6 +170,15 @@ export default function InventoryView({ uid }) {
         onClose={() => setAlert({ ...alert, show: false })}
       />
 
+      {/* Locations Manager */}
+      {showLocationsManager && (
+        <LocationsManager
+          uid={uid}
+          locations={locations}
+          onClose={() => setShowLocationsManager(false)}
+        />
+      )}
+
       {/* Delete Confirm Dialog */}
       {deleteConfirm && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
@@ -204,15 +217,31 @@ export default function InventoryView({ uid }) {
             <p className="text-gray-400 text-xs">Track and manage your product inventory</p>
           </div>
           
-          <button onClick={openAddModal}
-            className="group relative px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg">
-            <div className="absolute inset-0 bg-gradient-to-r from-amber-500 to-orange-600 transition-transform group-hover:scale-105" />
-            <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <span className="relative z-10 flex items-center gap-2 text-black font-bold">
-              <span className="text-base group-hover:rotate-90 transition-transform duration-300">+</span>
-              Add Product
-            </span>
-          </button>
+          <div className="flex flex-wrap items-center gap-2">
+            <button onClick={() => setShowLocationsManager(true)}
+              className="group relative px-4 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg"
+              style={{ background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.35)", color: "#a5b4fc" }}>
+              <span className="relative z-10 flex items-center gap-2 font-bold">
+                <span className="text-base">📍</span>
+                Manage Locations
+                {(locations || []).filter(l => !l.deleted).length > 0 && (
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                    style={{ background: "rgba(99,102,241,0.3)", color: "#c7d2fe" }}>
+                    {(locations || []).filter(l => !l.deleted).length}
+                  </span>
+                )}
+              </span>
+            </button>
+            <button onClick={openAddModal}
+              className="group relative px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg">
+              <div className="absolute inset-0 bg-gradient-to-r from-amber-500 to-orange-600 transition-transform group-hover:scale-105" />
+              <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <span className="relative z-10 flex items-center gap-2 text-black font-bold">
+                <span className="text-base group-hover:rotate-90 transition-transform duration-300">+</span>
+                Add Product
+              </span>
+            </button>
+          </div>
         </div>
       </div>
 
@@ -281,6 +310,36 @@ export default function InventoryView({ uid }) {
         </div>
       </div>
 
+      {/* Location Filter (only show if locations exist) */}
+      {(locations || []).filter(l => !l.deleted).length > 0 && (
+        <div className="flex flex-wrap gap-2">
+          {[
+            { id: "all",  label: "All Locations", icon: "📍" },
+            { id: "none", label: "No Location",   icon: "❓" },
+            ...(locations || []).filter(l => !l.deleted).map(l => ({
+              id: l.id, label: l.name, icon: getLocationIcon(l.type),
+            })),
+          ].map(f => (
+            <button
+              key={f.id}
+              onClick={() => setFilterLocation(f.id)}
+              className={`flex items-center gap-1.5 px-3 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all duration-300 ${
+                filterLocation === f.id ? "scale-105 shadow-lg" : "hover:scale-105"
+              }`}
+              style={{
+                background: filterLocation === f.id
+                  ? "linear-gradient(135deg, rgba(99,102,241,0.4), rgba(99,102,241,0.2))"
+                  : "rgba(255,255,255,0.05)",
+                border: `1px solid ${filterLocation === f.id ? "rgba(99,102,241,0.6)" : "rgba(255,255,255,0.1)"}`,
+                color: filterLocation === f.id ? "#c7d2fe" : "#9ca3af",
+              }}>
+              <span className="text-sm">{f.icon}</span>
+              {f.label}
+            </button>
+          ))}
+        </div>
+      )}
+
       {/* Products Grid */}
       {filteredProducts.length === 0 ? (
         <div className="rounded-xl p-16 text-center relative overflow-hidden" style={cardStyle}>
@@ -311,6 +370,7 @@ export default function InventoryView({ uid }) {
             <ProductCard 
               key={prod.id} 
               product={prod} 
+              locations={locations}
               onEdit={() => openEditModal(prod)} 
               onDelete={() => handleDelete(prod.id)}
               index={idx}
@@ -320,7 +380,7 @@ export default function InventoryView({ uid }) {
       )}
 
       {showAddModal && (
-        <AddProductModal product={editProduct} onSave={handleSave} onClose={closeModal} />
+        <AddProductModal product={editProduct} locations={locations} onSave={handleSave} onClose={closeModal} />
       )}
 
       <style jsx global>{`
@@ -341,7 +401,7 @@ export default function InventoryView({ uid }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // Product Card - Professional & Animated
 // ═══════════════════════════════════════════════════════════════════════════
-function ProductCard({ product, onEdit, onDelete, index }) {
+function ProductCard({ product, locations = [], onEdit, onDelete, index }) {
   const hasVariants = product.variantType !== "none" && product.variants?.length > 0;
   const totalStock = hasVariants
     ? product.variants.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0)
@@ -412,6 +472,17 @@ function ProductCard({ product, onEdit, onDelete, index }) {
               🗂️ {product.category}
             </span>
           )}
+          {/* Location badge */}
+          {product.locationId && (() => {
+            const loc = (locations || []).find(l => l.id === product.locationId && !l.deleted);
+            if (!loc) return null;
+            return (
+              <span className="inline-block mt-1 ml-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
+                {getLocationIcon(loc.type)} {loc.name}
+              </span>
+            );
+          })()}
         </div>
 
         {/* Variants Preview */}
@@ -478,7 +549,7 @@ function ProductCard({ product, onEdit, onDelete, index }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // Add/Edit Product Modal
 // ═══════════════════════════════════════════════════════════════════════════
-function AddProductModal({ product, onSave, onClose }) {
+function AddProductModal({ product, locations = [], onSave, onClose }) {
   const fileInputRef = useRef(null);
   
   const [formData, setFormData] = useState({
@@ -486,6 +557,7 @@ function AddProductModal({ product, onSave, onClose }) {
     description: product?.description || "",
     category: product?.category || "",
     imageUrl: product?.imageUrl || "",
+    locationId: product?.locationId || "",
     // normalize variantType — unknown types → "custom", undefined → "none"
     variantType: (() => {
       const vt = product?.variantType || "none";
@@ -732,6 +804,27 @@ function AddProductModal({ product, onSave, onClose }) {
               )}
             </div>
           </div>
+
+          {/* Location */}
+          {(locations || []).filter(l => !l.deleted).length > 0 && (
+            <div>
+              <label className="text-gray-300 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
+                📍 Location (Shop / Warehouse)
+              </label>
+              <select
+                value={formData.locationId}
+                onChange={e => setFormData(f => ({ ...f, locationId: e.target.value }))}
+                className="w-full px-4 py-2.5 rounded-lg text-sm text-white outline-none"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                <option value="" style={{ background: "#0d1117", color: "#9ca3af" }}>— No Specific Location —</option>
+                {(locations || []).filter(l => !l.deleted).map(loc => (
+                  <option key={loc.id} value={loc.id} style={{ background: "#0d1117", color: "#fff" }}>
+                    {getLocationIcon(loc.type)} {loc.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
 
           {/* Variant Type */}
           <div>

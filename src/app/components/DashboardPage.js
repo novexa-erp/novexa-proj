@@ -25,6 +25,7 @@ import TrashView from "./TrashView";
 import ComingSoonView from "./ComingSoonView";
 import AddonsView from "./AddonsView";
 import BackupView from "./BackupView";
+import BillBookView from "./BillBookView";
 import PWAInstallButton from "./PWAInstallButton";
 
 // ── Sidebar nav items ────────────────────────────────────────────────────────
@@ -44,6 +45,7 @@ const navItems = [
   { icon: "🎫", label: "My Tickets",  id: "my-tickets"  },
   { icon: "⚡", label: "Add-ons",     id: "addons"      },
   { icon: "💾", label: "Backup",      id: "backup"      },
+  { icon: "📖", label: "Bill Book",   id: "bill-book"   },
 ];
 
 // ── Plan → allowed tab IDs ────────────────────────────────────────────────────
@@ -52,24 +54,24 @@ const navItems = [
 const PLAN_PERMISSIONS = {
   starter: new Set([
     "overview", "invoices", "customers", "inventory",
-    "payments", "purchases", "settings", "contact", "my-tickets", "trash", "addons", "backup",
+    "payments", "purchases", "settings", "contact", "my-tickets", "trash", "addons", "backup", "bill-book",
   ]),
   business: new Set([
     "overview", "invoices", "customers", "inventory",
     "payments", "purchases", "order-form", "analytics",
-    "settings", "contact", "my-tickets", "trash", "addons", "backup",
+    "settings", "contact", "my-tickets", "trash", "addons", "backup", "bill-book",
   ]),
   professional: new Set([
     "overview", "invoices", "customers", "inventory",
     "payments", "purchases", "order-form", "analytics",
     "hr", "branches",
-    "settings", "contact", "my-tickets", "trash", "addons", "backup",
+    "settings", "contact", "my-tickets", "trash", "addons", "backup", "bill-book",
   ]),
   enterprise: new Set([
     "overview", "invoices", "customers", "inventory",
     "payments", "purchases", "order-form", "analytics",
     "hr", "branches",
-    "settings", "contact", "my-tickets", "trash", "addons", "backup",
+    "settings", "contact", "my-tickets", "trash", "addons", "backup", "bill-book",
   ]),
 };
 
@@ -78,7 +80,7 @@ const ALWAYS_SHOW_TABS = new Set([
   "overview", "invoices", "customers", "inventory",
   "payments", "purchases", "order-form", "analytics",
   "hr", "branches",
-  "settings", "contact", "my-tickets", "addons", "backup",
+  "settings", "contact", "my-tickets", "addons", "backup", "bill-book",
 ]);
 
 function getPlanPermissions(plan) {
@@ -166,6 +168,7 @@ function DashboardContent() {
   const [customers,        setCustomers]        = useState([]);
   const [inventory,        setInventory]        = useState([]);
   const [payments,         setPayments]         = useState([]);
+  const [locations,        setLocations]        = useState([]);
   const [totalPurchasing,  setTotalPurchasing]  = useState(0);
   const [dataLoading,      setDataLoading]      = useState(true);
 
@@ -378,7 +381,7 @@ function DashboardContent() {
     if (!user) return;
     const uid = user.uid;
     let loaded = 0;
-    const check = () => { loaded++; if (loaded === 4) setDataLoading(false); };
+    const check = () => { loaded++; if (loaded === 5) setDataLoading(false); };
 
     const unsubInv = onSnapshot(
       query(collection(db, "users", uid, "invoices"), orderBy("createdAt", "desc")),
@@ -400,8 +403,13 @@ function DashboardContent() {
       (snap) => { setPayments(snap.docs.map(d => ({ id: d.id, ...d.data() }))); check(); },
       () => check()
     );
+    const unsubLoc = onSnapshot(
+      query(collection(db, "users", uid, "locations"), orderBy("createdAt", "desc")),
+      (snap) => { setLocations(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => !l.deleted)); check(); },
+      () => check()
+    );
 
-    return () => { unsubInv(); unsubCust(); unsubProd(); unsubPay(); };
+    return () => { unsubInv(); unsubCust(); unsubProd(); unsubPay(); unsubLoc(); };
   }, [user]);
 
   // ── Fetch total purchasing from supplier orders ────────────────────────────
@@ -1470,11 +1478,11 @@ function DashboardContent() {
           {(allowedTabsSet || getPlanPermissions(userDoc?.plan || "starter")).has(activeNav) && (<>
           {/* ── Invoices full page ── */}
           {activeNav === "invoices" ? (
-            <InvoicesView key={`invoices-${refreshKey}`} uid={user?.uid} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} payments={payments} highlightId={searchParams.get("highlightId")} />
+            <InvoicesView key={`invoices-${refreshKey}`} uid={user?.uid} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} locations={locations} userDoc={userDoc} payments={payments} highlightId={searchParams.get("highlightId")} />
           ) : activeNav === "customers" ? (
             <CustomersView key={`customers-${refreshKey}`} uid={user?.uid} customers={customers} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} />
           ) : activeNav === "inventory" ? (
-            <InventoryView key={`inventory-${refreshKey}`} uid={user?.uid} />
+            <InventoryView key={`inventory-${refreshKey}`} uid={user?.uid} locations={locations} />
           ) : activeNav === "payments" ? (
             <PaymentsView key={`payments-${refreshKey}`} uid={user?.uid} onNavigate={handleNavChange} />
           ) : activeNav === "purchases" ? (
@@ -1515,6 +1523,8 @@ function DashboardContent() {
             <AddonsView key={`addons-${refreshKey}`} uid={user?.uid} userDoc={userDoc} user={user} />
           ) : activeNav === "backup" ? (
             <BackupView key={`backup-${refreshKey}`} uid={user?.uid} userDoc={userDoc} />
+          ) : activeNav === "bill-book" ? (
+            <BillBookView key={`billbook-${refreshKey}`} uid={user?.uid} userDoc={userDoc} />
           ) : (
           <>
           {/* Overview Section with Professional Loader */}

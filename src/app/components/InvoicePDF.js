@@ -1,9 +1,14 @@
 "use client";
 import { useRef, useState, useEffect } from "react";
 import { formatRs } from "./InvoiceModal";
+import EmailConfirmationDialog from "./EmailConfirmationDialog";
+import { generateInvoicePdfBase64, sendInvoiceEmail } from "@/lib/emailUtils";
 
-// ── variant multiplier (e.g. "0.5 kg" → 0.5, "XL" → 1) ─────────────────────
-function getVariantMultiplier(variantLabel) {
+// ── variant multiplier ───────────────────────────────────────────────────────
+// ONLY for custom (non-inventory) variants where label encodes a quantity.
+// If productId is set, price is already fixed per variant — never multiply.
+function getVariantMultiplier(variantLabel, hasProductId) {
+  if (hasProductId) return 1;   // inventory product — price fixed, no multiply
   if (!variantLabel) return 1;
   const num = parseFloat(variantLabel);
   return (!isNaN(num) && num > 0) ? num : 1;
@@ -27,6 +32,7 @@ function fmtDateTime(ts) {
   if (!ts) return "—";
   try {
     const d = ts?.toDate ? ts.toDate() : new Date(ts);
+    if (isNaN(d.getTime())) return "—";
     return d.toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })
       + "  " + d.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit", hour12: true });
   } catch { return "—"; }
@@ -50,25 +56,37 @@ function InvoiceTemplate({ inv, userDoc, payments = [], customerTotalBalance = n
 
   // Purchase history records (type=purchase)
   const purchaseRecords = payments.filter(p => p.type === "purchase");
-  // Return records (type=return)
-  const returnRecords   = payments.filter(p => p.type === "return");
+  // Return records — primary source: inv._pastReturns (always has qty/rate/returnAmount)
+  // Fallback: payments collection (type=return) for backward compat
+  const pastReturnsArr  = (inv._pastReturns || []).filter(r => r.returnAmount > 0 || r.qty > 0);
+  const paymentReturns  = payments.filter(p => p.type === "return");
+  // Merge: use _pastReturns if available, else payments
+  const returnRecords   = pastReturnsArr.length > 0
+    ? pastReturnsArr.map(r => ({
+        createdAt:    r.returnedAt ? new Date(r.returnedAt) : null,
+        description:  r.description || `Return: ${r.description || ""}`,
+        qty:          r.qty,
+        rate:         r.rate,
+        returnAmount: r.returnAmount,
+        variantLabel: r.variantLabel || "",
+        variantUnit:  r.variantUnit  || "",
+      }))
+    : paymentReturns;
   // Payment records (type=received)
   const paymentRecords  = payments.filter(p => p.type === "received" || (p.type !== "purchase" && p.type !== "return"));
 
   // Subtotal only from items on the invoice (full, for display in items table)
   const subtotal = (inv.items || []).reduce(
     (s, it) => {
-      const varMult = getVariantMultiplier(it.variantLabel);
+      const varMult = getVariantMultiplier(it.variantLabel, !!it.productId);
       return s + (Number(it.qty) || 0) * varMult * (Number(it.unitPrice) || 0);
     }, 0
   );
 
   // Actual amounts — excluding previous balance carry-forward items
-  // These are used for Balance Due calculation so this invoice can be fully paid
-  // independently of older invoices' outstanding balances
   const actualSubtotal = originalItems.reduce(
     (s, it) => {
-      const varMult = getVariantMultiplier(it.variantLabel);
+      const varMult = getVariantMultiplier(it.variantLabel, !!it.productId);
       return s + (Number(it.qty) || 0) * varMult * (Number(it.unitPrice) || 0);
     }, 0
   );
@@ -78,8 +96,9 @@ function InvoiceTemplate({ inv, userDoc, payments = [], customerTotalBalance = n
   const actualAmount = inv.actualAmount != null
     ? Number(inv.actualAmount)
     : Math.max(actualSubtotal - actualDiscount, 0);
-  const amountPaid   = Number(inv.amountPaid) || 0;
-  const goodsReturn  = returnRecords.reduce((s, p) => s + (Number(p.returnAmount) || 0), 0);
+  const amountPaid    = Number(inv.amountPaid) || 0;
+  // goodsReturn — always from _pastReturns for accuracy (payments collection may be missing old records)
+  const goodsReturn   = (inv._pastReturns || []).reduce((s, r) => s + (Number(r.returnAmount) || 0), 0);
   const actualBalance = Math.max(actualAmount - amountPaid - goodsReturn, 0);
 
   return (
@@ -236,7 +255,7 @@ function InvoiceTemplate({ inv, userDoc, payments = [], customerTotalBalance = n
               return sum + (found ? Number(found.qty) || 0 : 0);
             }, 0);
             const originalQty = Math.max(1, (Number(it.qty) || 1) - additionalQty);
-            const varMult     = getVariantMultiplier(it.variantLabel);
+            const varMult     = getVariantMultiplier(it.variantLabel, !!it.productId);
             const lineTotal   = originalQty * varMult * (Number(it.unitPrice) || 0);
             const rowNum      = prevBalItems.length + idx + 1;
 
@@ -265,7 +284,7 @@ function InvoiceTemplate({ inv, userDoc, payments = [], customerTotalBalance = n
           {/* Additional purchase rows */}
           {purchaseRecords.map((pr, prIdx) =>
             (pr.items || []).map((it, itIdx) => {
-              const lineTotal = (Number(it.qty) || 0) * getVariantMultiplier(it.variantLabel) * (Number(it.unitPrice) || 0);
+              const lineTotal = (Number(it.qty) || 0) * getVariantMultiplier(it.variantLabel, !!it.productId) * (Number(it.unitPrice) || 0);
               const rowNum    = prevBalItems.length + originalItems.length + prIdx + itIdx + 1;
               const variantLabel = it.variantLabel || "";
               const variantUnit  = it.variantUnit  || "";
@@ -356,19 +375,19 @@ function InvoiceTemplate({ inv, userDoc, payments = [], customerTotalBalance = n
               {returnRecords.map((p, idx) => (
                 <tr key={idx} style={{ background: idx % 2 === 0 ? "#fef2f2" : "#fff" }}>
                   <td style={{ padding: "7px 10px", fontSize: 11, color: "#374151", whiteSpace: "nowrap" }}>
-                    {fmtDateTime(p.createdAt)}
+                    {p.createdAt ? fmtDateTime(p.createdAt) : "—"}
                   </td>
                   <td style={{ padding: "7px 10px", fontSize: 11, color: "#374151" }}>
                     {p.description || "—"}
                   </td>
                   <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 12, color: "#dc2626" }}>
-                    {p.qty}
+                    {p.qty || "—"}
                   </td>
                   <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 12, color: "#dc2626", whiteSpace: "nowrap" }}>
-                    {formatRs(p.rate)}
+                    {p.rate != null ? formatRs(p.rate) : "—"}
                   </td>
                   <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 12, fontWeight: 700, color: "#dc2626", whiteSpace: "nowrap" }}>
-                    - {formatRs(p.returnAmount)}
+                    - {formatRs(p.returnAmount || 0)}
                   </td>
                 </tr>
               ))}
@@ -447,11 +466,13 @@ function InvoiceTemplate({ inv, userDoc, payments = [], customerTotalBalance = n
 }
 
 // ── InvoicePDF modal (view + download + share) ────────────────────────────────
-export default function InvoicePDFModal({ inv, userDoc, onClose, payments = [], customerTotalBalance = null }) {
+export default function InvoicePDFModal({ inv, userDoc, onClose, payments = [], customerTotalBalance = null, uid = "" }) {
   const printRef    = useRef(null);
   const containerRef = useRef(null);
-  const [loading,   setLoading]  = useState(false);
-  const [shareMsg,  setShareMsg] = useState("");
+  const [loading,      setLoading]      = useState(false);
+  const [emailLoading, setEmailLoading] = useState(false);
+  const [shareMsg,     setShareMsg]     = useState("");
+  const [emailConfirm, setEmailConfirm] = useState(false);
   const [scale,     setScale]    = useState(1);
 
   // Scale the 794px template to fit the container on small screens
@@ -544,7 +565,28 @@ export default function InvoicePDFModal({ inv, userDoc, onClose, payments = [], 
     }
   }
 
+  // ── Send email ────────────────────────────────────────────────────────────
+  async function handleSendEmail() {
+    if (emailLoading) return;
+    setEmailLoading(true);
+    setShareMsg("");
+    try {
+      const pdfBase64 = await generateInvoicePdfBase64(inv, userDoc, payments);
+      const result    = await sendInvoiceEmail(inv, userDoc, pdfBase64, uid, true, payments);
+      if (result.success) {
+        setShareMsg("Email sent! ✓");
+      } else {
+        setShareMsg("Email failed");
+      }
+    } catch {
+      setShareMsg("Email failed");
+    }
+    setEmailLoading(false);
+    setTimeout(() => setShareMsg(""), 3000);
+  }
+
   return (
+    <>
     <div className="fixed inset-0 z-[60] flex items-start justify-center p-2 sm:p-4 overflow-y-auto"
       style={{ background: "rgba(0,0,0,0.85)", backdropFilter: "blur(6px)" }}>
 
@@ -577,6 +619,17 @@ export default function InvoicePDFModal({ inv, userDoc, onClose, payments = [], 
               style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.3)", color: "#60A5FA" }}>
               🖨️ Print
             </button>
+            {/* Email button — only show if invoice has email */}
+            {inv.email && (
+              <button onClick={() => setEmailConfirm(true)} disabled={emailLoading}
+                className="flex items-center gap-1 px-2.5 py-1.5 rounded-xl text-xs font-semibold transition-all hover:scale-105"
+                style={{
+                  background: "rgba(139,92,246,0.1)", border: "1px solid rgba(139,92,246,0.35)",
+                  color: "#c4b5fd", opacity: emailLoading ? 0.6 : 1, cursor: emailLoading ? "wait" : "pointer",
+                }}>
+                {emailLoading ? "⏳..." : "📧 Email"}
+              </button>
+            )}
             <button onClick={downloadPDF} disabled={loading}
               className="flex items-center gap-1 px-3 py-1.5 rounded-xl text-xs font-bold transition-all hover:scale-105"
               style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", color: "#000",
@@ -612,5 +665,32 @@ export default function InvoicePDFModal({ inv, userDoc, onClose, payments = [], 
         </p>
       </div>
     </div>
+
+    {/* ── Email Confirmation Dialog ── */}
+    {emailConfirm && inv.email && (
+      <EmailConfirmationDialog
+        show={emailConfirm}
+        recipientEmail={inv.email}
+        recipientPhone={inv.phone}
+        invoice={inv}
+        userDoc={userDoc}
+        isUpdate={true}
+        documentType="invoice"
+        getInvoiceImageFn={async () => {
+          const { generateInvoiceImageBase64 } = await import("@/lib/emailUtils");
+          return generateInvoiceImageBase64(inv, userDoc, payments);
+        }}
+        onConfirm={async () => {
+          setEmailConfirm(false);
+          await handleSendEmail();
+        }}
+        onCancel={() => {
+          setEmailConfirm(false);
+          setShareMsg("Email cancelled.");
+          setTimeout(() => setShareMsg(""), 2000);
+        }}
+      />
+    )}
+  </>
   );
 }
