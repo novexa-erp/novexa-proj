@@ -240,29 +240,33 @@ function DashboardContent() {
   // ── Real-time userDoc listener ───────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
-    const unsubUser = onSnapshot(doc(db, "users", user.uid), (snap) => {
-      if (snap.exists()) {
-        const data = snap.data();
-        setUserDoc(data);
-        // ── Check expiry and show popup once per session ──────────────────
-        // Trial users: warn from day 1 (all 7 days show warning)
-        // Regular users: warn 3 days before
-        if (data.activeTo) {
-          const diff = Math.ceil(
-            (new Date(data.activeTo + "T23:59:59") - new Date()) / 86400000
-          );
-          const warnThreshold = data.subscriptionType === "trial" ? 7 : 3;
-          if (diff >= 0 && diff <= warnThreshold) {
-            setExpiryDaysLeft(diff);
-            const popupKey = `novexa_expiry_shown_${user.uid}_${data.activeTo}`;
-            if (!sessionStorage.getItem(popupKey)) {
-              setShowExpiryPopup(true);
-              sessionStorage.setItem(popupKey, "1");
+    const unsubUser = onSnapshot(
+      doc(db, "users", user.uid),
+      (snap) => {
+        if (snap.exists()) {
+          const data = snap.data();
+          setUserDoc(data);
+          // ── Check expiry and show popup once per session ──────────────────
+          // Trial users: warn from day 1 (all 7 days show warning)
+          // Regular users: warn 3 days before
+          if (data.activeTo) {
+            const diff = Math.ceil(
+              (new Date(data.activeTo + "T23:59:59") - new Date()) / 86400000
+            );
+            const warnThreshold = data.subscriptionType === "trial" ? 7 : 3;
+            if (diff >= 0 && diff <= warnThreshold) {
+              setExpiryDaysLeft(diff);
+              const popupKey = `novexa_expiry_shown_${user.uid}_${data.activeTo}`;
+              if (!sessionStorage.getItem(popupKey)) {
+                setShowExpiryPopup(true);
+                sessionStorage.setItem(popupKey, "1");
+              }
             }
           }
         }
-      }
-    });
+      },
+      (err) => { if (err.code !== "permission-denied") console.error("[userDoc listener]", err); }
+    );
     return () => unsubUser();
   }, [user]);
 
@@ -315,6 +319,7 @@ function DashboardContent() {
           const reason = data.reason === "account_frozen"       ? "frozen"
                        : data.reason === "subscription_expired" ? "expired"
                        : data.reason === "account_not_found"    ? "access_denied"
+                       : data.reason === "password_changed"     ? "password_changed"
                        : "session_evicted";
           router.push(`/pages/login?blocked=${reason}`);
         }
@@ -383,30 +388,32 @@ function DashboardContent() {
     let loaded = 0;
     const check = () => { loaded++; if (loaded === 5) setDataLoading(false); };
 
+    const silentErr = (err) => { if (err.code !== "permission-denied") console.error(err); check(); };
+
     const unsubInv = onSnapshot(
       query(collection(db, "users", uid, "invoices"), orderBy("createdAt", "desc")),
       (snap) => { setInvoices(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(i => !i.deleted)); check(); },
-      () => check()
+      silentErr
     );
     const unsubCust = onSnapshot(
       query(collection(db, "users", uid, "customers"), orderBy("createdAt", "desc")),
       (snap) => { setCustomers(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(c => !c.deleted)); check(); },
-      () => check()
+      silentErr
     );
     const unsubProd = onSnapshot(
       query(collection(db, "users", uid, "products"), orderBy("createdAt", "desc")),
       (snap) => { setInventory(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(p => !p.deleted)); check(); },
-      () => check()
+      silentErr
     );
     const unsubPay = onSnapshot(
       query(collection(db, "users", uid, "payments"), orderBy("createdAt", "desc")),
       (snap) => { setPayments(snap.docs.map(d => ({ id: d.id, ...d.data() }))); check(); },
-      () => check()
+      silentErr
     );
     const unsubLoc = onSnapshot(
       query(collection(db, "users", uid, "locations"), orderBy("createdAt", "desc")),
       (snap) => { setLocations(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => !l.deleted)); check(); },
-      () => check()
+      silentErr
     );
 
     return () => { unsubInv(); unsubCust(); unsubProd(); unsubPay(); unsubLoc(); };

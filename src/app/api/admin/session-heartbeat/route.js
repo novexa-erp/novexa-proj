@@ -86,6 +86,31 @@ export async function POST(request) {
     if (!sessionSnap.data().active)
       return NextResponse.json({ valid: false, reason: "session_evicted" });
 
+    // ── Force sign-out all other sessions (password change triggered) ──────
+    // If forceSignOutAt is set and this session was created BEFORE the password change,
+    // evict it — UNLESS this is the session that actually changed the password.
+    if (userData.forceSignOutAt) {
+      const sessData = sessionSnap.data();
+      // Skip eviction if this session is the one that performed the password change
+      if (!sessData.passwordChangedHere) {
+        const sessionCreatedAt = sessData.createdAt;
+        const forceTs = userData.forceSignOutAt?._seconds
+          ? userData.forceSignOutAt._seconds * 1000
+          : userData.forceSignOutAt?.toMillis?.() || 0;
+        const sessionTs = sessionCreatedAt
+          ? new Date(sessionCreatedAt).getTime()
+          : 0;
+        if (sessionTs < forceTs) {
+          await sessionRef.update({
+            active:    false,
+            evictedAt: new Date().toISOString(),
+            evictedBy: "password_changed",
+          });
+          return NextResponse.json({ valid: false, reason: "password_changed" });
+        }
+      }
+    }
+
     // All good - update lastSeen
     await sessionRef.update({ lastSeen: new Date().toISOString() });
 

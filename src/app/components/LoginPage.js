@@ -70,9 +70,10 @@ function firebaseError(code) {
 }
 
 const BLOCKED_MSGS = {
-  not_started:     { title: "Access Not Started",       msg: "Your subscription has not started yet. Please wait or contact admin.",     icon: "📅" },
-  access_denied:   { title: "Access Denied",            msg: "You do not have permission to access this panel.",                         icon: "🚫" },
-  session_evicted: { title: "Logged Out Automatically", msg: "Your account was opened on another device. Only 1 session is allowed at a time.", icon: "📱" },
+  not_started:      { title: "Access Not Started",        msg: "Your subscription has not started yet. Please wait or contact admin.",                                                  icon: "📅" },
+  access_denied:    { title: "Access Denied",             msg: "You do not have permission to access this panel.",                                                                       icon: "🚫" },
+  session_evicted:  { title: "Logged Out Automatically",  msg: "Your account was opened on another device. Only 1 session is allowed at a time.",                                       icon: "📱" },
+  password_changed: { title: "Password Changed",          msg: "Your password was recently changed. For your security, you have been signed out. Please sign in with your new password.", icon: "🔐" },
 };
 
 // These get their own full-screen UI instead of a small popup

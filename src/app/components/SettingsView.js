@@ -250,6 +250,10 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
 
   const [pwForm, setPwForm] = useState({ current: "", newPw: "", confirm: "" });
   const [showPw, setShowPw] = useState({ current: false, newPw: false, confirm: false });
+  // Step 1: user enters current password → verified → newPw/confirm fields unlock
+  const [pwStep,       setPwStep]       = useState(1); // 1 = enter current pw, 2 = enter new pw
+  const [pwVerifying,  setPwVerifying]  = useState(false); // loading for step 1 verify
+  const [pwSignOutAll, setPwSignOutAll] = useState(false); // checkbox: sign out other devices
 
   // ── Gmail sender state ────────────────────────────────────────────────────
   const [gmailForm, setGmailForm]   = useState({
@@ -469,43 +473,104 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
     }
   }
 
-  // ── Change password (+ optional email) ───────────────────────────────────
-  async function handleChangePassword(e) {
+  // ── Password strength checker ─────────────────────────────────────────────
+  function pwStrength(pw) {
+    const checks = {
+      length:    pw.length >= 8,
+      uppercase: /[A-Z]/.test(pw),
+      lowercase: /[a-z]/.test(pw),
+      number:    /[0-9]/.test(pw),
+      special:   /[^A-Za-z0-9]/.test(pw),
+    };
+    const score = Object.values(checks).filter(Boolean).length;
+    return { checks, score };
+  }
+
+  // ── Step 1: Verify current password ──────────────────────────────────────
+  async function handleVerifyCurrentPassword(e) {
     e.preventDefault();
+    if (!pwForm.current) return;
+    setPwVerifying(true);
     setPwMsg({ type: "", text: "" });
-    if (pwForm.newPw !== pwForm.confirm) {
-      setPwMsg({ type: "error", text: "New passwords don't match." }); return;
-    }
-    if (pwForm.newPw.length < 6) {
-      setPwMsg({ type: "error", text: "Password must be at least 6 characters." }); return;
-    }
-    setPwSaving(true);
     try {
       const credential = FBEmailAuthProvider.credential(user.email, pwForm.current);
       await fbReauth(user, credential);
-      await fbUpdatePassword(user, pwForm.newPw);
-
-      // If email also changed
-      if (profile.email && profile.email !== user.email) {
-        await fbUpdateEmail(user, profile.email);
-        // Update Firestore email too
-        const { setDoc: sd } = await import("firebase/firestore");
-        await sd(doc(db, "users", uid), { email: profile.email, updatedAt: serverTimestamp() }, { merge: true });
-        setPwMsg({ type: "success", text: "Email and password updated successfully!" });
-      } else {
-        setPwMsg({ type: "success", text: "Password changed successfully!" });
-      }
-
-      setPwForm({ current: "", newPw: "", confirm: "" });
-      setCredUnlocked(false); // re-lock after save
+      // Current password verified — unlock step 2
+      setPwStep(2);
+      setPwMsg({ type: "", text: "" });
     } catch (err) {
       const map = {
         "auth/wrong-password":        "Current password is incorrect.",
         "auth/invalid-credential":    "Current password is incorrect.",
-        "auth/too-many-requests":     "Too many attempts. Try again later.",
+        "auth/too-many-requests":     "Too many attempts. Please try again later.",
+        "auth/requires-recent-login": "Session expired. Please sign out and sign in again.",
+      };
+      setPwMsg({ type: "error", text: map[err.code] || err.message });
+    }
+    setPwVerifying(false);
+  }
+
+  // ── Step 2: Set new password ──────────────────────────────────────────────
+  async function handleChangePassword(e) {
+    e.preventDefault();
+    setPwMsg({ type: "", text: "" });
+
+    const { checks, score } = pwStrength(pwForm.newPw);
+    if (!checks.length)    { setPwMsg({ type: "error", text: "Password must be at least 8 characters." }); return; }
+    if (!checks.uppercase) { setPwMsg({ type: "error", text: "Add at least 1 uppercase letter (A-Z)." }); return; }
+    if (!checks.lowercase) { setPwMsg({ type: "error", text: "Add at least 1 lowercase letter (a-z)." }); return; }
+    if (!checks.number)    { setPwMsg({ type: "error", text: "Add at least 1 number (0-9)." }); return; }
+    if (pwForm.newPw !== pwForm.confirm) {
+      setPwMsg({ type: "error", text: "New passwords don't match." }); return;
+    }
+    if (pwForm.newPw === pwForm.current) {
+      setPwMsg({ type: "error", text: "New password must be different from the current password." }); return;
+    }
+
+    setPwSaving(true);
+    try {
+      // Re-authenticate one more time before sensitive operation (belt-and-suspenders)
+      const credential = FBEmailAuthProvider.credential(user.email, pwForm.current);
+      await fbReauth(user, credential);
+      await fbUpdatePassword(user, pwForm.newPw);
+
+      // Sign out from all other devices — mark current session as "password changer"
+      // so heartbeat won't evict it even though it predates forceSignOutAt.
+      const { setDoc: sd, updateDoc: ud } = await import("firebase/firestore");
+      const sessionId = typeof sessionStorage !== "undefined"
+        ? sessionStorage.getItem("novexa_session_id") : null;
+
+      await sd(doc(db, "users", uid), {
+        passwordChangedAt: serverTimestamp(),
+        ...(pwSignOutAll ? { forceSignOutAt: serverTimestamp() } : {}),
+        updatedAt: serverTimestamp(),
+      }, { merge: true });
+
+      // Mark current session so heartbeat skips it during force-sign-out check
+      if (pwSignOutAll && sessionId && sessionId !== "admin") {
+        try {
+          await ud(doc(db, "users", uid, "sessions", sessionId), {
+            passwordChangedHere: true,
+          });
+        } catch { /* session doc may not exist — safe to ignore */ }
+      }
+
+      setPwMsg({
+        type: "success",
+        text: pwSignOutAll
+          ? "Password changed successfully! Other devices will be signed out on next activity."
+          : "Password changed successfully!",
+      });
+      setPwForm({ current: "", newPw: "", confirm: "" });
+      setPwStep(1);
+      setPwSignOutAll(false);
+      setCredUnlocked(false);
+    } catch (err) {
+      const map = {
+        "auth/wrong-password":        "Session expired. Please refresh and try again.",
+        "auth/invalid-credential":    "Session expired. Please refresh and try again.",
+        "auth/too-many-requests":     "Too many attempts. Please try again later.",
         "auth/requires-recent-login": "Please sign out and sign in again before changing your password.",
-        "auth/email-already-in-use":  "That email is already in use by another account.",
-        "auth/invalid-email":         "Please enter a valid email address.",
       };
       setPwMsg({ type: "error", text: map[err.code] || err.message });
     }
@@ -666,68 +731,215 @@ export default function SettingsView({ uid, user, userDoc, onSettingsSaved, load
       </form>
 
       {/* ── Change Password ── */}
-      <form onSubmit={handleChangePassword} className="rounded-2xl p-4 sm:p-6 flex flex-col gap-5" style={cardS}>
+      <div className="rounded-2xl p-4 sm:p-6 flex flex-col gap-5" style={cardS}>
         <SECT title="Change Password" color="#f87171">
-          <div className="flex flex-col gap-3">
+          <div className="flex flex-col gap-4">
 
-            {/* Lock notice when Gmail connected but OTP not verified */}
-            {gmailConnected && !credUnlocked && (
-              <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
-                style={{ background:"rgba(37,99,235,0.06)", border:"1px solid rgba(37,99,235,0.2)" }}>
-                <span className="text-lg">🔐</span>
-                <p className="text-blue-300 text-xs leading-relaxed">
-                  Click <span className="font-bold text-blue-400">&quot;Change Email&quot;</span> in Business Info to verify via OTP before changing password.
-                </p>
-              </div>
+            {/* ── STEP 1: Verify current password ── */}
+            {pwStep === 1 && (
+              <form onSubmit={handleVerifyCurrentPassword} className="flex flex-col gap-4">
+
+                {/* Info banner */}
+                <div className="flex items-start gap-3 px-4 py-3 rounded-xl"
+                  style={{ background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.2)" }}>
+                  <span className="text-base mt-0.5">🔒</span>
+                  <p className="text-red-300 text-xs leading-relaxed">
+                    Security ke liye pehle apna <strong>current password</strong> verify karo. Galat password hone par change bilkul nahi hoga.
+                  </p>
+                </div>
+
+                {/* Current password field */}
+                <div>
+                  <label style={lbl}>Current Password</label>
+                  <div className="relative">
+                    <input
+                      type={showPw.current ? "text" : "password"}
+                      placeholder="Enter your current password"
+                      value={pwForm.current}
+                      onChange={e => { setPwForm(p => ({ ...p, current: e.target.value })); setPwMsg({ type: "", text: "" }); }}
+                      autoComplete="current-password"
+                      style={{ ...base, paddingRight: 42 }} />
+                    <button type="button"
+                      onClick={() => setShowPw(p => ({ ...p, current: !p.current }))}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 transition-colors text-sm">
+                      {showPw.current ? "🙈" : "👁"}
+                    </button>
+                  </div>
+                </div>
+
+                {/* Error message */}
+                {pwMsg.text && (
+                  <div className="px-4 py-3 rounded-xl text-xs font-medium"
+                    style={{ background: "rgba(239,68,68,0.08)", border: "1px solid rgba(239,68,68,0.25)", color: "#fca5a5" }}>
+                    ⚠ {pwMsg.text}
+                  </div>
+                )}
+
+                <button type="submit"
+                  disabled={pwVerifying || !pwForm.current}
+                  className="px-6 py-3 rounded-2xl text-sm font-bold transition-all w-fit flex items-center gap-2"
+                  style={{
+                    background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.3)", color: "#f87171",
+                    opacity: (pwVerifying || !pwForm.current) ? 0.5 : 1,
+                    cursor:  (pwVerifying || !pwForm.current) ? "not-allowed" : "pointer",
+                  }}>
+                  {pwVerifying
+                    ? <><span className="w-4 h-4 rounded-full border-2 border-red-400 border-t-transparent animate-spin" />Verifying...</>
+                    : "Verify Password →"}
+                </button>
+              </form>
             )}
 
-            {[
-              { key: "current", label: "Current Password",  placeholder: "Enter current password" },
-              { key: "newPw",   label: "New Password",      placeholder: "Min. 6 characters"      },
-              { key: "confirm", label: "Confirm New Password", placeholder: "Repeat new password" },
-            ].map(f => (
-              <div key={f.key}>
-                <label style={lbl}>{f.label}</label>
-                <div className="relative">
+            {/* ── STEP 2: Set new password ── */}
+            {pwStep === 2 && (
+              <form onSubmit={handleChangePassword} className="flex flex-col gap-4">
+
+                {/* Verified badge */}
+                <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
+                  style={{ background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.25)" }}>
+                  <span className="text-base">✅</span>
+                  <p className="text-emerald-400 text-xs font-semibold">Current password verified! Ab naya password set karo.</p>
+                </div>
+
+                {/* New password */}
+                <div>
+                  <label style={lbl}>New Password</label>
+                  <div className="relative">
+                    <input
+                      type={showPw.newPw ? "text" : "password"}
+                      placeholder="Min. 8 characters"
+                      value={pwForm.newPw}
+                      onChange={e => { setPwForm(p => ({ ...p, newPw: e.target.value })); setPwMsg({ type: "", text: "" }); }}
+                      autoComplete="new-password"
+                      style={{ ...base, paddingRight: 42 }} />
+                    <button type="button"
+                      onClick={() => setShowPw(p => ({ ...p, newPw: !p.newPw }))}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 transition-colors text-sm">
+                      {showPw.newPw ? "🙈" : "👁"}
+                    </button>
+                  </div>
+
+                  {/* Live strength indicator */}
+                  {pwForm.newPw.length > 0 && (() => {
+                    const { checks, score } = pwStrength(pwForm.newPw);
+                    const strengthLabel = score <= 2 ? "Weak" : score === 3 ? "Fair" : score === 4 ? "Good" : "Strong";
+                    const strengthColor = score <= 2 ? "#f87171" : score === 3 ? "#fbbf24" : score === 4 ? "#34d399" : "#10b981";
+                    return (
+                      <div className="mt-2 flex flex-col gap-1.5">
+                        {/* Bar */}
+                        <div className="flex gap-1">
+                          {[1,2,3,4,5].map(i => (
+                            <div key={i} className="flex-1 h-1 rounded-full transition-all"
+                              style={{ background: i <= score ? strengthColor : "rgba(255,255,255,0.08)" }} />
+                          ))}
+                        </div>
+                        <p className="text-[10px] font-bold" style={{ color: strengthColor }}>
+                          {strengthLabel}
+                        </p>
+                        {/* Rules checklist */}
+                        <div className="grid grid-cols-2 gap-x-4 gap-y-0.5 mt-1">
+                          {[
+                            { ok: checks.length,    text: "Min. 8 characters" },
+                            { ok: checks.uppercase, text: "1 uppercase (A-Z)" },
+                            { ok: checks.lowercase, text: "1 lowercase (a-z)" },
+                            { ok: checks.number,    text: "1 number (0-9)" },
+                            { ok: checks.special,   text: "Special character (recommended)" },
+                          ].map(({ ok, text }) => (
+                            <p key={text} className="text-[10px] flex items-center gap-1"
+                              style={{ color: ok ? "#34d399" : "#6b7280" }}>
+                              <span>{ok ? "✓" : "○"}</span> {text}
+                            </p>
+                          ))}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                </div>
+
+                {/* Confirm password */}
+                <div>
+                  <label style={lbl}>Confirm New Password</label>
+                  <div className="relative">
+                    <input
+                      type={showPw.confirm ? "text" : "password"}
+                      placeholder="Repeat new password"
+                      value={pwForm.confirm}
+                      onChange={e => { setPwForm(p => ({ ...p, confirm: e.target.value })); setPwMsg({ type: "", text: "" }); }}
+                      autoComplete="new-password"
+                      style={{
+                        ...base, paddingRight: 42,
+                        borderColor: pwForm.confirm && pwForm.confirm !== pwForm.newPw
+                          ? "rgba(248,113,113,0.6)" : pwForm.confirm && pwForm.confirm === pwForm.newPw
+                          ? "rgba(52,211,153,0.5)" : undefined,
+                      }} />
+                    <button type="button"
+                      onClick={() => setShowPw(p => ({ ...p, confirm: !p.confirm }))}
+                      className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-200 transition-colors text-sm">
+                      {showPw.confirm ? "🙈" : "👁"}
+                    </button>
+                  </div>
+                  {pwForm.confirm && pwForm.confirm === pwForm.newPw && (
+                    <p className="text-[10px] text-emerald-400 mt-1">✓ Passwords match</p>
+                  )}
+                  {pwForm.confirm && pwForm.confirm !== pwForm.newPw && (
+                    <p className="text-[10px] text-red-400 mt-1">✗ Passwords don't match</p>
+                  )}
+                </div>
+
+                {/* Sign out other devices checkbox */}
+                <label className="flex items-start gap-3 cursor-pointer select-none">
                   <input
-                    type={showPw[f.key] ? "text" : "password"}
-                    placeholder={f.placeholder}
-                    value={pwForm[f.key]}
-                    onChange={e => setPwForm(p => ({ ...p, [f.key]: e.target.value }))}
-                    disabled={gmailConnected && !credUnlocked}
-                    autoComplete="new-password"
-                    style={{ ...base, paddingRight: 42, opacity: (gmailConnected && !credUnlocked) ? 0.4 : 1, cursor: (gmailConnected && !credUnlocked) ? "not-allowed" : "text" }} />
+                    type="checkbox"
+                    checked={pwSignOutAll}
+                    onChange={e => setPwSignOutAll(e.target.checked)}
+                    className="mt-0.5 w-4 h-4 rounded accent-red-400 cursor-pointer flex-shrink-0" />
+                  <div>
+                    <p className="text-white text-xs font-semibold">Sign out from all other devices</p>
+                    <p className="text-gray-500 text-[10px] mt-0.5 leading-relaxed">
+                      Security ke liye recommended — baaki active sessions next activity par logout ho jaenge.
+                    </p>
+                  </div>
+                </label>
+
+                {/* Message */}
+                {pwMsg.text && (
+                  <div className="px-4 py-3 rounded-xl text-xs font-medium"
+                    style={{
+                      background: pwMsg.type === "success" ? "rgba(52,211,153,0.08)" : "rgba(239,68,68,0.08)",
+                      border: `1px solid ${pwMsg.type === "success" ? "rgba(52,211,153,0.25)" : "rgba(239,68,68,0.25)"}`,
+                      color: pwMsg.type === "success" ? "#34d399" : "#fca5a5",
+                    }}>
+                    {pwMsg.type === "success" ? "✓ " : "⚠ "}{pwMsg.text}
+                  </div>
+                )}
+
+                {/* Buttons */}
+                <div className="flex gap-2 flex-wrap">
+                  <button type="submit"
+                    disabled={pwSaving || !pwForm.newPw || !pwForm.confirm || pwForm.newPw !== pwForm.confirm}
+                    className="px-6 py-3 rounded-2xl text-sm font-bold transition-all flex items-center gap-2"
+                    style={{
+                      background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.3)", color: "#f87171",
+                      opacity: (pwSaving || !pwForm.newPw || !pwForm.confirm || pwForm.newPw !== pwForm.confirm) ? 0.5 : 1,
+                      cursor:  (pwSaving || !pwForm.newPw || !pwForm.confirm || pwForm.newPw !== pwForm.confirm) ? "not-allowed" : "pointer",
+                    }}>
+                    {pwSaving
+                      ? <><span className="w-4 h-4 rounded-full border-2 border-red-400 border-t-transparent animate-spin" />Updating...</>
+                      : "Update Password →"}
+                  </button>
                   <button type="button"
-                    onClick={() => setShowPw(p => ({ ...p, [f.key]: !p[f.key] }))}
-                    className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-200 hover:text-gray-300 transition-colors text-sm">
-                    {showPw[f.key] ? "🙈" : "👁"}
+                    onClick={() => { setPwStep(1); setPwForm({ current: "", newPw: "", confirm: "" }); setPwMsg({ type: "", text: "" }); setPwSignOutAll(false); }}
+                    className="px-4 py-3 rounded-2xl text-sm font-semibold transition-all hover:bg-white/10"
+                    style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+                    ← Back
                   </button>
                 </div>
-              </div>
-            ))}
-
-            {pwMsg.text && (
-              <div className="px-4 py-3 rounded-xl text-xs font-medium"
-                style={{
-                  background: pwMsg.type === "success" ? "rgba(52,211,153,0.08)" : "rgba(239,68,68,0.08)",
-                  border: `1px solid ${pwMsg.type === "success" ? "rgba(52,211,153,0.25)" : "rgba(239,68,68,0.25)"}`,
-                  color: pwMsg.type === "success" ? "#34d399" : "#fca5a5",
-                }}>
-                {pwMsg.type === "success" ? "✓ " : "⚠ "}{pwMsg.text}
-              </div>
+              </form>
             )}
 
-            <button type="submit"
-              disabled={pwSaving || !pwForm.current || !pwForm.newPw || !pwForm.confirm || (gmailConnected && !credUnlocked)}
-              className="px-6 py-3 rounded-2xl text-sm font-bold transition-all w-fit"
-              style={{ background: "rgba(248,113,113,0.12)", border: "1px solid rgba(248,113,113,0.3)", color: "#f87171",
-                opacity: (pwSaving || !pwForm.current || !pwForm.newPw || !pwForm.confirm || (gmailConnected && !credUnlocked)) ? 0.5 : 1,
-                cursor: (pwSaving || !pwForm.current || !pwForm.newPw || !pwForm.confirm || (gmailConnected && !credUnlocked)) ? "not-allowed" : "pointer" }}>
-              {pwSaving ? "Updating..." : "Update Password →"}
-            </button>
           </div>
         </SECT>
-      </form>
+      </div>
 
       {/* ── Gmail Email Sender Setup ── */}
       <div className="rounded-2xl p-4 sm:p-6 flex flex-col gap-5" style={{ background: "rgba(255,255,255,0.025)", border: "1px solid rgba(255,255,255,0.07)" }}>
