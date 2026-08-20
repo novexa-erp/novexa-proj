@@ -218,11 +218,20 @@ export default function AnalyticsView({ uid }) {
   const activeCustomerIds = new Set(customers.map(c => c.id)); // customers listener already filters deleted
 
   // ========== REVENUE ANALYTICS ==========
-  // Total Revenue = sum of actualAmount (real sold items only, no prev-balance carry-forwards)
-  // Fall back to amount if actualAmount not set (older invoices from InvoicesView tab)
+  // Total Revenue formula — same as DashboardPage overview:
+  // Direct invoices: items computed + _pastReturns deducted
+  // Customer invoices: actualAmount - returns from payments collection
   const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
 
-  // Build a quick lookup: invoiceId → total returned amount (from payments collection, type="return")
+  // Variant multiplier — exact same as InvoicesView/DashboardPage
+  const getVarMultLocal = it => {
+    if (it.productId) return 1;
+    if (!it.variantLabel) return 1;
+    const n = parseFloat(it.variantLabel);
+    return (!isNaN(n) && n > 0) ? n : 1;
+  };
+
+  // Build returns lookup: invoiceId → total returned (payments collection, type="return")
   const returnsByInvoiceId = {};
   payments.forEach(p => {
     if (p.type === "return" && p.invoiceId && Number(p.returnAmount) > 0) {
@@ -231,55 +240,44 @@ export default function AnalyticsView({ uid }) {
   });
 
   function getInvActualAmount(inv) {
-    // For direct invoices (no customerId) — amount field is always correct (no prev-balance items)
-    // Still deduct any returns recorded in payments
     if (!inv.customerId) {
-      const returned = returnsByInvoiceId[inv.id] || 0;
-      return Math.max(0, (Number(inv.amount) || 0) - returned);
-    }
-
-    // For customer invoices:
-    // Both `amount` and `actualAmount` are updated on returns.
-    // `amount` = full invoice total after discount & returns (may include prev-balance carry-forward)
-    // `actualAmount` = only real sold items, no prev-balance, updated on returns
-    // Problem: `actualAmount` sometimes fails to update in global invoices collection (silent catch)
-    // Safe approach: compute from items stripping prev-balance lines, then deduct returns from payments
-    const returned = returnsByInvoiceId[inv.id] || 0;
-    const realItems = (inv.items || []).filter(it => !isPrevBalItem(it));
-    if (realItems.length > 0) {
-      const realSubtotal = realItems.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
-      const fullSubtotal = (inv.items || []).reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
-      // Apply discount proportionally to real items
-      let realAfterDiscount = realSubtotal;
-      if (fullSubtotal > 0 && Number(inv.discount) > 0) {
-        const ratio = realSubtotal / fullSubtotal;
-        realAfterDiscount = Math.max(realSubtotal - (Number(inv.discount) || 0) * ratio, 0);
-      }
-      // Cap with actualAmount if available (it accounts for returns applied after creation)
-      let base;
-      if (inv.actualAmount != null) {
-        base = Math.min(realAfterDiscount, Number(inv.actualAmount));
-      } else {
-        // No actualAmount — cap with inv.amount to avoid over-counting
-        base = Math.min(realAfterDiscount, Number(inv.amount) || realAfterDiscount);
-      }
-      // Deduct any additional returns from payments collection
+      // Direct invoice: compute from items, deduct _pastReturns
+      const isPrevBal = it => (it.description || "").startsWith("Previous Balance · INV-");
+      const itemsTotal = (inv.items || [])
+        .filter(it => !isPrevBal(it))
+        .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMultLocal(it) * (Number(it.unitPrice) || 0), 0);
+      const base = itemsTotal > 0 ? itemsTotal : (Number(inv.amount) || 0);
+      const returned = (inv._pastReturns || []).reduce((s, r) => s + (Number(r.returnAmount) || 0), 0);
       return Math.max(0, base - returned);
     }
-    // Fallback: actualAmount or amount, minus returns
-    const base = inv.actualAmount != null ? Number(inv.actualAmount) : (Number(inv.amount) || 0);
+    // Customer invoice: actualAmount (real sale, no prev-balance) minus returns from payments
+    const base = inv.actualAmount != null ? Number(inv.actualAmount) : Number(inv.amount) || 0;
+    const returned = returnsByInvoiceId[inv.id] || 0;
     return Math.max(0, base - returned);
   }
 
-  const totalRevenue = activeInvoices.reduce((sum, i) => sum + getInvActualAmount(i), 0);
-  const paidAmount = filteredInvoices.filter(i => i.status === "Paid").reduce((s, i) => s + getInvActualAmount(i), 0);
-  const partialPaid = filteredInvoices.filter(i => i.status === "Partial").reduce((s, i) => s + Math.max(0, getInvActualAmount(i) - (Number(i.balance) || 0)), 0);
+  // All-time total revenue (unfiltered — same formula as DashboardPage overview)
+  const directInvsAll    = activeInvoices.filter(i => !i.customerId);
+  const customerInvsAll  = activeInvoices.filter(i =>  i.customerId);
+  const directTotalAll   = directInvsAll.reduce((s, i) => s + getInvActualAmount(i), 0);
+  const customerTotalAll = customerInvsAll.reduce((s, inv) => {
+    const base    = inv.actualAmount != null ? Number(inv.actualAmount) : Number(inv.amount) || 0;
+    const returned = returnsByInvoiceId[inv.id] || 0;
+    return s + Math.max(0, base - returned);
+  }, 0);
+  const totalRevenue = directTotalAll + customerTotalAll;
+
+  // Date-filtered revenue (used for StatCard subtitle, growth calc, charts)
+  const filteredRevenue = filteredInvoices.reduce((s, i) => s + getInvActualAmount(i), 0);
+
+  const paidAmount   = filteredInvoices.filter(i => i.status === "Paid").reduce((s, i) => s + getInvActualAmount(i), 0);
+  const partialPaid  = filteredInvoices.filter(i => i.status === "Partial").reduce((s, i) => s + Math.max(0, getInvActualAmount(i) - (Number(i.balance) || 0)), 0);
   const actualRevenue = paidAmount + partialPaid;
 
-  // Calculate previous period for growth (active invoices only)
+  // Calculate previous period for growth
   const prevFilteredInvoices = getPreviousPeriodData(activeInvoices, dateFilter);
-  const prevRevenue = prevFilteredInvoices.reduce((sum, i) => sum + getInvActualAmount(i), 0);
-  const revenueGrowth = prevRevenue > 0 ? (((totalRevenue - prevRevenue) / prevRevenue) * 100).toFixed(1) : 0;
+  const prevRevenue   = prevFilteredInvoices.reduce((sum, i) => sum + getInvActualAmount(i), 0);
+  const revenueGrowth = prevRevenue > 0 ? (((filteredRevenue - prevRevenue) / prevRevenue) * 100).toFixed(1) : 0;
 
   // Revenue by customer (actual amount — no prev-balance inflation)
   const revenueByCustomer = {};
@@ -590,28 +588,28 @@ export default function AnalyticsView({ uid }) {
   const filteredCustomers = filterByDate(customers);
   const newCustomers = filteredCustomers.length;
 
-  // Returning customers (those with >1 invoice)
+  // Returning customers (those with >1 invoice in filtered period)
   const customerInvoiceCount = {};
-  invoices.forEach(inv => {
+  filteredInvoices.forEach(inv => {
     if (inv.customerId) {
       customerInvoiceCount[inv.customerId] = (customerInvoiceCount[inv.customerId] || 0) + 1;
     }
   });
   const returningCustomers = Object.values(customerInvoiceCount).filter(count => count > 1).length;
 
-  // Top customers by purchase amount
+  // Top customers by purchase amount (filtered period)
   const customerPurchases = {};
-  invoices.forEach(inv => {
+  filteredInvoices.forEach(inv => {
     if (inv.customerId) {
       const custName = inv.customer || inv.customerId;
-      customerPurchases[custName] = (customerPurchases[custName] || 0) + (Number(inv.amount) || 0);
+      customerPurchases[custName] = (customerPurchases[custName] || 0) + getInvActualAmount(inv);
     }
   });
   const topCustomers = Object.entries(customerPurchases).sort((a, b) => b[1] - a[1]).slice(0, 5);
 
-  // Customer purchase frequency
+  // Customer purchase frequency (filtered period)
   const customerFrequency = {};
-  invoices.forEach(inv => {
+  filteredInvoices.forEach(inv => {
     if (inv.customerId) {
       const custName = inv.customer || inv.customerId;
       customerFrequency[custName] = (customerFrequency[custName] || 0) + 1;
@@ -623,13 +621,13 @@ export default function AnalyticsView({ uid }) {
   const totalReceived = filteredPayments
     .filter(p => p.type === "received")
     .reduce((s, p) => s + (Number(p.paid ?? p.amount) || 0), 0);
-  const pendingPayments = invoices.reduce((s, i) => {
+  const pendingPayments = filteredInvoices.reduce((s, i) => {
     if (i.status === "Unpaid") return s + (Number(i.amount) || 0);
     if (i.status === "Partial") return s + (Number(i.balance) || 0);
     return s;
   }, 0);
 
-  const overduePayments = invoices.reduce((s, i) => {
+  const overduePayments = activeInvoices.reduce((s, i) => {
     if ((i.status === "Unpaid" || i.status === "Partial") && i.dueDate) {
       const dueDate = new Date(i.dueDate);
       if (dueDate < new Date()) {
@@ -657,13 +655,12 @@ export default function AnalyticsView({ uid }) {
   const outstandingAmount = pendingPayments + overduePayments;
 
   // ========== INVOICE ANALYTICS ==========
-  const totalInvoicesCount = invoices.length;
-  const paidInvoices = invoices.filter(i => i.status === "Paid").length;
-  const unpaidInvoices = invoices.filter(i => i.status === "Unpaid").length;
-  const overdueInvoices = invoices.filter(i => {
+  const totalInvoicesCount = filteredInvoices.length;
+  const paidInvoices   = filteredInvoices.filter(i => i.status === "Paid").length;
+  const unpaidInvoices = filteredInvoices.filter(i => i.status === "Unpaid").length;
+  const overdueInvoices = filteredInvoices.filter(i => {
     if ((i.status === "Unpaid" || i.status === "Partial") && i.dueDate) {
-      const dueDate = new Date(i.dueDate);
-      return dueDate < new Date();
+      return new Date(i.dueDate) < new Date();
     }
     return false;
   }).length;
@@ -799,6 +796,39 @@ export default function AnalyticsView({ uid }) {
 
   // Backward-compat: keep totalPurchases for any existing JSX that uses it
   const totalPurchases = totalInventoryCost;
+
+  // Filtered purchases — supplier orders within the selected date filter (for Overview card)
+  const filteredPurchasesTotal = filteredOrders.reduce((s, o) => {
+    const paid    = Number(o.paidAmount) || 0;
+    const balance = Number(o.balance)    || 0;
+    return s + paid + balance;
+  }, 0);
+
+  // Filtered net profit — based on filteredInvoices (date-aware)
+  const filteredNetProfit = (() => {
+    let rev = 0, cost = 0;
+    filteredInvoices.forEach(inv => {
+      (inv.items || []).forEach(item => {
+        if ((item.description || "").startsWith("Previous Balance · INV-")) return;
+        const qty = Number(item.qty) || 0;
+        const price = Number(item.unitPrice) || 0;
+        const cp = Number(item.costPriceAtTime ?? item.costPrice) || 0;
+        rev  += qty * price;
+        cost += qty * cp;
+      });
+    });
+    return rev - cost;
+  })();
+  const filteredProfitMargin = (() => {
+    let rev = 0;
+    filteredInvoices.forEach(inv => {
+      (inv.items || []).forEach(item => {
+        if ((item.description || "").startsWith("Previous Balance · INV-")) return;
+        rev += (Number(item.qty) || 0) * (Number(item.unitPrice) || 0);
+      });
+    });
+    return rev > 0 ? ((filteredNetProfit / rev) * 100).toFixed(1) : "0.0";
+  })();
 
   // Monthly profit trend
   const monthlyProfit = {};
@@ -976,9 +1006,9 @@ export default function AnalyticsView({ uid }) {
   const renderOverview = () => (
     <>
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Revenue" value={`Rs. ${totalRevenue.toLocaleString()}`} icon="💰" color="from-amber-500 to-orange-600" trend={revenueGrowth} subtitle={`${filteredInvoices.length} invoices`} />
-        <StatCard label="Total Purchases" value={`Rs. ${totalPurchases.toLocaleString()}`} icon="🛒" color="from-purple-500 to-pink-600" subtitle={`${filteredOrders.length} orders`} />
-        <StatCard label="Net Profit" value={`Rs. ${netProfit.toLocaleString()}`} icon="💵" color={netProfit >= 0 ? "from-green-500 to-emerald-600" : "from-red-500 to-rose-600"} subtitle={`${profitMargin}% margin`} />
+        <StatCard label="Total Revenue" value={`Rs. ${filteredRevenue.toLocaleString()}`} icon="💰" color="from-amber-500 to-orange-600" trend={revenueGrowth} subtitle={`${filteredInvoices.length} invoices`} />
+        <StatCard label="Total Purchases" value={`Rs. ${filteredPurchasesTotal.toLocaleString()}`} icon="🛒" color="from-purple-500 to-pink-600" subtitle={`${filteredOrders.length} orders`} />
+        <StatCard label="Net Profit" value={`Rs. ${Math.round(filteredNetProfit).toLocaleString()}`} icon="💵" color={filteredNetProfit >= 0 ? "from-green-500 to-emerald-600" : "from-red-500 to-rose-600"} subtitle={`${filteredProfitMargin}% margin`} />
         <StatCard label="Pending Payments" value={`Rs. ${pendingPayments.toLocaleString()}`} icon="⏳" color="from-yellow-500 to-amber-600" subtitle={`${unpaidInvoices} unpaid`} />
       </div>
 

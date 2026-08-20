@@ -34,8 +34,14 @@ export async function POST(request) {
 
     const { adminAuth, adminDb } = await getAdminModules();
 
-    // Re-enable in Firebase Auth
-    await adminAuth.updateUser(uid, { disabled: false });
+    // Re-enable in Firebase Auth — if Auth record was deleted directly from console,
+    // skip Auth step and only update Firestore
+    try {
+      await adminAuth.updateUser(uid, { disabled: false });
+    } catch (authErr) {
+      if (authErr.code !== "auth/user-not-found") throw authErr;
+      // Auth record gone — Firestore cleanup still possible
+    }
 
     // Update Firestore status back to active
     await adminDb.collection("users").doc(uid).update({

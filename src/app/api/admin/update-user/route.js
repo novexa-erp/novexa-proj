@@ -98,13 +98,20 @@ export async function POST(request) {
 
     await adminDb.collection("users").doc(uid).update(update);
 
-    // Sync Auth if needed
+    // Sync Auth if needed — gracefully handle missing Auth record
     const authUpdate = {};
     if (name)        authUpdate.displayName = name.trim();
     if (newPassword) authUpdate.password    = newPassword;
     if (status === "frozen" || status === "deleted") authUpdate.disabled = true;
     if (status === "active") authUpdate.disabled = false;
-    if (Object.keys(authUpdate).length) await adminAuth.updateUser(uid, authUpdate);
+    if (Object.keys(authUpdate).length) {
+      try {
+        await adminAuth.updateUser(uid, authUpdate);
+      } catch (authErr) {
+        if (authErr.code !== "auth/user-not-found") throw authErr;
+        // Auth record was deleted directly — Firestore update already succeeded, that's fine
+      }
+    }
 
     return NextResponse.json({ success: true });
   } catch (err) {

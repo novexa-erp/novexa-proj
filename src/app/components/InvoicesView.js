@@ -862,12 +862,28 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
       })()}
 
       {/* Professional Stats */}
+      {(() => {
+        const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+        const getActualAmt = inv => {
+          // Always recalculate from items, excluding previous-balance carry-forward lines
+          const itemsTotal = (inv.items || [])
+            .filter(it => !isPrevBalItem(it))
+            .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0);
+          const base = itemsTotal > 0 ? itemsTotal : (inv.actualAmount != null ? Number(inv.actualAmount) : Number(inv.amount) || 0);
+          // Subtract returns
+          const totalReturns = (inv._pastReturns || []).reduce((s, r) => s + (Number(r.returnAmount) || 0), 0);
+          return Math.max(0, base - totalReturns);
+        };
+        const statsTotalAmount    = directInvoices.reduce((s, i) => s + getActualAmt(i), 0);
+        const statsTotalCollected = directInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
+        const statsTotalBalance   = directInvoices.reduce((s, i) => s + Math.max(0, getActualAmt(i) - (Number(i.amountPaid) || 0)), 0);
+        return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
           { label: "Total Invoices", value: directInvoices.length, icon: "🧾", color: "from-orange-500 to-amber-600" },
-          { label: "Total Amount", value: formatRs(directInvoices.reduce((s,i)=>s+(Number(i.amount)||0),0)), icon: "💰", color: "from-pink-500 to-purple-600" },
-          { label: "Total Collected", value: formatRs(directInvoices.reduce((s,i)=>s+(Number(i.amountPaid)||0),0)), icon: "💵", color: "from-green-500 to-emerald-600" },
-          { label: "Total Balance", value: formatRs(directInvoices.reduce((s,i)=>s+(Number(i.balance)||0),0)), icon: "⏳", color: "from-rose-500 to-red-600" },
+          { label: "Total Amount", value: formatRs(statsTotalAmount), icon: "💰", color: "from-pink-500 to-purple-600" },
+          { label: "Total Collected", value: formatRs(statsTotalCollected), icon: "💵", color: "from-green-500 to-emerald-600" },
+          { label: "Total Balance", value: formatRs(statsTotalBalance), icon: "⏳", color: "from-rose-500 to-red-600" },
         ].map((stat, i) => (
           <div key={i} 
             className="group relative rounded-lg p-4 overflow-hidden transition-all duration-300 hover:scale-[1.02] hover:-translate-y-1 cursor-pointer"
@@ -889,6 +905,8 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
           </div>
         ))}
       </div>
+        );
+      })()}
 
       {/* Search & Filter Tabs */}
       <div className="flex flex-col lg:flex-row gap-3">
@@ -939,6 +957,7 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
           <span className="flex-1 min-w-0">Customer</span>
           <span style={{ width: 120, textAlign: "right", flexShrink: 0 }}>Amount</span>
           <span style={{ width: 110, textAlign: "right", flexShrink: 0 }}>Paid</span>
+          <span style={{ width: 110, textAlign: "right", flexShrink: 0 }}>Return</span>
           <span style={{ width: 110, textAlign: "right", flexShrink: 0 }}>Balance</span>
           <span style={{ width: 100, textAlign: "center", flexShrink: 0 }}>Status</span>
           <span style={{ width: 150, textAlign: "right", flexShrink: 0 }}>Actions</span>
@@ -976,12 +995,14 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
         ) : (
           filtered.map((inv) => {
             const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
-            const invActualAmt = inv.actualAmount != null
-              ? Number(inv.actualAmount)
-              : (inv.items || []).filter(it => !isPrevBalItem(it))
-                  .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0)
-                || Number(inv.amount) || 0;
-            const invAmtPaid = Number(inv.amountPaid) || 0;
+            const itemsTotal = (() => {
+              const t = (inv.items || []).filter(it => !isPrevBalItem(it))
+                .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0);
+              return t > 0 ? t : (inv.actualAmount != null ? Number(inv.actualAmount) : Number(inv.amount) || 0);
+            })();
+            const totalReturns  = (inv._pastReturns || []).reduce((s, r) => s + (Number(r.returnAmount) || 0), 0);
+            const invActualAmt  = Math.max(0, itemsTotal - totalReturns);
+            const invAmtPaid    = Number(inv.amountPaid) || 0;
             const invActualBalance = Math.max(0, invActualAmt - invAmtPaid);
             const effectiveStatus = invActualBalance === 0 && invActualAmt > 0
               ? "Paid"
@@ -1027,9 +1048,9 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
                   {/* Row 2: amounts */}
                   <div className="flex items-center gap-4 pl-12">
                     <div>
-                      <p className="text-white text-sm font-bold">{formatRs(inv.amount)}</p>
-                      {Number(inv.balance) > 0 && (
-                        <p className="text-[10px]" style={{ color: "#f87171" }}>Bal: {formatRs(inv.balance)}</p>
+                      <p className="text-white text-sm font-bold">{formatRs(invActualAmt)}</p>
+                      {invActualBalance > 0 && (
+                        <p className="text-[10px]" style={{ color: "#f87171" }}>Bal: {formatRs(invActualBalance)}</p>
                       )}
                     </div>
                     {Number(inv.amountPaid) > 0 && (
@@ -1101,14 +1122,24 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
                   </div>
 
                   {/* Amount — always */}
-                  <p className="text-white text-sm font-bold text-right flex-shrink-0" style={{ width: 120 }}>{formatRs(inv.amount)}</p>
+                  <p className="text-white text-sm font-bold text-right flex-shrink-0" style={{ width: 120 }}>{formatRs(invActualAmt)}</p>
 
                   {/* Paid — lg only */}
                   <p className="hidden lg:block text-right text-sm font-semibold flex-shrink-0" style={{ width: 110, color: "#34d399" }}>{formatRs(inv.amountPaid || 0)}</p>
 
+                  {/* Return — lg only */}
+                  {(() => {
+                    const totalReturn = (inv._pastReturns || []).reduce((s, r) => s + (Number(r.returnAmount) || 0), 0);
+                    return (
+                      <p className="hidden lg:block text-right text-sm font-semibold flex-shrink-0" style={{ width: 110, color: totalReturn > 0 ? "#fb923c" : "#6b7280" }}>
+                        {totalReturn > 0 ? formatRs(totalReturn) : "—"}
+                      </p>
+                    );
+                  })()}
+
                   {/* Balance — lg only */}
-                  <p className="hidden lg:block text-right text-sm font-semibold flex-shrink-0" style={{ width: 110, color: Number(inv.balance) > 0 ? "#f87171" : "#34d399" }}>
-                    {formatRs(inv.balance || 0)}
+                  <p className="hidden lg:block text-right text-sm font-semibold flex-shrink-0" style={{ width: 110, color: invActualBalance > 0 ? "#f87171" : "#34d399" }}>
+                    {formatRs(invActualBalance)}
                   </p>
 
                   {/* Status */}

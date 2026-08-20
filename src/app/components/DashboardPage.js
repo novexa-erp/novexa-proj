@@ -7,7 +7,7 @@ import Image from "next/image";
 import { onAuthStateChanged, signOut } from "firebase/auth";
 import {
   collection, onSnapshot, query, orderBy,
-  doc, addDoc, serverTimestamp, getDoc, getDocs,
+  doc, addDoc, serverTimestamp, getDoc, getDocs, setDoc,
 } from "firebase/firestore";
 import { auth, db } from "@/lib/firebase";
 import InvoicesView from "./InvoicesView";
@@ -25,7 +25,7 @@ import TrashView from "./TrashView";
 import ComingSoonView from "./ComingSoonView";
 import AddonsView from "./AddonsView";
 import BackupView from "./BackupView";
-import BillBookView from "./BillBookView";
+import DigitalRegisterView from "./DigitalRegisterView";
 import PWAInstallButton from "./PWAInstallButton";
 
 // ── Sidebar nav items ────────────────────────────────────────────────────────
@@ -45,7 +45,7 @@ const navItems = [
   { icon: "🎫", label: "My Tickets",  id: "my-tickets"  },
   { icon: "⚡", label: "Add-ons",     id: "addons"      },
   { icon: "💾", label: "Backup",      id: "backup"      },
-  { icon: "📖", label: "Bill Book",   id: "bill-book"   },
+  { icon: "📒", label: "Digital Register", id: "bill-book"   },
 ];
 
 // ── Plan → allowed tab IDs ────────────────────────────────────────────────────
@@ -410,9 +410,32 @@ function DashboardContent() {
       (snap) => { setPayments(snap.docs.map(d => ({ id: d.id, ...d.data() }))); check(); },
       silentErr
     );
+    let locLoadCounted = false;
     const unsubLoc = onSnapshot(
       query(collection(db, "users", uid, "locations"), orderBy("createdAt", "desc")),
-      (snap) => { setLocations(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => !l.deleted)); check(); },
+      async (snap) => {
+        // ── Auto-create default "Shop" location if none exist ─────────────
+        if (snap.empty) {
+          try {
+            await setDoc(doc(db, "users", uid, "locations", "default"), {
+              name: "Shop",
+              type: "shop",
+              address: "",
+              notes: "",
+              isDefault: true,
+              createdAt: serverTimestamp(),
+            });
+            // snapshot will re-fire with the new doc
+          } catch (e) {
+            console.error("Default location create error:", e);
+          }
+          // count once so loader doesn't hang
+          if (!locLoadCounted) { locLoadCounted = true; check(); }
+          return;
+        }
+        setLocations(snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(l => !l.deleted));
+        if (!locLoadCounted) { locLoadCounted = true; check(); }
+      },
       silentErr
     );
 
@@ -455,71 +478,108 @@ function DashboardContent() {
   // ── Computed stats ───────────────────────────────────────────────────────────
   // Same logic as AnalyticsView — single source of truth
 
-  // Active invoices: not deleted, and customer still exists if customer-linked
+  // Active invoices:
+  // - not deleted
+  // - direct invoices (no customerId) → always include
+  // - customer invoices → only include if that customer still exists (not deleted)
   const activeCustomerIds = new Set(customers.map(c => c.id));
   const activeInvoices = invoices.filter(i => {
     if (i.deleted) return false;
-    if (i.customerId && !activeCustomerIds.has(i.customerId)) return false;
+    if (i.customerId && !activeCustomerIds.has(i.customerId)) return false; // customer was deleted
     return true;
   });
 
   const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
 
-  // Build returns lookup from payments collection
-  const returnsByInvoiceId = {};
+  // Variant multiplier — exact same logic as InvoicesView/CustomersView
+  // Inventory product variants: multiplier = 1 (price already fixed per unit)
+  // Manual/custom variants (no productId): label may encode quantity e.g. "0.5 kg"
+  const getVarMultLocal = it => {
+    if (it.productId) return 1;
+    if (!it.variantLabel) return 1;
+    const n = parseFloat(it.variantLabel);
+    return (!isNaN(n) && n > 0) ? n : 1;
+  };
+
+  // ── Direct invoices (no customerId) ──────────────────────────────────────
+  const directInvoices = activeInvoices.filter(i => !i.customerId);
+
+  // ── Customer invoices ─────────────────────────────────────────────────────
+  const customerInvoicesAll = activeInvoices.filter(i => i.customerId);
+
+  // Build returns lookup: invoiceId → total returned amount (from payments collection)
+  const returnsByInvId = {};
   payments.forEach(p => {
     if (p.type === "return" && p.invoiceId && Number(p.returnAmount) > 0) {
-      returnsByInvoiceId[p.invoiceId] = (returnsByInvoiceId[p.invoiceId] || 0) + Number(p.returnAmount);
+      returnsByInvId[p.invoiceId] = (returnsByInvId[p.invoiceId] || 0) + Number(p.returnAmount);
     }
   });
 
-  // Get actual sold amount for an invoice (no prev-balance carry-forwards, deduct returns)
-  function getInvActualAmount(inv) {
-    if (!inv.customerId) {
-      const returned = returnsByInvoiceId[inv.id] || 0;
-      return Math.max(0, (Number(inv.amount) || 0) - returned);
-    }
-    const returned = returnsByInvoiceId[inv.id] || 0;
-    const realItems = (inv.items || []).filter(it => !isPrevBalItem(it));
-    if (realItems.length > 0) {
-      const realSubtotal = realItems.reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
-      const fullSubtotal = (inv.items || []).reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
-      let realAfterDiscount = realSubtotal;
-      if (fullSubtotal > 0 && Number(inv.discount) > 0) {
-        const ratio = realSubtotal / fullSubtotal;
-        realAfterDiscount = Math.max(realSubtotal - (Number(inv.discount) || 0) * ratio, 0);
-      }
-      const base = inv.actualAmount != null
-        ? Math.min(realAfterDiscount, Number(inv.actualAmount))
-        : Math.min(realAfterDiscount, Number(inv.amount) || realAfterDiscount);
-      return Math.max(0, base - returned);
-    }
-    const base = inv.actualAmount != null ? Number(inv.actualAmount) : (Number(inv.amount) || 0);
+  // Direct invoice actual amount: compute from items (same as InvoicesView statsTotalAmount).
+  // InvoicesView strips prev-balance lines and uses getVarMult — same here.
+  // Deduct _pastReturns stored on the invoice document.
+  function getDirectInvAmount(inv) {
+    const isPrevBal = it => (it.description || "").startsWith("Previous Balance · INV-");
+    const itemsTotal = (inv.items || [])
+      .filter(it => !isPrevBal(it))
+      .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMultLocal(it) * (Number(it.unitPrice) || 0), 0);
+    // If items array is empty/missing, fall back to amount field
+    const base = itemsTotal > 0 ? itemsTotal : (Number(inv.amount) || 0);
+    const returned = (inv._pastReturns || []).reduce((s, r) => s + (Number(r.returnAmount) || 0), 0);
     return Math.max(0, base - returned);
   }
 
-  // Total Revenue = sum of actual amounts across ALL active invoices
-  const totalRevenue = activeInvoices.reduce((s, i) => s + getInvActualAmount(i), 0);
-
-  // Total Collected = sum of amountPaid across all active invoices
-  const totalCollected = activeInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
-
-  // Split invoices
-  const customerInvoices = activeInvoices.filter(i => i.customerId);
-  const otherInvoices    = activeInvoices.filter(i => !i.customerId);
-
-  // Customer Balance = sum of outstanding balance on customer invoices
-  const customerBalance = customerInvoices.reduce((s, i) => {
-    const actualAmt = getInvActualAmount(i);
-    const paid = Number(i.amountPaid) || 0;
-    return s + Math.max(0, actualAmt - paid);
+  // Customer invoice total business: use actualAmount minus returns from payments collection.
+  // actualAmount = real sold items only (no prev-balance carry-forward), saved at creation.
+  // returnsByInvId = returns recorded in payments collection (type="return").
+  // This exactly matches CustomerDetail's totalBusiness calculation.
+  const customerTotalBusiness = customerInvoicesAll.reduce((s, inv) => {
+    const base = inv.actualAmount != null ? Number(inv.actualAmount) : Number(inv.amount) || 0;
+    const returned = returnsByInvId[inv.id] || 0;
+    return s + Math.max(0, base - returned);
   }, 0);
 
-  // Other Invoice Balance = sum of balance field on direct invoices
-  const otherBalance = otherInvoices.reduce((s, i) => s + (Number(i.balance) || 0), 0);
+  // ── Total Revenue = InvoicesView total + all customers' total business ────
+  const directTotal  = directInvoices.reduce((s, i) => s + getDirectInvAmount(i), 0);
+  const totalRevenue = directTotal + customerTotalBusiness;
 
-  // Pending = total outstanding
-  const pendingAmount = customerBalance + otherBalance;
+  // getInvActualAmount — used for balance calculations (pending amount etc.)
+  function getInvActualAmount(inv) {
+    if (!inv.customerId) return getDirectInvAmount(inv);
+    const base = inv.actualAmount != null ? Number(inv.actualAmount) : Number(inv.amount) || 0;
+    const returned = returnsByInvId[inv.id] || 0;
+    return Math.max(0, base - returned);
+  }
+
+  // Total Collected:
+  // Direct invoices — amountPaid field is reliable in global collection
+  // Customer invoices — sum payments collection type="received" (more reliable than amountPaid field)
+  const directCollected = directInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
+
+  // Build customer invoice IDs set for filtering payments
+  const customerInvoiceIds = new Set(customerInvoicesAll.map(i => i.id));
+  const customerCollected = payments
+    .filter(p => p.type === "received" && p.invoiceId && customerInvoiceIds.has(p.invoiceId))
+    .reduce((s, p) => s + (Number(p.paid) || 0), 0);
+
+  const totalCollected = directCollected + customerCollected;
+
+  // Split invoices (customerInvoicesAll already defined above, reuse here)
+  const customerInvoices = customerInvoicesAll;
+  const otherInvoices    = directInvoices;
+
+  // Total Balance Due = Total Revenue - Total Collected
+  const pendingAmount = Math.max(0, totalRevenue - totalCollected);
+
+  // Breakdown for pending widget
+  const customerBalance = customerInvoices.reduce((s, i) => {
+    const base = i.actualAmount != null ? Number(i.actualAmount) : Number(i.amount) || 0;
+    const returned = returnsByInvId[i.id] || 0;
+    const actual = Math.max(0, base - returned);
+    const paid = Number(i.amountPaid) || 0;
+    return s + Math.max(0, actual - paid);
+  }, 0);
+  const otherBalance = Math.max(0, pendingAmount - customerBalance);
 
   const collectedPct    = totalRevenue > 0 ? Math.round((totalCollected / totalRevenue) * 100) : 0;
   const pendingPct      = 100 - collectedPct;
@@ -1531,7 +1591,14 @@ function DashboardContent() {
           ) : activeNav === "backup" ? (
             <BackupView key={`backup-${refreshKey}`} uid={user?.uid} userDoc={userDoc} />
           ) : activeNav === "bill-book" ? (
-            <BillBookView key={`billbook-${refreshKey}`} uid={user?.uid} userDoc={userDoc} />
+            <DigitalRegisterView
+              key={`digital-register-${refreshKey}`}
+              uid={user?.uid}
+              userDoc={userDoc}
+              overviewTotalAmount={totalRevenue}
+              overviewCollected={totalCollected}
+              overviewOutstanding={pendingAmount}
+            />
           ) : (
           <>
           {/* Overview Section with Professional Loader */}
@@ -1629,7 +1696,13 @@ function DashboardContent() {
                     const effStatus = effBalance === 0 && effAmt > 0 ? "Paid" : paid > 0 ? "Partial" : "Unpaid";
                     const st = statusStyle[effStatus] || statusStyle["Unpaid"];
                     const dateStr = inv.createdAt?.toDate ? inv.createdAt.toDate().toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }) : "—";
-                    const num = inv.id.slice(-4).toUpperCase();
+                    const num = inv.invoiceNumber
+                      ? inv.invoiceNumber.replace(/^INV-/i, "")
+                      : inv.id.slice(-4).toUpperCase();
+                    const displayInvNum = inv.invoiceNumber || `INV-${inv.id.slice(-4).toUpperCase()}`;
+                    const initials = (inv.customerName || inv.customer || "?")
+                      .trim().split(/\s+/).slice(0, 2)
+                      .map(w => w[0]?.toUpperCase() || "").join("");
                     const displayName = inv.customerName || inv.customer || "Unknown";
                     return (
                       <div key={inv.id}
@@ -1638,11 +1711,11 @@ function DashboardContent() {
                         <div className="flex items-center gap-3 min-w-0">
                           <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold flex-shrink-0"
                             style={{ background: "rgba(37,99,235,0.12)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>
-                            {num}
+                            {initials}
                           </div>
                           <div className="min-w-0">
                             <p className="text-white text-sm font-semibold truncate">{displayName}</p>
-                            <p className="text-gray-300 text-[11px]">INV-{num} · {dateStr}</p>
+                            <p className="text-gray-300 text-[11px]">{displayInvNum} · {dateStr}</p>
                           </div>
                         </div>
                         <div className="flex items-center gap-2.5 flex-shrink-0">

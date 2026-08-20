@@ -129,7 +129,7 @@ export default function InventoryView({ uid, locations = [] }) {
   const filteredProducts = products.filter(p => {
     const matchesSearch = p.name?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = filterType === "all" || p.variantType === filterType;
-    const matchesLocation = filterLocation === "all" || (filterLocation === "none" ? !p.locationId : p.locationId === filterLocation);
+    const matchesLocation = filterLocation === "all" || (filterLocation === "default" ? (!p.locationId || p.locationId === "default") : p.locationId === filterLocation);
     return matchesSearch && matchesFilter && matchesLocation;
   });
 
@@ -315,7 +315,6 @@ export default function InventoryView({ uid, locations = [] }) {
         <div className="flex flex-wrap gap-2">
           {[
             { id: "all",  label: "All Locations", icon: "📍" },
-            { id: "none", label: "No Location",   icon: "❓" },
             ...(locations || []).filter(l => !l.deleted).map(l => ({
               id: l.id, label: l.name, icon: getLocationIcon(l.type),
             })),
@@ -473,13 +472,26 @@ function ProductCard({ product, locations = [], onEdit, onDelete, index }) {
             </span>
           )}
           {/* Location badge */}
-          {product.locationId && (() => {
-            const loc = (locations || []).find(l => l.id === product.locationId && !l.deleted);
-            if (!loc) return null;
+          {(() => {
+            if (product.locationId) {
+              const loc = (locations || []).find(l => l.id === product.locationId && !l.deleted);
+              if (!loc) return (
+                <span className="inline-block mt-1 ml-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                  style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
+                  🏪 Shop
+                </span>
+              );
+              return (
+                <span className="inline-block mt-1 ml-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                  style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
+                  {getLocationIcon(loc.type)} {loc.name}
+                </span>
+              );
+            }
             return (
               <span className="inline-block mt-1 ml-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
                 style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
-                {getLocationIcon(loc.type)} {loc.name}
+                🏪 Shop
               </span>
             );
           })()}
@@ -551,13 +563,20 @@ function ProductCard({ product, locations = [], onEdit, onDelete, index }) {
 // ═══════════════════════════════════════════════════════════════════════════
 function AddProductModal({ product, locations = [], onSave, onClose }) {
   const fileInputRef = useRef(null);
-  
+
+  // Find the default location ID to pre-select (prefer isDefault flag, fallback to "default" id)
+  const defaultLocId = (() => {
+    const active = (locations || []).filter(l => !l.deleted);
+    const def = active.find(l => l.isDefault) || active.find(l => l.id === "default") || active[0];
+    return def?.id || "";
+  })();
+
   const [formData, setFormData] = useState({
     name: product?.name || "",
     description: product?.description || "",
     category: product?.category || "",
     imageUrl: product?.imageUrl || "",
-    locationId: product?.locationId || "",
+    locationId: product?.locationId || defaultLocId,
     // normalize variantType — unknown types → "custom", undefined → "none"
     variantType: (() => {
       const vt = product?.variantType || "none";
@@ -805,8 +824,8 @@ function AddProductModal({ product, locations = [], onSave, onClose }) {
             </div>
           </div>
 
-          {/* Location */}
-          {(locations || []).filter(l => !l.deleted).length > 0 && (
+          {/* Location — only show if user has more than one location */}
+          {(locations || []).filter(l => !l.deleted).length > 1 && (
             <div>
               <label className="text-gray-300 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
                 📍 Location (Shop / Warehouse)
@@ -816,7 +835,6 @@ function AddProductModal({ product, locations = [], onSave, onClose }) {
                 onChange={e => setFormData(f => ({ ...f, locationId: e.target.value }))}
                 className="w-full px-4 py-2.5 rounded-lg text-sm text-white outline-none"
                 style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
-                <option value="" style={{ background: "#0d1117", color: "#9ca3af" }}>— No Specific Location —</option>
                 {(locations || []).filter(l => !l.deleted).map(loc => (
                   <option key={loc.id} value={loc.id} style={{ background: "#0d1117", color: "#fff" }}>
                     {getLocationIcon(loc.type)} {loc.name}

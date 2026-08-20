@@ -194,10 +194,15 @@ function ProductPickerModal({ products, locations = [], onSelect, onClose }) {
                           </span>
                         )}
                         {/* Location badge */}
-                        {loc && (
+                        {loc ? (
                           <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
                             style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
                             {getLocIcon(loc.type)} {loc.name}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                            style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
+                            🏪 Shop
                           </span>
                         )}
                       </div>
@@ -424,10 +429,15 @@ function ItemRow({ item, idx, products, locations = [], onChange, onRemove, canR
                         <p className="text-white text-xs font-medium">
                           {p.name} {hasVars && <span className="text-gray-500 text-[10px]">({p.variants.length} variants)</span>}
                         </p>
-                        {loc && (
+                        {loc ? (
                           <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
                             style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
                             {getLocIcon(loc.type)} {loc.name}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                            style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
+                            🏪 Shop
                           </span>
                         )}
                       </div>
@@ -526,10 +536,15 @@ function ItemRow({ item, idx, products, locations = [], onChange, onRemove, canR
                     <div>
                       <div className="flex items-center gap-1.5 flex-wrap">
                         <p className="text-white text-xs font-medium">{p.name} {hasVars && <span className="text-gray-500 text-[10px]">({p.variants.length} variants)</span>}</p>
-                        {loc && (
+                        {loc ? (
                           <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
                             style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
                             {getLocIcon(loc.type)} {loc.name}
+                          </span>
+                        ) : (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-semibold"
+                            style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
+                            🏪 Shop
                           </span>
                         )}
                       </div>

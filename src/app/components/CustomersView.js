@@ -388,13 +388,21 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
   });
 
   // Only count actual product amounts — no double-counting regardless of carry-forwards
+  // Also subtract goods returns from total business
+  // Only count returns that are linked to an actual invoice of this customer (by invoiceId)
+  // to avoid counting orphaned or mislinked returns
+  const custInvoiceIdSet = new Set(custInvoices.map(i => i.id));
+  const totalReturns = customerPayments
+    .filter(p => p.type === "return" && p.invoiceId && custInvoiceIdSet.has(p.invoiceId))
+    .reduce((s, p) => s + (Number(p.returnAmount) || 0), 0);
+
   const totalBusiness = custInvoices.reduce((s, i) => {
     const amt = i.actualAmount != null
       ? Number(i.actualAmount)
       : (i.items || []).filter(it => !isPrevBalItem(it))
           .reduce((sum, it) => sum + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0);
     return s + amt;
-  }, 0);
+  }, 0) - totalReturns;
   const totalPaid = custInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
 
   // Total balance = sum of actual balances per invoice (avoids double-counting carry-forwards)

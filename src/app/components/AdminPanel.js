@@ -201,6 +201,445 @@ function calcRenewalDisplayStart(currentEndStr) {
   return d.toISOString().slice(0, 10);
 }
 
+// ── Registration Invoice Dialog ────────────────────────────────────────────────
+function RegInvoiceDialog({ data, getToken, onToast, onClose }) {
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailDone,    setEmailDone]    = useState(false);
+
+  function planLabel(p) { return p ? p.charAt(0).toUpperCase() + p.slice(1) : "Starter"; }
+  function fmtPayment(m) {
+    if (m === "online") return "Online Transfer";
+    if (m === "cheque") return "Cheque";
+    return "Cash";
+  }
+
+  // Build WhatsApp message
+  function buildWhatsAppText() {
+    const isTrial = data.subscriptionType === "trial";
+    const plan    = planLabel(data.plan);
+    const lines = [
+      `Assalam-o-Alaikum ${data.name}! 👋`,
+      ``,
+      `Novexa ERP mein aapka account create kar diya gaya hai. 🎉`,
+      ``,
+      `📋 *Account Details:*`,
+      `• Naam: ${data.name}`,
+      `• Email: ${data.email}`,
+      data.password ? `• Password: ${data.password}` : null,
+      `• Plan: *${plan} Plan*${isTrial ? " (Free Trial)" : ""}`,
+      `• Active: ${data.activeFrom} to ${data.activeTo}`,
+      isTrial ? null : `• Payment: ${fmtPayment(data.paymentMethod)}`,
+      ``,
+      `🌐 Login karein: https://novexaerp.com`,
+      ``,
+      `Koi bhi masla ho to humse rabta karein. Shukriya! 🙏`,
+    ].filter(l => l !== null);
+    return encodeURIComponent(lines.join("\n"));
+  }
+
+  async function handleEmail() {
+    setEmailSending(true);
+    try {
+      const token = await getToken();
+      const res = await fetch("/api/admin/send-registration-invoice", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          uid:              data.uid,
+          userName:         data.name,
+          userEmail:        data.email,
+          password:         data.password,
+          plan:             data.plan,
+          billingPeriod:    data.billingPeriod,
+          paymentMethod:    data.paymentMethod,
+          activeFrom:       data.activeFrom,
+          activeTo:         data.activeTo,
+          subscriptionType: data.subscriptionType,
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Email failed");
+      setEmailDone(true);
+      onToast(`Invoice email sent to ${data.email} ✓`);
+    } catch (err) {
+      onToast(err.message || "Email send failed", "error");
+    } finally {
+      setEmailSending(false);
+    }
+  }
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(10px)" }}>
+      <div className="w-full max-w-md rounded-2xl overflow-hidden"
+        style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 24px 64px rgba(0,0,0,0.7)" }}>
+
+        {/* Header */}
+        <div className="px-6 py-5 flex items-center justify-between"
+          style={{ borderBottom: "1px solid rgba(255,255,255,0.07)", background: "linear-gradient(135deg,rgba(16,185,129,0.12),rgba(37,99,235,0.08))" }}>
+          <div>
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="text-2xl">🎉</span>
+              <h3 className="text-white font-black text-lg">User Registered!</h3>
+            </div>
+            <p className="text-gray-400 text-xs">{data.name} ka account successfully bana diya</p>
+          </div>
+          <button onClick={onClose}
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-all">✕</button>
+        </div>
+
+        {/* User Info */}
+        <div className="px-6 py-4 flex flex-col gap-2"
+          style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500 text-xs w-20">Name</span>
+            <span className="text-white text-sm font-semibold">{data.name}</span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500 text-xs w-20">Email</span>
+            <span className="text-blue-300 text-sm font-mono">{data.email}</span>
+          </div>
+          {data.password && (
+            <div className="flex items-center gap-2">
+              <span className="text-gray-500 text-xs w-20">Password</span>
+              <span className="text-amber-300 text-sm font-mono">{data.password}</span>
+            </div>
+          )}
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500 text-xs w-20">Plan</span>
+            <span className="text-emerald-300 text-sm font-semibold">
+              {planLabel(data.plan)}{data.subscriptionType === "trial" ? " (Trial)" : ""}
+            </span>
+          </div>
+          <div className="flex items-center gap-2">
+            <span className="text-gray-500 text-xs w-20">Active</span>
+            <span className="text-gray-300 text-xs">{data.activeFrom} → {data.activeTo}</span>
+          </div>
+        </div>
+
+        {/* Question */}
+        <div className="px-6 py-4">
+          <p className="text-gray-300 text-sm font-semibold mb-4 text-center">
+            Invoice kahan bhejna hay? 📤
+          </p>
+          <div className="flex flex-col gap-3">
+            {/* WhatsApp */}
+            <a
+              href={`https://wa.me/?text=${buildWhatsAppText()}`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="flex items-center justify-center gap-3 w-full py-3 rounded-xl text-sm font-bold transition-all hover:scale-[1.02]"
+              style={{ background: "linear-gradient(135deg,#25d366,#128c7e)", color: "#fff", boxShadow: "0 4px 16px rgba(37,211,102,0.3)" }}>
+              <span className="text-xl">💬</span>
+              WhatsApp par bhejo
+            </a>
+
+            {/* Email */}
+            <button
+              onClick={handleEmail}
+              disabled={emailSending || emailDone}
+              className="flex items-center justify-center gap-3 w-full py-3 rounded-xl text-sm font-bold transition-all hover:scale-[1.02] disabled:opacity-60 disabled:scale-100"
+              style={{ background: emailDone ? "linear-gradient(135deg,#10b981,#059669)" : "linear-gradient(135deg,#2563eb,#1d4ed8)", color: "#fff", boxShadow: emailDone ? "0 4px 16px rgba(16,185,129,0.3)" : "0 4px 16px rgba(37,99,235,0.3)" }}>
+              <span className="text-xl">{emailDone ? "✓" : "📧"}</span>
+              {emailSending ? "Bhej raha hai..." : emailDone ? "Email bhej di gaye!" : "Email par bhejo (PDF invoice)"}
+            </button>
+
+            {/* Skip */}
+            <button
+              onClick={onClose}
+              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/5"
+              style={{ color: "#6b7280", border: "1px solid rgba(255,255,255,0.07)" }}>
+              Skip — baad mein bhejna hai
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+// ── User Invoice Dialog (View / Print / Email / WhatsApp) ──────────────────────
+function UserInvoiceDialog({ data, getToken, onToast, onClose }) {
+  const [loading,      setLoading]      = useState(false);
+  const [pdfBase64,    setPdfBase64]    = useState(null);
+  const [invoiceNum,   setInvoiceNum]   = useState(null);
+  const [amount,       setAmount]       = useState(null);
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailDone,    setEmailDone]    = useState(false);
+  const [waLoading,    setWaLoading]    = useState(false);
+  const [error,        setError]        = useState(null);
+
+  function planLabel(p) { return p ? p.charAt(0).toUpperCase() + p.slice(1) : "Starter"; }
+  function fmtPayment(m) {
+    if (m === "online") return "Online Transfer";
+    if (m === "cheque") return "Cheque";
+    return "Cash";
+  }
+
+  // Fetch PDF on mount
+  useEffect(() => {
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const token = await getToken();
+        const res   = await fetch("/api/admin/get-reg-invoice-pdf", {
+          method:  "POST",
+          headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+          body: JSON.stringify({
+            uid:              data.uid,
+            userName:         data.name,
+            userEmail:        data.email,
+            plan:             data.plan,
+            billingPeriod:    data.billingPeriod,
+            paymentMethod:    data.paymentMethod,
+            activeFrom:       data.activeFrom,
+            activeTo:         data.activeTo,
+            subscriptionType: data.subscriptionType,
+            uploadToCloudinary: false,
+          }),
+        });
+        const result = await res.json();
+        if (!res.ok) throw new Error(result.error || "Failed to load invoice");
+        setPdfBase64(result.pdfBase64);
+        setInvoiceNum(result.invoiceNumber);
+        setAmount(result.amount);
+      } catch (e) {
+        setError(e.message);
+      } finally {
+        setLoading(false);
+      }
+    }
+    load();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [data.uid]);
+
+  // Print / Download PDF
+  function handlePrint() {
+    if (!pdfBase64) return;
+    const byteChars = atob(pdfBase64);
+    const bytes     = new Uint8Array(byteChars.length);
+    for (let i = 0; i < byteChars.length; i++) bytes[i] = byteChars.charCodeAt(i);
+    const blob = new Blob([bytes], { type: "application/pdf" });
+    const url  = URL.createObjectURL(blob);
+    const win  = window.open(url, "_blank");
+    if (win) {
+      win.addEventListener("load", () => win.print());
+    } else {
+      // Fallback: download
+      const a    = document.createElement("a");
+      a.href     = url;
+      a.download = `${invoiceNum || "invoice"}.pdf`;
+      a.click();
+    }
+    setTimeout(() => URL.revokeObjectURL(url), 10000);
+  }
+
+  // Email
+  async function handleEmail() {
+    setEmailSending(true);
+    try {
+      const token = await getToken();
+      const res   = await fetch("/api/admin/send-registration-invoice", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          uid:              data.uid,
+          userName:         data.name,
+          userEmail:        data.email,
+          plan:             data.plan,
+          billingPeriod:    data.billingPeriod,
+          paymentMethod:    data.paymentMethod,
+          activeFrom:       data.activeFrom,
+          activeTo:         data.activeTo,
+          subscriptionType: data.subscriptionType,
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Email failed");
+      setEmailDone(true);
+      onToast(`Invoice email sent to ${data.email} ✓`);
+    } catch (e) {
+      onToast(e.message || "Email send failed", "error");
+    } finally {
+      setEmailSending(false);
+    }
+  }
+
+  // WhatsApp — upload to Cloudinary first then open WA
+  async function handleWhatsApp() {
+    setWaLoading(true);
+    try {
+      const token = await getToken();
+      const res   = await fetch("/api/admin/get-reg-invoice-pdf", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+        body: JSON.stringify({
+          uid:              data.uid,
+          userName:         data.name,
+          userEmail:        data.email,
+          plan:             data.plan,
+          billingPeriod:    data.billingPeriod,
+          paymentMethod:    data.paymentMethod,
+          activeFrom:       data.activeFrom,
+          activeTo:         data.activeTo,
+          subscriptionType: data.subscriptionType,
+          uploadToCloudinary: true,
+        }),
+      });
+      const result = await res.json();
+      if (!res.ok) throw new Error(result.error || "Failed");
+
+      const isTrial  = data.subscriptionType === "trial";
+      const plan     = planLabel(data.plan);
+      const invoiceLink = result.cloudinaryUrl || "";
+
+      const lines = [
+        `Assalam-o-Alaikum ${data.name}! 👋`,
+        ``,
+        `Novexa ERP ka Registration Invoice attached hai.`,
+        ``,
+        `📋 *Invoice Details:*`,
+        `• Invoice #: ${result.invoiceNumber}`,
+        `• Plan: *${plan} Plan*${isTrial ? " (Free Trial)" : ""}`,
+        `• Active: ${data.activeFrom} → ${data.activeTo}`,
+        isTrial ? null : `• Amount: Rs. ${(result.amount || 0).toLocaleString("en-PK")}`,
+        isTrial ? null : `• Payment: ${fmtPayment(data.paymentMethod)}`,
+        ``,
+        invoiceLink ? `📄 Invoice PDF: ${invoiceLink}` : null,
+        ``,
+        `🌐 Login: https://novexaerp.com`,
+        ``,
+        `Shukriya! 🙏`,
+      ].filter(l => l !== null);
+
+      const waUrl = `https://wa.me/?text=${encodeURIComponent(lines.join("\n"))}`;
+      window.open(waUrl, "_blank");
+    } catch (e) {
+      onToast(e.message || "WhatsApp share failed", "error");
+    } finally {
+      setWaLoading(false);
+    }
+  }
+
+  const isTrial = data.subscriptionType === "trial";
+
+  return (
+    <div className="fixed inset-0 z-[80] flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(10px)" }}>
+      <div className="w-full max-w-md rounded-2xl overflow-hidden"
+        style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 24px 64px rgba(0,0,0,0.7)" }}>
+
+        {/* Header */}
+        <div className="px-6 py-5 flex items-center justify-between"
+          style={{ borderBottom: "1px solid rgba(255,255,255,0.07)", background: "linear-gradient(135deg,rgba(245,158,11,0.10),rgba(37,99,235,0.06))" }}>
+          <div>
+            <div className="flex items-center gap-2 mb-0.5">
+              <span className="text-xl">📄</span>
+              <h3 className="text-white font-black text-lg">Registration Invoice</h3>
+            </div>
+            <p className="text-gray-400 text-xs">{data.name} · {data.email}</p>
+          </div>
+          <button onClick={onClose}
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-all">✕</button>
+        </div>
+
+        {/* Invoice Preview */}
+        <div className="px-6 py-4" style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
+          {loading ? (
+            <div className="flex items-center justify-center gap-3 py-6">
+              <div className="w-5 h-5 rounded-full border-2 border-t-amber-400 border-transparent animate-spin" />
+              <span className="text-gray-400 text-sm">Invoice generate ho rahi hai...</span>
+            </div>
+          ) : error ? (
+            <div className="text-center py-4">
+              <p className="text-red-400 text-sm">{error}</p>
+            </div>
+          ) : pdfBase64 ? (
+            <div>
+              {/* Invoice summary card */}
+              <div className="rounded-xl p-4 flex flex-col gap-2"
+                style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500 text-xs uppercase tracking-widest font-bold">Invoice #</span>
+                  <span className="text-amber-300 text-sm font-mono font-bold">{invoiceNum}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500 text-xs uppercase tracking-widest font-bold">Plan</span>
+                  <span className="text-white text-sm font-semibold">{planLabel(data.plan)}{isTrial ? " (Trial)" : ""}</span>
+                </div>
+                <div className="flex items-center justify-between">
+                  <span className="text-gray-500 text-xs uppercase tracking-widest font-bold">Period</span>
+                  <span className="text-gray-300 text-xs">{data.activeFrom} → {data.activeTo}</span>
+                </div>
+                {!isTrial && amount !== null && (
+                  <div className="flex items-center justify-between">
+                    <span className="text-gray-500 text-xs uppercase tracking-widest font-bold">Amount</span>
+                    <span className="text-emerald-400 text-sm font-bold">Rs. {(amount || 0).toLocaleString("en-PK")}</span>
+                  </div>
+                )}
+              </div>
+
+              {/* Embedded PDF preview */}
+              <div className="mt-3 rounded-xl overflow-hidden" style={{ border: "1px solid rgba(255,255,255,0.08)" }}>
+                <iframe
+                  src={`data:application/pdf;base64,${pdfBase64}`}
+                  className="w-full"
+                  style={{ height: "260px" }}
+                  title="Invoice Preview"
+                />
+              </div>
+            </div>
+          ) : null}
+        </div>
+
+        {/* Action Buttons */}
+        <div className="px-6 py-4 flex flex-col gap-2.5">
+          {/* Print / Download */}
+          <button
+            onClick={handlePrint}
+            disabled={!pdfBase64 || loading}
+            className="flex items-center justify-center gap-3 w-full py-3 rounded-xl text-sm font-bold transition-all hover:scale-[1.02] disabled:opacity-40 disabled:scale-100"
+            style={{ background: "linear-gradient(135deg,rgba(245,158,11,0.2),rgba(245,158,11,0.1))", border: "1px solid rgba(245,158,11,0.35)", color: "#fbbf24" }}>
+            <span className="text-lg">🖨️</span>
+            Print / Download PDF
+          </button>
+
+          {/* Email */}
+          <button
+            onClick={handleEmail}
+            disabled={!pdfBase64 || loading || emailSending}
+            className="flex items-center justify-center gap-3 w-full py-3 rounded-xl text-sm font-bold transition-all hover:scale-[1.02] disabled:opacity-40 disabled:scale-100"
+            style={{
+              background: emailDone ? "linear-gradient(135deg,rgba(16,185,129,0.2),rgba(16,185,129,0.1))" : "linear-gradient(135deg,rgba(37,99,235,0.2),rgba(37,99,235,0.1))",
+              border: emailDone ? "1px solid rgba(16,185,129,0.4)" : "1px solid rgba(37,99,235,0.4)",
+              color: emailDone ? "#34d399" : "#60a5fa",
+            }}>
+            <span className="text-lg">{emailDone ? "✓" : "📧"}</span>
+            {emailSending ? "Email is being sent. Please wait..." : emailDone ? "Email sent successfully!" : `Email par bhejo (${data.email})`}
+          </button>
+
+          {/* WhatsApp */}
+          <button
+            onClick={handleWhatsApp}
+            disabled={!pdfBase64 || loading || waLoading}
+            className="flex items-center justify-center gap-3 w-full py-3 rounded-xl text-sm font-bold transition-all hover:scale-[1.02] disabled:opacity-40 disabled:scale-100"
+            style={{ background: "linear-gradient(135deg,rgba(37,211,102,0.2),rgba(18,140,126,0.1))", border: "1px solid rgba(37,211,102,0.4)", color: "#4ade80" }}>
+            <span className="text-lg">💬</span>
+            {waLoading ? "Sending via WhatsApp. Please wait..." : "Sent successfully via WhatsApp!"}
+          </button>
+
+          <button onClick={onClose}
+            className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/5"
+            style={{ color: "#6b7280", border: "1px solid rgba(255,255,255,0.07)" }}>
+            Band karo
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, onRenewSuccess }) {
   const [form, setForm] = useState(initial ? {
     name: initial.name || "", email: initial.email || "",
@@ -2915,6 +3354,10 @@ export default function AdminPanel() {
   const [confirm,       setConfirm]       = useState(null);
   const [search,        setSearch]        = useState("");
   const [toasts,        setToasts]        = useState([]);
+  // Registration success dialog
+  const [regSuccess,    setRegSuccess]    = useState(null); // { uid, name, email, password, plan, billingPeriod, paymentMethod, activeFrom, activeTo, subscriptionType }
+  // View invoice dialog
+  const [invoiceUser,   setInvoiceUser]   = useState(null); // same shape as regSuccess
   // Load activeTab from localStorage on mount, default to "users"
   const [activeTab,     setActiveTab]     = useState(() => {
     if (typeof window !== "undefined") {
@@ -3005,6 +3448,21 @@ export default function AdminPanel() {
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
         toast(`${form.name} registered successfully`);
+        setShowForm(false); setEditUser(null); fetchUsers();
+        // Show send-invoice dialog
+        setRegSuccess({
+          uid:              data.uid,
+          name:             form.name,
+          email:            form.email,
+          password:         form.password,
+          plan:             form.plan,
+          billingPeriod:    form.billingPeriod,
+          paymentMethod:    form.paymentMethod,
+          activeFrom:       form.activeFrom,
+          activeTo:         form.activeTo,
+          subscriptionType: form.subscriptionType,
+        });
+        return; // skip the setShowForm below (already done)
       }
       setShowForm(false); setEditUser(null); fetchUsers();
     } catch (err) { toast(err.message || "Save failed", "error"); }
@@ -3130,6 +3588,26 @@ export default function AdminPanel() {
             if (typeof window !== "undefined") localStorage.removeItem("adminSelectedUid");
           }}
           onToast={toast}
+        />
+      )}
+
+      {/* ── Registration Invoice Dialog ── */}
+      {regSuccess && (
+        <RegInvoiceDialog
+          data={regSuccess}
+          getToken={getToken}
+          onToast={toast}
+          onClose={() => setRegSuccess(null)}
+        />
+      )}
+
+      {/* ── View Invoice Dialog ── */}
+      {invoiceUser && (
+        <UserInvoiceDialog
+          data={invoiceUser}
+          getToken={getToken}
+          onToast={toast}
+          onClose={() => setInvoiceUser(null)}
         />
       )}
 
@@ -3536,6 +4014,20 @@ export default function AdminPanel() {
                             }} title="View Details"
                               className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-purple-500/20 hover:scale-110">
                               <span className="text-sm">👁️</span>
+                            </button>
+                            <button onClick={() => setInvoiceUser({
+                              uid:              u.uid,
+                              name:             u.name,
+                              email:            u.email,
+                              plan:             u.plan,
+                              billingPeriod:    u.billingPeriod,
+                              paymentMethod:    u.paymentMethod,
+                              activeFrom:       u.activeFrom,
+                              activeTo:         u.activeTo,
+                              subscriptionType: u.subscriptionType,
+                            })} title="View Invoice"
+                              className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-amber-500/20 hover:scale-110">
+                              <span className="text-sm">📄</span>
                             </button>
                             <button onClick={() => setEditUser(u)} title="Edit"
                               className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-white/10 hover:scale-110">

@@ -303,7 +303,15 @@ export default function LocationsManager({ uid, locations, onClose }) {
                       <span className="text-xl">{typeInfo.icon}</span>
                     </div>
                     <div className="flex-1 min-w-0">
-                      <p className="text-white font-semibold text-sm truncate">{loc.name}</p>
+                      <div className="flex items-center gap-1.5 flex-wrap">
+                        <p className="text-white font-semibold text-sm truncate">{loc.name}</p>
+                        {loc.isDefault && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded font-bold"
+                            style={{ background: "rgba(245,158,11,0.15)", border: "1px solid rgba(245,158,11,0.35)", color: "#fbbf24" }}>
+                            Default
+                          </span>
+                        )}
+                      </div>
                       <p className="text-gray-500 text-[11px]">
                         {typeInfo.label}{loc.address ? ` · ${loc.address}` : ""}
                       </p>
@@ -315,12 +323,14 @@ export default function LocationsManager({ uid, locations, onClose }) {
                         style={{ background: "rgba(59,130,246,0.15)", border: "1px solid rgba(59,130,246,0.3)", color: "#60a5fa" }}>
                         Edit
                       </button>
-                      <button
-                        onClick={() => setDeleteConf(loc)}
-                        className="px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all hover:scale-105"
-                        style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", color: "#f87171" }}>
-                        ✕
-                      </button>
+                      {!loc.isDefault && (
+                        <button
+                          onClick={() => setDeleteConf(loc)}
+                          className="px-3 py-1.5 rounded-lg text-[11px] font-semibold transition-all hover:scale-105"
+                          style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.3)", color: "#f87171" }}>
+                          ✕
+                        </button>
+                      )}
                     </div>
                   </div>
                 );

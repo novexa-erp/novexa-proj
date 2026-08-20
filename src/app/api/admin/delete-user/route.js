@@ -32,7 +32,15 @@ export async function POST(request) {
 
     const { adminAuth, adminDb } = await getAdminModules();
 
-    await adminAuth.updateUser(uid, { disabled: true });
+    // Auth user may have been deleted directly from Firebase console —
+    // ignore "user-not-found" and proceed to clean up Firestore anyway
+    try {
+      await adminAuth.updateUser(uid, { disabled: true });
+    } catch (authErr) {
+      if (authErr.code !== "auth/user-not-found") throw authErr;
+      // Auth record already gone — that's fine, continue with Firestore cleanup
+    }
+
     await adminDb.collection("users").doc(uid).update({
       status:    "deleted",
       deletedAt: new Date().toISOString(),

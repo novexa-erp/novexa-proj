@@ -1119,10 +1119,22 @@ function DigitalRegisterTab({ uid, userDoc }) {
   });
 
   // ── Stats ─────────────────────────────────────────────────────────────────────
-  const totalInvoices  = allInvoices.filter(i => !i.deleted).length;
-  const totalAmount    = allInvoices.filter(i => !i.deleted).reduce((s, i) => s + (Number(i.amount) || 0), 0);
-  const totalCollected = allInvoices.filter(i => !i.deleted).reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
-  const totalBalance   = allInvoices.filter(i => !i.deleted).reduce((s, i) => s + (Number(i.balance) || 0), 0);
+  // Helper: get real invoice amount excluding "Previous Balance" carry-forward lines and subtracting returns
+  function getStatActualAmt(inv) {
+    const isPrevBal = it => (it.description || "").startsWith("Previous Balance · INV-");
+    const itemsTotal = (inv.items || [])
+      .filter(it => !isPrevBal(it))
+      .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0);
+    const base = itemsTotal > 0 ? itemsTotal : (inv.actualAmount != null ? Number(inv.actualAmount) : Number(inv.amount) || 0);
+    const totalReturns = (inv._pastReturns || []).reduce((s, r) => s + (Number(r.returnAmount) || 0), 0);
+    return Math.max(0, base - totalReturns);
+  }
+
+  const activeInvoices = allInvoices.filter(i => !i.deleted);
+  const totalInvoices  = activeInvoices.length;
+  const totalAmount    = activeInvoices.reduce((s, i) => s + getStatActualAmt(i), 0);
+  const totalCollected = activeInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
+  const totalBalance   = activeInvoices.reduce((s, i) => s + Math.max(0, getStatActualAmt(i) - (Number(i.amountPaid) || 0)), 0);
 
   // ── Send email handler ───────────────────────────────────────────────────────
   async function handleSendEmail(inv) {
@@ -1397,8 +1409,8 @@ function DigitalRegisterTab({ uid, userDoc }) {
 
 // ── Main BillBookView component ───────────────────────────────────────────────
 const SUB_TABS = [
-  { id: "generate",  icon: "⚡", label: "Generate Bill Book" },
   { id: "register",  icon: "📒", label: "Digital Register"   },
+  { id: "generate",  icon: "⚡", label: "Generate Bill Book" },
   { id: "templates", icon: "📋", label: "Saved Templates"    },
   { id: "history",   icon: "📜", label: "Generation History" },
 ];

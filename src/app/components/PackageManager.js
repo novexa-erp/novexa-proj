@@ -16,7 +16,7 @@ const ALL_TABS = [
   { id: "analytics",   label: "Analytics",   icon: "📈" },
   { id: "hr",          label: "HR",          icon: "👔" },
   { id: "branches",    label: "Branches",    icon: "🏢" },
-  { id: "bill-book",   label: "Bill Book",   icon: "📖" },
+  { id: "bill-book",   label: "Digital Register", icon: "📒" },
   { id: "settings",    label: "Settings",    icon: "⚙️" },
   { id: "contact",     label: "Contact Us",  icon: "📞" },
   { id: "my-tickets",  label: "My Tickets",  icon: "🎫" },

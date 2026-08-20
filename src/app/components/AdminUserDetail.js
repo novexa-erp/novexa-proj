@@ -3520,6 +3520,243 @@ function BackupTab({ uid: targetUid, userName, getToken }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+   DEVICES TAB
+══════════════════════════════════════════════════════════════════════ */
+function DevicesTab({ uid, getToken, onToast, maxDevices }) {
+  const [sessions,  setSessions]  = useState([]);
+  const [loading,   setLoading]   = useState(true);
+  const [error,     setError]     = useState(null);
+  const [evicting,  setEvicting]  = useState(null); // sessionId being evicted
+
+  const load = useCallback(async () => {
+    setLoading(true); setError(null);
+    try {
+      const token = await getToken();
+      const res   = await fetch(`/api/admin/get-user-sessions?uid=${uid}`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Failed to load sessions");
+      setSessions(d.sessions || []);
+    } catch (e) { setError(e.message); }
+    setLoading(false);
+  }, [uid, getToken]);
+
+  useEffect(() => { load(); }, [load]);
+
+  async function handleEvict(sessionId) {
+    setEvicting(sessionId);
+    try {
+      const token = await getToken();
+      const res   = await fetch("/api/admin/evict-session", {
+        method:  "POST",
+        headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+        body:    JSON.stringify({ uid, sessionId }),
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error || "Evict failed");
+      onToast("Session evict kar di ✓");
+      await load();
+    } catch (e) { onToast(e.message || "Evict failed", "error"); }
+    setEvicting(null);
+  }
+
+  function fmtDT(val) {
+    if (!val) return "—";
+    try {
+      const d = new Date(val);
+      if (isNaN(d)) return "—";
+      return d.toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })
+        + " " + d.toLocaleTimeString("en-PK", { hour: "2-digit", minute: "2-digit" });
+    } catch { return "—"; }
+  }
+
+  function timeAgo(val) {
+    if (!val) return "—";
+    try {
+      const diff = Date.now() - new Date(val).getTime();
+      if (isNaN(diff)) return "—";
+      const s = Math.floor(diff / 1000);
+      if (s < 60)   return `${s}s ago`;
+      const m = Math.floor(s / 60);
+      if (m < 60)   return `${m}m ago`;
+      const h = Math.floor(m / 60);
+      if (h < 24)   return `${h}h ago`;
+      const day = Math.floor(h / 24);
+      return `${day}d ago`;
+    } catch { return "—"; }
+  }
+
+  function getDeviceIcon(device = "") {
+    const d = device.toLowerCase();
+    if (d.includes("iphone"))          return "📱";
+    if (d.includes("ipad"))            return "📱";
+    if (d.includes("android phone"))   return "📱";
+    if (d.includes("android tablet"))  return "📱";
+    if (d.includes("mac"))             return "💻";
+    if (d.includes("windows"))         return "🖥️";
+    if (d.includes("linux"))           return "🖥️";
+    return "💻";
+  }
+
+  function getEvictReason(s) {
+    if (s.evictedBy === "admin_force_evict")       return "Admin ne hatayi";
+    if (s.evictedBy === "new_login_exceeded_limit") return "Naya login (limit paar)";
+    if (s.evictedBy === "subscription_expired")     return "Subscription khatam";
+    if (s.evictedBy === "password_changed")         return "Password badla";
+    if (s.loggedOutAt)                              return "Logout";
+    return s.evictedBy || "Inactive";
+  }
+
+  const active   = sessions.filter(s => s.active);
+  const inactive = sessions.filter(s => !s.active);
+
+  if (loading) return (
+    <div className="flex items-center justify-center h-64 gap-3">
+      <div className="w-8 h-8 rounded-full border-4 border-transparent animate-spin"
+        style={{ borderTopColor: "#2563EB", borderRightColor: "#F59E0B" }} />
+      <span className="text-gray-400 text-sm">Sessions load ho rahi hain...</span>
+    </div>
+  );
+
+  if (error) return (
+    <div className="flex flex-col items-center justify-center h-64 gap-4">
+      <span className="text-4xl">⚠️</span>
+      <p className="text-red-400 text-sm font-semibold">{error}</p>
+      <button onClick={load} className="px-4 py-2 rounded-xl text-xs font-semibold"
+        style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.3)", color: "#60a5fa" }}>
+        Retry
+      </button>
+    </div>
+  );
+
+  return (
+    <div className="space-y-6">
+      {/* ── Header stats ── */}
+      <div className="grid grid-cols-3 gap-4">
+        {[
+          { label: "Active Sessions",  value: active.length,   color: "#10b981", bg: "rgba(16,185,129,0.08)",  border: "rgba(16,185,129,0.2)"  },
+          { label: "Max Devices",      value: maxDevices || 1, color: "#f59e0b", bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.2)"  },
+          { label: "Total Sessions",   value: sessions.length, color: "#60a5fa", bg: "rgba(96,165,250,0.08)",  border: "rgba(96,165,250,0.2)"  },
+        ].map(stat => (
+          <div key={stat.label} className="rounded-xl p-4 text-center"
+            style={{ background: stat.bg, border: `1px solid ${stat.border}` }}>
+            <div className="text-2xl font-black" style={{ color: stat.color }}>{stat.value}</div>
+            <div className="text-xs text-gray-400 mt-1 font-semibold">{stat.label}</div>
+          </div>
+        ))}
+      </div>
+
+      {/* ── Active sessions ── */}
+      <div>
+        <div className="flex items-center justify-between mb-3">
+          <h3 className="text-white font-bold text-sm flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse inline-block" />
+            Active Sessions ({active.length})
+          </h3>
+          <button onClick={load} className="text-xs text-gray-500 hover:text-gray-300 transition-colors flex items-center gap-1">
+            ↻ Refresh
+          </button>
+        </div>
+
+        {active.length === 0 ? (
+          <div className="rounded-xl p-8 text-center" style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)" }}>
+            <p className="text-4xl mb-3">📵</p>
+            <p className="text-gray-400 text-sm font-semibold">Koi active session nahi hai</p>
+            <p className="text-gray-600 text-xs mt-1">User abhi logged out hai</p>
+          </div>
+        ) : (
+          <div className="space-y-3">
+            {active.map(s => (
+              <div key={s.id} className="rounded-xl p-4"
+                style={{ background: "rgba(16,185,129,0.04)", border: "1px solid rgba(16,185,129,0.2)" }}>
+                <div className="flex items-start justify-between gap-3">
+                  <div className="flex items-center gap-3 flex-1 min-w-0">
+                    <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                      style={{ background: "rgba(16,185,129,0.12)", border: "1px solid rgba(16,185,129,0.25)" }}>
+                      {getDeviceIcon(s.device)}
+                    </div>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <span className="text-white font-bold text-sm">{s.device || "Unknown Device"}</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full"
+                          style={{ background: "rgba(16,185,129,0.15)", color: "#10b981", border: "1px solid rgba(16,185,129,0.3)" }}>
+                          ● ACTIVE
+                        </span>
+                      </div>
+                      <div className="text-gray-400 text-xs mt-0.5">{s.browser || "Unknown Browser"}</div>
+                      <div className="flex flex-wrap gap-x-4 gap-y-1 mt-2">
+                        <span className="text-gray-500 text-[11px]">🌐 {s.ip || "—"}</span>
+                        <span className="text-gray-500 text-[11px]">🕐 Login: {fmtDT(s.createdAt)}</span>
+                        <span className="text-gray-500 text-[11px]">👁 Last seen: {timeAgo(s.lastSeen)}</span>
+                      </div>
+                    </div>
+                  </div>
+                  <button
+                    onClick={() => handleEvict(s.id)}
+                    disabled={evicting === s.id}
+                    className="flex-shrink-0 px-3 py-2 rounded-lg text-xs font-bold transition-all hover:scale-105 disabled:opacity-50 disabled:scale-100"
+                    style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171" }}>
+                    {evicting === s.id ? "..." : "⊘ Kick"}
+                  </button>
+                </div>
+                {/* UA string */}
+                {s.ua && (
+                  <div className="mt-2 px-3 py-2 rounded-lg text-[10px] text-gray-600 font-mono break-all"
+                    style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.04)" }}>
+                    {s.ua}
+                  </div>
+                )}
+              </div>
+            ))}
+          </div>
+        )}
+      </div>
+
+      {/* ── Inactive / history ── */}
+      {inactive.length > 0 && (
+        <div>
+          <h3 className="text-gray-500 font-bold text-sm mb-3 flex items-center gap-2">
+            <span className="w-2 h-2 rounded-full bg-gray-600 inline-block" />
+            Session History ({inactive.length})
+          </h3>
+          <div className="space-y-2">
+            {inactive.map(s => (
+              <div key={s.id} className="rounded-xl p-3"
+                style={{ background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.05)" }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-lg flex items-center justify-center text-lg flex-shrink-0 opacity-50"
+                    style={{ background: "rgba(255,255,255,0.04)" }}>
+                    {getDeviceIcon(s.device)}
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <span className="text-gray-400 font-semibold text-xs">{s.device || "Unknown Device"}</span>
+                      <span className="text-gray-500 text-[10px]">·</span>
+                      <span className="text-gray-500 text-[10px]">{s.browser || "Unknown Browser"}</span>
+                      <span className="text-[10px] font-semibold px-1.5 py-0.5 rounded"
+                        style={{ background: "rgba(107,114,128,0.15)", color: "#6b7280", border: "1px solid rgba(107,114,128,0.2)" }}>
+                        {getEvictReason(s)}
+                      </span>
+                    </div>
+                    <div className="flex flex-wrap gap-x-4 gap-y-0.5 mt-1">
+                      <span className="text-gray-600 text-[11px]">🌐 {s.ip || "—"}</span>
+                      <span className="text-gray-600 text-[11px]">Login: {fmtDT(s.createdAt)}</span>
+                      {s.loggedOutAt && <span className="text-gray-600 text-[11px]">Logout: {fmtDT(s.loggedOutAt)}</span>}
+                      {s.evictedAt   && <span className="text-gray-600 text-[11px]">Evicted: {fmtDT(s.evictedAt)}</span>}
+                    </div>
+                  </div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
    SIDEBAR TABS config
 ══════════════════════════════════════════════════════════════════════ */
 const TABS = [
@@ -3531,6 +3768,7 @@ const TABS = [
   { id:"suppliers", icon:"🏭", label:"Suppliers"  },
   { id:"addons",    icon:"⚡", label:"Add-ons"    },
   { id:"tickets",   icon:"🎫", label:"Tickets"    },
+  { id:"devices",   icon:"🖥️", label:"Devices"    },
   { id:"trash",     icon:"🗑️", label:"Trash"      },
   { id:"activity",  icon:"📋", label:"Activity"   },
   { id:"backup",    icon:"💾", label:"Backup"     },
@@ -3624,10 +3862,16 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
                   .flat().filter(i=>i.adminTrash).length;
                 if (n>0) badge = n;
               }
+              // devices badge — show active session count from user doc (lastDevice means at least 1 recent session)
+              if (tab.id==="devices" && data?.user?.lastDevice) {
+                badge = "●";
+              }
               // tickets badge — show Open count (loaded lazily, so just show dot if tab active)
-              const ticketBadgeColor = tab.id==="tickets"
-                ? { bg:"rgba(59,130,246,0.2)", color:"#60a5fa", border:"1px solid rgba(59,130,246,0.3)" }
-                : { bg:"rgba(248,113,113,0.2)", color:"#f87171", border:"1px solid rgba(248,113,113,0.3)" };
+              const badgeColor = tab.id==="devices"
+                ? { bg:"rgba(16,185,129,0.2)", color:"#10b981", border:"1px solid rgba(16,185,129,0.3)" }
+                : tab.id==="tickets"
+                  ? { bg:"rgba(59,130,246,0.2)", color:"#60a5fa", border:"1px solid rgba(59,130,246,0.3)" }
+                  : { bg:"rgba(248,113,113,0.2)", color:"#f87171", border:"1px solid rgba(248,113,113,0.3)" };
               return (
                 <button key={tab.id} onClick={() => {
                   setActiveTab(tab.id);
@@ -3643,7 +3887,7 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
                   <span className="text-xs">{tab.label}</span>
                   {badge!==null && (
                     <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-bold"
-                      style={{ background:ticketBadgeColor.bg, color:ticketBadgeColor.color, border:ticketBadgeColor.border }}>
+                      style={{ background:badgeColor.bg, color:badgeColor.color, border:badgeColor.border }}>
                       {badge}
                     </span>
                   )}
@@ -3681,6 +3925,7 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
                 {activeTab==="suppliers" && <SuppliersTab suppliers={data.suppliers} orders={data.orders} receipts={data.receipts||[]} supplierReturns={data.supplierReturns||[]} />}
                 {activeTab==="addons"    && <AddonsTab uid={uid} user={data.user} getToken={getToken} onToast={onToast} />}
                 {activeTab==="tickets"   && <TicketsTab uid={uid} getToken={getToken} onToast={onToast} />}
+                {activeTab==="devices"   && <DevicesTab uid={uid} getToken={getToken} onToast={onToast} maxDevices={data.user?.maxDevices} />}
                 {activeTab==="trash"     && <TrashTab uid={uid} data={data} getToken={getToken} onToast={onToast} onRefresh={loadData} />}
                 {activeTab==="activity"  && <ActivityTab activityLogs={data.activityLogs} />}
                 {activeTab==="backup"    && <BackupTab uid={uid} userName={data.user?.name} getToken={getToken} />}

@@ -153,9 +153,9 @@ function InvoiceTemplate({ inv, userDoc, payments = [], customerTotalBalance = n
           <div style={{ marginTop: 10, display: "inline-flex", alignItems: "center",
             gap: 6, padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700,
             letterSpacing: "0.05em", textTransform: "uppercase",
-            background: actualBalance === 0 ? "#dcfce7" : amountPaid > 0 ? "#fef3c7" : "#fee2e2",
-            color: actualBalance === 0 ? "#16a34a" : amountPaid > 0 ? "#d97706" : "#dc2626" }}>
-            ● {actualBalance === 0 && actualAmount > 0 ? "Paid" : amountPaid > 0 ? "Partial" : "Unpaid"}
+            background: (inv.deleted || inv.adminTrash) ? "#f3f4f6" : actualBalance === 0 ? "#dcfce7" : amountPaid > 0 ? "#fef3c7" : "#fee2e2",
+            color:      (inv.deleted || inv.adminTrash) ? "#6b7280" : actualBalance === 0 ? "#16a34a" : amountPaid > 0 ? "#d97706" : "#dc2626" }}>
+            ● {(inv.deleted || inv.adminTrash) ? "Deleted" : actualBalance === 0 && actualAmount > 0 ? "Paid" : amountPaid > 0 ? "Partial" : "Unpaid"}
           </div>
         </div>
       </div>
