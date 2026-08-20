@@ -22,6 +22,11 @@ export const metadata = {
   description: "Smart Business Management by Novexa",
   manifest: "/manifest.json",
   themeColor: "#F59E0B",
+
+  verification: {
+    google: "LGeC46tXYlwHOD3-9_1RN0R1M9RPcsz4xs1iFOeFHNg",
+  },
+
   appleWebApp: {
     capable: true,
     statusBarStyle: "black-translucent",
@@ -38,12 +43,23 @@ export default function RootLayout({ children }) {
       <head>
         <link rel="manifest" href="/manifest.json" />
         <meta name="theme-color" content="#F59E0B" />
+
+        {/* Google Search Console verification */}
+        <meta
+          name="google-site-verification"
+          content="LGeC46tXYlwHOD3-9_1RN0R1M9RPcsz4xs1iFOeFHNg"
+        />
+
         {/* iOS PWA support */}
         <meta name="apple-mobile-web-app-capable" content="yes" />
-        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta
+          name="apple-mobile-web-app-status-bar-style"
+          content="black-translucent"
+        />
         <meta name="apple-mobile-web-app-title" content="Novexa" />
         <link rel="apple-touch-icon" href="/images/Novexa N Logo.png" />
       </head>
+
       <body className={`${poppins.className} min-h-full flex flex-col`}>
         {children}
       </body>
