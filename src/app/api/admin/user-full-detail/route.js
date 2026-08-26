@@ -38,17 +38,17 @@ export async function GET(request) {
     if (!admin) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
     const { searchParams } = new URL(request.url);
-    const uid = searchParams.get("uid");
+    const uid   = searchParams.get("uid");
+    const scope = searchParams.get("scope") || "profile"; // default = fast profile-only load
     if (!uid) return NextResponse.json({ error: "Missing uid" }, { status: 400 });
 
     const { adminAuth, adminDb } = await getAdminModules();
 
-    // ── User profile ──────────────────────────────────────────────────────────
+    // ── Always fetch user profile + auth record (needed in every scope) ───────
     const snap = await adminDb.collection("users").doc(uid).get();
     if (!snap.exists) return NextResponse.json({ error: "User not found" }, { status: 404 });
     const userData = serialize({ uid, ...snap.data() });
 
-    // ── Auth record ───────────────────────────────────────────────────────────
     let authRecord = null;
     try {
       const rec = await adminAuth.getUser(uid);
@@ -60,14 +60,107 @@ export async function GET(request) {
       };
     } catch { /* ok */ }
 
-    // ── Activity logs ─────────────────────────────────────────────────────────
-    const logsSnap = await adminDb
-      .collection("users").doc(uid)
-      .collection("activityLogs")
-      .orderBy("timestamp", "desc").limit(20).get();
-    const activityLogs = logsSnap.docs.map(d => serialize({ id: d.id, ...d.data() }));
+    // ── profile scope: just user + auth (fast!) ───────────────────────────────
+    if (scope === "profile") {
+      return NextResponse.json({ user: userData, authRecord });
+    }
 
-    // ── Business subcollections ───────────────────────────────────────────────
+    // ── activity scope ────────────────────────────────────────────────────────
+    if (scope === "activity") {
+      const logsSnap = await adminDb
+        .collection("users").doc(uid)
+        .collection("activityLogs")
+        .orderBy("timestamp", "desc").limit(50).get();
+      const activityLogs = logsSnap.docs.map(d => serialize({ id: d.id, ...d.data() }));
+      return NextResponse.json({ user: userData, authRecord, activityLogs });
+    }
+
+    // ── customers scope ───────────────────────────────────────────────────────
+    if (scope === "customers") {
+      const [customers, invoices, payments] = await Promise.all([
+        getSubcollection(adminDb, uid, "customers"),
+        getSubcollection(adminDb, uid, "invoices"),
+        getSubcollection(adminDb, uid, "payments"),
+      ]);
+      return NextResponse.json({
+        user: userData, authRecord,
+        customers: serialize(customers),
+        invoices:  serialize(invoices),
+        payments:  serialize(payments),
+      });
+    }
+
+    // ── invoices scope ────────────────────────────────────────────────────────
+    if (scope === "invoices") {
+      const invoices = await getSubcollection(adminDb, uid, "invoices");
+      return NextResponse.json({ user: userData, authRecord, invoices: serialize(invoices) });
+    }
+
+    // ── products scope ────────────────────────────────────────────────────────
+    if (scope === "products") {
+      const products = await getSubcollection(adminDb, uid, "products");
+      return NextResponse.json({ user: userData, authRecord, products: serialize(products) });
+    }
+
+    // ── payments scope ────────────────────────────────────────────────────────
+    if (scope === "payments") {
+      const payments = await getSubcollection(adminDb, uid, "payments");
+      return NextResponse.json({ user: userData, authRecord, payments: serialize(payments) });
+    }
+
+    // ── suppliers scope (most expensive — nested orders/receipts/returns) ─────
+    if (scope === "suppliers") {
+      const suppliers = await getSubcollection(adminDb, uid, "suppliers");
+      const orders   = [];
+      const receipts = [];
+      const supplierReturns = [];
+      await Promise.all(
+        suppliers.map(async sup => {
+          const [ordSnap, recSnap, retSnap] = await Promise.all([
+            adminDb.collection("users").doc(uid).collection("suppliers").doc(sup.id).collection("orders").get(),
+            adminDb.collection("users").doc(uid).collection("suppliers").doc(sup.id).collection("receipts").get(),
+            adminDb.collection("users").doc(uid).collection("suppliers").doc(sup.id).collection("returns").get(),
+          ]);
+          ordSnap.docs.forEach(d => orders.push(serialize({ id: d.id, _supplierId: sup.id, _supplierName: sup.name || "Unknown Supplier", ...d.data() })));
+          recSnap.docs.forEach(d => receipts.push(serialize({ id: d.id, _supplierId: sup.id, ...d.data() })));
+          retSnap.docs.forEach(d => supplierReturns.push(serialize({ id: d.id, _supplierId: sup.id, ...d.data() })));
+        })
+      );
+      return NextResponse.json({
+        user: userData, authRecord,
+        suppliers: serialize(suppliers),
+        orders, receipts, supplierReturns,
+      });
+    }
+
+    // ── trash scope — needs invoices, customers, products, payments, suppliers+orders ──
+    if (scope === "trash") {
+      const [customers, invoices, products, payments, suppliers] = await Promise.all([
+        getSubcollection(adminDb, uid, "customers"),
+        getSubcollection(adminDb, uid, "invoices"),
+        getSubcollection(adminDb, uid, "products"),
+        getSubcollection(adminDb, uid, "payments"),
+        getSubcollection(adminDb, uid, "suppliers"),
+      ]);
+      const orders = [];
+      await Promise.all(
+        suppliers.map(async sup => {
+          const ordSnap = await adminDb.collection("users").doc(uid).collection("suppliers").doc(sup.id).collection("orders").get();
+          ordSnap.docs.forEach(d => orders.push(serialize({ id: d.id, _supplierId: sup.id, _supplierName: sup.name || "Unknown Supplier", ...d.data() })));
+        })
+      );
+      return NextResponse.json({
+        user: userData, authRecord,
+        customers: serialize(customers),
+        invoices:  serialize(invoices),
+        products:  serialize(products),
+        payments:  serialize(payments),
+        suppliers: serialize(suppliers),
+        orders,
+      });
+    }
+
+    // ── fallback: legacy full load (backward compat) ──────────────────────────
     const [customers, invoices, products, payments, suppliers] = await Promise.all([
       getSubcollection(adminDb, uid, "customers"),
       getSubcollection(adminDb, uid, "invoices"),
@@ -75,11 +168,12 @@ export async function GET(request) {
       getSubcollection(adminDb, uid, "payments"),
       getSubcollection(adminDb, uid, "suppliers"),
     ]);
-
-    // ── Supplier orders + receipts + returns (nested) ────────────────────────
-    const orders   = [];
-    const receipts = [];
-    const supplierReturns = [];
+    const logsSnap = await adminDb
+      .collection("users").doc(uid)
+      .collection("activityLogs")
+      .orderBy("timestamp", "desc").limit(20).get();
+    const activityLogs = logsSnap.docs.map(d => serialize({ id: d.id, ...d.data() }));
+    const orders = [], receipts = [], supplierReturns = [];
     await Promise.all(
       suppliers.map(async sup => {
         const [ordSnap, recSnap, retSnap] = await Promise.all([
@@ -87,38 +181,18 @@ export async function GET(request) {
           adminDb.collection("users").doc(uid).collection("suppliers").doc(sup.id).collection("receipts").get(),
           adminDb.collection("users").doc(uid).collection("suppliers").doc(sup.id).collection("returns").get(),
         ]);
-        ordSnap.docs.forEach(d => orders.push(serialize({
-          id: d.id,
-          _supplierId: sup.id,
-          _supplierName: sup.name || "Unknown Supplier",
-          ...d.data(),
-        })));
-        recSnap.docs.forEach(d => receipts.push(serialize({
-          id: d.id,
-          _supplierId: sup.id,
-          ...d.data(),
-        })));
-        retSnap.docs.forEach(d => supplierReturns.push(serialize({
-          id: d.id,
-          _supplierId: sup.id,
-          ...d.data(),
-        })));
+        ordSnap.docs.forEach(d => orders.push(serialize({ id: d.id, _supplierId: sup.id, _supplierName: sup.name || "Unknown Supplier", ...d.data() })));
+        recSnap.docs.forEach(d => receipts.push(serialize({ id: d.id, _supplierId: sup.id, ...d.data() })));
+        retSnap.docs.forEach(d => supplierReturns.push(serialize({ id: d.id, _supplierId: sup.id, ...d.data() })));
       })
     );
-
     return NextResponse.json({
-      user:            userData,
-      authRecord,
-      activityLogs,
-      customers:       serialize(customers),
-      invoices:        serialize(invoices),
-      products:        serialize(products),
-      payments:        serialize(payments),
-      suppliers:       serialize(suppliers),
-      orders,
-      receipts,
-      supplierReturns,
+      user: userData, authRecord, activityLogs,
+      customers: serialize(customers), invoices: serialize(invoices),
+      products:  serialize(products),  payments:  serialize(payments),
+      suppliers: serialize(suppliers), orders, receipts, supplierReturns,
     });
+
   } catch (err) {
     console.error("[user-full-detail]", err);
     return NextResponse.json({ error: err.message }, { status: 500 });

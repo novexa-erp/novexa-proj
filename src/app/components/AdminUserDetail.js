@@ -122,10 +122,16 @@ function BackBtn({ onClick }) {
 /* ══════════════════════════════════════════════════════════════════════
    PROFILE TAB
 ══════════════════════════════════════════════════════════════════════ */
-function ProfileTab({ data }) {
+function ProfileTab({ data, uid, getToken, onToast }) {
   const { user, authRecord } = data;
   const ss = STATUS_STYLE[user.status] || STATUS_STYLE.active;
   const dl = daysLeft(user.activeTo);
+
+  // ── Password change state ─────────────────────────────────────────────────
+  const [newPass,      setNewPass]      = useState("");
+  const [showPass,     setShowPass]     = useState(false);
+  const [savingPass,   setSavingPass]   = useState(false);
+  const [passChanged,  setPassChanged]  = useState(false);
 
   // ── parse gmail history (stored as array in Firestore) ───────────────────
   const gmailHistory = Array.isArray(user.gmailHistory)
@@ -287,6 +293,137 @@ function ProfileTab({ data }) {
             ))}
           </div>
         )}
+      </div>
+
+      {/* ── Change Password Section ── */}
+      <div>
+        <SectionHead icon="🔑" label="Account Password" />
+        <div className="rounded-xl p-4 flex flex-col gap-4"
+          style={{ background:"rgba(37,99,235,0.04)", border:"1px solid rgba(37,99,235,0.18)" }}>
+
+          {/* Info row */}
+          <div className="flex items-start gap-3 px-1">
+            <span className="text-lg mt-0.5">ℹ️</span>
+            <p className="text-gray-300 text-xs leading-relaxed">
+              Yahan se user ka Firebase login password seedha reset kar saktay hain. User ko koi email nahi
+              jayegi — password turant update ho jata hai. Minimum 8 characters required.
+            </p>
+          </div>
+
+          {/* New password input */}
+          <div className="flex flex-col gap-2">
+            <label className="text-[10px] uppercase tracking-widest font-bold text-gray-300">
+              New Password
+            </label>
+            <div className="flex gap-2">
+              <div className="relative flex-1">
+                <input
+                  type={showPass ? "text" : "password"}
+                  value={newPass}
+                  onChange={e => { setNewPass(e.target.value); setPassChanged(false); }}
+                  placeholder="Minimum 8 characters..."
+                  className="w-full px-4 py-3 rounded-xl text-sm font-mono pr-12 outline-none transition-all"
+                  style={{
+                    background: "rgba(255,255,255,0.05)",
+                    border: "1px solid rgba(255,255,255,0.12)",
+                    color: "#fff",
+                    caretColor: "#60a5fa",
+                  }}
+                  onFocus={e => e.target.style.borderColor = "rgba(37,99,235,0.6)"}
+                  onBlur={e  => e.target.style.borderColor = "rgba(255,255,255,0.12)"}
+                />
+                <button
+                  type="button"
+                  onClick={() => setShowPass(v => !v)}
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-gray-300 hover:text-white transition-colors text-base"
+                  title={showPass ? "Hide password" : "Show password"}
+                >
+                  {showPass ? "🙈" : "👁️"}
+                </button>
+              </div>
+              <button
+                onClick={async () => {
+                  const trimmed = newPass.trim();
+                  if (trimmed.length < 8) {
+                    onToast?.("Password kam se kam 8 characters ka hona chahiye", "error");
+                    return;
+                  }
+                  setSavingPass(true);
+                  try {
+                    const token = await getToken();
+                    const res   = await fetch("/api/admin/update-user", {
+                      method:  "POST",
+                      headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+                      body:    JSON.stringify({ uid, newPassword: trimmed }),
+                    });
+                    const d = await res.json();
+                    if (!res.ok) throw new Error(d.error);
+                    setPassChanged(true);
+                    setNewPass("");
+                    onToast?.("Password successfully update ho gaya ✓", "success");
+                  } catch (err) {
+                    onToast?.(err.message || "Password update fail ho gaya", "error");
+                  }
+                  setSavingPass(false);
+                }}
+                disabled={savingPass || newPass.trim().length === 0}
+                className="flex items-center gap-2 px-5 py-3 rounded-xl text-sm font-bold transition-all flex-shrink-0"
+                style={{
+                  background: savingPass || newPass.trim().length === 0
+                    ? "rgba(255,255,255,0.05)"
+                    : "linear-gradient(135deg,rgba(37,99,235,0.3),rgba(245,158,11,0.15))",
+                  border: savingPass || newPass.trim().length === 0
+                    ? "1px solid rgba(255,255,255,0.08)"
+                    : "1px solid rgba(37,99,235,0.4)",
+                  color: savingPass || newPass.trim().length === 0 ? "#4b5563" : "#fff",
+                  cursor: savingPass || newPass.trim().length === 0 ? "not-allowed" : "pointer",
+                }}
+              >
+                {savingPass
+                  ? <><span className="w-4 h-4 rounded-full border-2 border-t-white border-transparent animate-spin inline-block" /> Updating...</>
+                  : "Update Password"
+                }
+              </button>
+            </div>
+
+            {/* Strength indicator */}
+            {newPass.length > 0 && (
+              <div className="flex items-center gap-2 px-1">
+                <div className="flex gap-1">
+                  {[1,2,3,4].map(i => (
+                    <div key={i} className="h-1 w-8 rounded-full transition-all"
+                      style={{
+                        background: newPass.length >= i * 3
+                          ? i <= 1 ? "#f87171" : i <= 2 ? "#fbbf24" : i <= 3 ? "#60a5fa" : "#34d399"
+                          : "rgba(255,255,255,0.1)"
+                      }} />
+                  ))}
+                </div>
+                <span className="text-[10px] font-semibold"
+                  style={{
+                    color: newPass.length < 4 ? "#f87171"
+                         : newPass.length < 7  ? "#fbbf24"
+                         : newPass.length < 10 ? "#60a5fa"
+                         : "#34d399"
+                  }}>
+                  {newPass.length < 4 ? "Weak" : newPass.length < 7 ? "Fair" : newPass.length < 10 ? "Good" : "Strong"}
+                </span>
+                <span className="text-[10px] text-gray-300 ml-auto">{newPass.length} chars</span>
+              </div>
+            )}
+
+            {/* Success feedback */}
+            {passChanged && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                style={{ background:"rgba(52,211,153,0.1)", border:"1px solid rgba(52,211,153,0.25)" }}>
+                <span>✅</span>
+                <span className="text-xs font-semibold" style={{ color:"#34d399" }}>
+                  Password update ho gaya — ab se user naya password use karay ga
+                </span>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
     </div>
@@ -3777,6 +3914,19 @@ const TABS = [
 /* ══════════════════════════════════════════════════════════════════════
    MAIN EXPORT
 ══════════════════════════════════════════════════════════════════════ */
+// Which API scope each tab needs
+const TAB_SCOPE = {
+  profile:   "profile",
+  customers: "customers",
+  invoices:  "invoices",
+  products:  "products",
+  payments:  "payments",
+  suppliers: "suppliers",
+  activity:  "activity",
+  trash:     "trash",
+  // addons / tickets / devices / backup fetch their own data independently
+};
+
 export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
   const [activeTab, setActiveTab] = useState(() => {
     if (typeof window !== "undefined") {
@@ -3784,27 +3934,116 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
     }
     return "profile";
   });
-  const [data,      setData]      = useState(null);
-  const [loading,   setLoading]   = useState(true);
-  const [error,     setError]     = useState(null);
 
-  const loadData = useCallback(async () => {
-    setLoading(true); setError(null);
+  // profileData: user + authRecord — always loaded first, shown in header
+  const [profileData,  setProfileData]  = useState(null);
+  const [profileLoad,  setProfileLoad]  = useState(true);
+  const [profileErr,   setProfileErr]   = useState(null);
+
+  // per-tab cache: { customers: {...}, invoices: {...}, ... }
+  const [tabCache,     setTabCache]     = useState({});
+  // which tabs are currently loading
+  const [tabLoading,   setTabLoading]   = useState({});
+  const [tabError,     setTabError]     = useState({});
+
+  // ── fetch a specific scope and merge into cache ────────────────────────────
+  const fetchScope = useCallback(async (scope, force = false) => {
+    if (!force && tabCache[scope]) return; // already cached
+    setTabLoading(prev => ({ ...prev, [scope]: true }));
+    setTabError(prev => ({ ...prev, [scope]: null }));
     try {
       const token = await getToken();
-      const res   = await fetch(`/api/admin/user-full-detail?uid=${uid}`, {
+      const res   = await fetch(`/api/admin/user-full-detail?uid=${uid}&scope=${scope}`, {
         headers: { authorization: `Bearer ${token}` },
       });
       const d = await res.json();
       if (!res.ok) throw new Error(d.error);
-      setData(d);
-    } catch (err) { setError(err.message); }
-    setLoading(false);
-  }, [uid, getToken]);
+      // also refresh profileData (user field) so header stays current
+      if (d.user) setProfileData(prev => prev ? { ...prev, user: d.user, authRecord: d.authRecord } : d);
+      setTabCache(prev => ({ ...prev, [scope]: d }));
+    } catch (err) {
+      setTabError(prev => ({ ...prev, [scope]: err.message }));
+    }
+    setTabLoading(prev => ({ ...prev, [scope]: false }));
+  }, [uid, getToken, tabCache]);
 
-  useEffect(() => { loadData(); }, [loadData]);
+  // ── initial load: only profile scope ──────────────────────────────────────
+  useEffect(() => {
+    (async () => {
+      setProfileLoad(true); setProfileErr(null);
+      try {
+        const token = await getToken();
+        const res   = await fetch(`/api/admin/user-full-detail?uid=${uid}&scope=profile`, {
+          headers: { authorization: `Bearer ${token}` },
+        });
+        const d = await res.json();
+        if (!res.ok) throw new Error(d.error);
+        setProfileData(d);
+        setTabCache(prev => ({ ...prev, profile: d }));
+      } catch (err) { setProfileErr(err.message); }
+      setProfileLoad(false);
+    })();
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [uid]);
 
-  const ss = data ? (STATUS_STYLE[data.user?.status] || STATUS_STYLE.active) : null;
+  // ── fetch tab data when tab becomes active ─────────────────────────────────
+  useEffect(() => {
+    const scope = TAB_SCOPE[activeTab];
+    if (scope && scope !== "profile") fetchScope(scope);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [activeTab]);
+
+  // ── refresh current tab ────────────────────────────────────────────────────
+  const refreshCurrent = useCallback(async () => {
+    // always refresh profile (header data)
+    setProfileLoad(true);
+    try {
+      const token = await getToken();
+      const res   = await fetch(`/api/admin/user-full-detail?uid=${uid}&scope=profile`, {
+        headers: { authorization: `Bearer ${token}` },
+      });
+      const d = await res.json();
+      if (!res.ok) throw new Error(d.error);
+      setProfileData(d);
+      setTabCache(prev => ({ ...prev, profile: d }));
+    } catch { /* ignore */ }
+    setProfileLoad(false);
+    // also force-refresh the active tab's scope
+    const scope = TAB_SCOPE[activeTab];
+    if (scope && scope !== "profile") {
+      setTabCache(prev => { const n = { ...prev }; delete n[scope]; return n; });
+      fetchScope(scope, true);
+    }
+  }, [uid, getToken, activeTab, fetchScope]);
+
+  const ss = profileData ? (STATUS_STYLE[profileData.user?.status] || STATUS_STYLE.active) : null;
+
+  // ── helper: tab content loader wrapper ────────────────────────────────────
+  // For tabs that use TAB_SCOPE, wrap render in loading/error state
+  function TabWrapper({ scope, children }) {
+    const isLoading = tabLoading[scope];
+    const err       = tabError[scope];
+    const cached    = tabCache[scope];
+    if (isLoading || !cached) return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <div className="w-10 h-10 rounded-full border-4 border-transparent animate-spin"
+          style={{ borderTopColor:"#2563EB", borderRightColor:"#F59E0B" }} />
+        <p className="text-gray-300 text-sm">Loading...</p>
+      </div>
+    );
+    if (err) return (
+      <div className="flex flex-col items-center justify-center h-64 gap-4">
+        <span className="text-5xl">⚠️</span>
+        <p className="text-red-400 font-semibold">{err}</p>
+        <button onClick={() => { setTabCache(prev => { const n={...prev}; delete n[scope]; return n; }); fetchScope(scope, true); }}
+          className="px-4 py-2 rounded-xl text-sm font-semibold"
+          style={{ background:"rgba(37,99,235,0.1)", border:"1px solid rgba(37,99,235,0.3)", color:"#60a5fa" }}>
+          Retry
+        </button>
+      </div>
+    );
+    return children(cached);
+  }
 
   return (
     <div className="fixed inset-0 z-50 flex" style={{ background:"rgba(0,0,0,0.96)", backdropFilter:"blur(12px)" }}>
@@ -3823,116 +4062,161 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
             style={{ border:"1px solid rgba(255,255,255,0.1)", color:"#9ca3af" }}>
             ← Back
           </button>
-          {data && (
+          {profileLoad && !profileData ? (
+            <div className="flex items-center gap-3 flex-1 min-w-0">
+              <div className="w-10 h-10 rounded-xl flex-shrink-0 animate-pulse" style={{ background:"rgba(255,255,255,0.07)" }} />
+              <div className="flex flex-col gap-1.5">
+                <div className="h-3.5 w-36 rounded animate-pulse" style={{ background:"rgba(255,255,255,0.07)" }} />
+                <div className="h-2.5 w-52 rounded animate-pulse" style={{ background:"rgba(255,255,255,0.05)" }} />
+              </div>
+            </div>
+          ) : profileData && (
             <div className="flex items-center gap-3 flex-1 min-w-0">
               <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
                 style={{ background:avatarGrad(uid), color:"#fff" }}>
-                {initials(data.user?.name)}
+                {initials(profileData.user?.name)}
               </div>
               <div className="min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
-                  <p className="text-white font-black text-base leading-tight">{data.user?.name}</p>
+                  <p className="text-white font-black text-base leading-tight">{profileData.user?.name}</p>
                   {ss && (
                     <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
                       style={{ background:ss.bg, color:ss.color, border:`1px solid ${ss.border}` }}>
-                      {ss.label||data.user?.status}
+                      {ss.label||profileData.user?.status}
                     </span>
                   )}
                 </div>
-                <p className="text-gray-300 text-xs truncate">{data.user?.email} · {data.user?.phone||"No phone"}</p>
+                <p className="text-gray-300 text-xs truncate">{profileData.user?.email} · {profileData.user?.phone||"No phone"}</p>
               </div>
             </div>
           )}
-          <button onClick={loadData}
+          <button onClick={refreshCurrent}
             className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:bg-white/10 flex-shrink-0"
             style={{ border:"1px solid rgba(255,255,255,0.1)", color:"#6b7280" }}>
-            <span className={loading?"animate-spin":""}>↻</span> Refresh
+            <span className={(profileLoad || tabLoading[TAB_SCOPE[activeTab]])?"animate-spin":""}>↻</span> Refresh
           </button>
         </div>
 
-        <div className="flex flex-1 min-h-0">
-          {/* ── sidebar ── */}
-          <nav className="flex-shrink-0 flex flex-col gap-1 px-3 py-4 overflow-y-auto"
-            style={{ width:180, borderRight:"1px solid rgba(255,255,255,0.06)", background:"rgba(8,13,20,0.6)" }}>
-            {TABS.map(tab => {
-              const isActive = activeTab === tab.id;
-              let badge = null;
-              if (tab.id==="trash" && data) {
-                const n = [data.invoices,data.customers,data.products,data.payments,data.suppliers,data.orders]
-                  .flat().filter(i=>i.adminTrash).length;
-                if (n>0) badge = n;
-              }
-              // devices badge — show active session count from user doc (lastDevice means at least 1 recent session)
-              if (tab.id==="devices" && data?.user?.lastDevice) {
-                badge = "●";
-              }
-              // tickets badge — show Open count (loaded lazily, so just show dot if tab active)
-              const badgeColor = tab.id==="devices"
-                ? { bg:"rgba(16,185,129,0.2)", color:"#10b981", border:"1px solid rgba(16,185,129,0.3)" }
-                : tab.id==="tickets"
-                  ? { bg:"rgba(59,130,246,0.2)", color:"#60a5fa", border:"1px solid rgba(59,130,246,0.3)" }
-                  : { bg:"rgba(248,113,113,0.2)", color:"#f87171", border:"1px solid rgba(248,113,113,0.3)" };
-              return (
-                <button key={tab.id} onClick={() => {
-                  setActiveTab(tab.id);
-                  if (typeof window !== "undefined") localStorage.setItem(`adminUserDetailTab_${uid}`, tab.id);
-                }}
-                  className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all relative text-left w-full"
-                  style={{ background:isActive?"linear-gradient(135deg,rgba(37,99,235,0.18),rgba(245,158,11,0.07))":"transparent", border:isActive?"1px solid rgba(37,99,235,0.25)":"1px solid transparent", color:isActive?"#fff":"#6b7280" }}>
-                  {isActive && (
-                    <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full"
-                      style={{ background:"linear-gradient(to bottom,#2563EB,#F59E0B)" }} />
-                  )}
-                  <span className="text-base">{tab.icon}</span>
-                  <span className="text-xs">{tab.label}</span>
-                  {badge!==null && (
-                    <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-bold"
-                      style={{ background:badgeColor.bg, color:badgeColor.color, border:badgeColor.border }}>
-                      {badge}
-                    </span>
-                  )}
-                </button>
-              );
-            })}
-          </nav>
+        {/* ── profile initial load error ── */}
+        {profileErr && !profileData && (
+          <div className="flex flex-col items-center justify-center flex-1 gap-4">
+            <span className="text-5xl">⚠️</span>
+            <p className="text-red-400 font-semibold">{profileErr}</p>
+            <button onClick={() => window.location.reload()}
+              className="px-4 py-2 rounded-xl text-sm font-semibold"
+              style={{ background:"rgba(37,99,235,0.1)", border:"1px solid rgba(37,99,235,0.3)", color:"#60a5fa" }}>
+              Retry
+            </button>
+          </div>
+        )}
 
-          {/* ── main content ── */}
-          <main className="flex-1 overflow-y-auto p-6">
-            {loading && (
-              <div className="flex flex-col items-center justify-center h-64 gap-4">
-                <div className="w-10 h-10 rounded-full border-4 border-transparent animate-spin"
-                  style={{ borderTopColor:"#2563EB", borderRightColor:"#F59E0B" }} />
-                <p className="text-gray-300 text-sm">Loading user data...</p>
-              </div>
-            )}
-            {error && (
-              <div className="flex flex-col items-center justify-center h-64 gap-4">
-                <span className="text-5xl">⚠️</span>
-                <p className="text-red-400 font-semibold">{error}</p>
-                <button onClick={loadData} className="px-4 py-2 rounded-xl text-sm font-semibold transition-all hover:scale-[1.02]"
-                  style={{ background:"rgba(37,99,235,0.1)", border:"1px solid rgba(37,99,235,0.3)", color:"#60a5fa" }}>
-                  Retry
-                </button>
-              </div>
-            )}
-            {!loading && !error && data && (
-              <>
-                {activeTab==="profile"   && <ProfileTab data={data} />}
-                {activeTab==="customers" && <CustomersTab customers={data.customers} invoices={data.invoices} payments={data.payments} />}
-                {activeTab==="invoices"  && <InvoicesTab invoices={data.invoices} />}
-                {activeTab==="products"  && <ProductsTab products={data.products} />}
-                {activeTab==="payments"  && <PaymentsTab payments={data.payments} />}
-                {activeTab==="suppliers" && <SuppliersTab suppliers={data.suppliers} orders={data.orders} receipts={data.receipts||[]} supplierReturns={data.supplierReturns||[]} />}
-                {activeTab==="addons"    && <AddonsTab uid={uid} user={data.user} getToken={getToken} onToast={onToast} />}
-                {activeTab==="tickets"   && <TicketsTab uid={uid} getToken={getToken} onToast={onToast} />}
-                {activeTab==="devices"   && <DevicesTab uid={uid} getToken={getToken} onToast={onToast} maxDevices={data.user?.maxDevices} />}
-                {activeTab==="trash"     && <TrashTab uid={uid} data={data} getToken={getToken} onToast={onToast} onRefresh={loadData} />}
-                {activeTab==="activity"  && <ActivityTab activityLogs={data.activityLogs} />}
-                {activeTab==="backup"    && <BackupTab uid={uid} userName={data.user?.name} getToken={getToken} />}
-              </>
-            )}
-          </main>
-        </div>
+        {profileData && (
+          <div className="flex flex-1 min-h-0">
+            {/* ── sidebar ── */}
+            <nav className="flex-shrink-0 flex flex-col gap-1 px-3 py-4 overflow-y-auto"
+              style={{ width:180, borderRight:"1px solid rgba(255,255,255,0.06)", background:"rgba(8,13,20,0.6)" }}>
+              {TABS.map(tab => {
+                const isActive = activeTab === tab.id;
+                let badge = null;
+                // trash badge — count from cached trash data
+                if (tab.id==="trash" && tabCache.trash) {
+                  const td = tabCache.trash;
+                  const n  = [td.invoices,td.customers,td.products,td.payments,td.suppliers,td.orders]
+                    .flat().filter(i=>i?.adminTrash).length;
+                  if (n>0) badge = n;
+                }
+                // devices badge
+                if (tab.id==="devices" && profileData.user?.lastDevice) badge = "●";
+                const badgeColor = tab.id==="devices"
+                  ? { bg:"rgba(16,185,129,0.2)", color:"#10b981", border:"1px solid rgba(16,185,129,0.3)" }
+                  : tab.id==="tickets"
+                    ? { bg:"rgba(59,130,246,0.2)", color:"#60a5fa", border:"1px solid rgba(59,130,246,0.3)" }
+                    : { bg:"rgba(248,113,113,0.2)", color:"#f87171", border:"1px solid rgba(248,113,113,0.3)" };
+                // show a small dot on tabs that are loading
+                const isTabLoading = tabLoading[TAB_SCOPE[tab.id]];
+                return (
+                  <button key={tab.id} onClick={() => {
+                    setActiveTab(tab.id);
+                    if (typeof window !== "undefined") localStorage.setItem(`adminUserDetailTab_${uid}`, tab.id);
+                  }}
+                    className="flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-sm font-semibold transition-all relative text-left w-full"
+                    style={{ background:isActive?"linear-gradient(135deg,rgba(37,99,235,0.18),rgba(245,158,11,0.07))":"transparent", border:isActive?"1px solid rgba(37,99,235,0.25)":"1px solid transparent", color:isActive?"#fff":"#6b7280" }}>
+                    {isActive && (
+                      <span className="absolute left-0 top-1/2 -translate-y-1/2 w-0.5 h-5 rounded-r-full"
+                        style={{ background:"linear-gradient(to bottom,#2563EB,#F59E0B)" }} />
+                    )}
+                    <span className="text-base">{tab.icon}</span>
+                    <span className="text-xs">{tab.label}</span>
+                    {isTabLoading && (
+                      <span className="ml-auto w-2.5 h-2.5 rounded-full border-2 border-t-blue-400 border-transparent animate-spin" />
+                    )}
+                    {!isTabLoading && badge!==null && (
+                      <span className="ml-auto px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                        style={{ background:badgeColor.bg, color:badgeColor.color, border:badgeColor.border }}>
+                        {badge}
+                      </span>
+                    )}
+                  </button>
+                );
+              })}
+            </nav>
+
+            {/* ── main content ── */}
+            <main className="flex-1 overflow-y-auto p-6">
+              {activeTab==="profile" && (
+                <ProfileTab data={tabCache.profile || profileData} uid={uid} getToken={getToken} onToast={onToast} />
+              )}
+              {activeTab==="customers" && (
+                <TabWrapper scope="customers">{d =>
+                  <CustomersTab customers={d.customers} invoices={d.invoices} payments={d.payments} />
+                }</TabWrapper>
+              )}
+              {activeTab==="invoices" && (
+                <TabWrapper scope="invoices">{d =>
+                  <InvoicesTab invoices={d.invoices} />
+                }</TabWrapper>
+              )}
+              {activeTab==="products" && (
+                <TabWrapper scope="products">{d =>
+                  <ProductsTab products={d.products} />
+                }</TabWrapper>
+              )}
+              {activeTab==="payments" && (
+                <TabWrapper scope="payments">{d =>
+                  <PaymentsTab payments={d.payments} />
+                }</TabWrapper>
+              )}
+              {activeTab==="suppliers" && (
+                <TabWrapper scope="suppliers">{d =>
+                  <SuppliersTab suppliers={d.suppliers} orders={d.orders} receipts={d.receipts||[]} supplierReturns={d.supplierReturns||[]} />
+                }</TabWrapper>
+              )}
+              {activeTab==="addons" && (
+                <AddonsTab uid={uid} user={profileData.user} getToken={getToken} onToast={onToast} />
+              )}
+              {activeTab==="tickets" && (
+                <TicketsTab uid={uid} getToken={getToken} onToast={onToast} />
+              )}
+              {activeTab==="devices" && (
+                <DevicesTab uid={uid} getToken={getToken} onToast={onToast} maxDevices={profileData.user?.maxDevices} />
+              )}
+              {activeTab==="trash" && (
+                <TabWrapper scope="trash">{d =>
+                  <TrashTab uid={uid} data={d} getToken={getToken} onToast={onToast}
+                    onRefresh={() => { setTabCache(prev => { const n={...prev}; delete n.trash; return n; }); fetchScope("trash", true); }} />
+                }</TabWrapper>
+              )}
+              {activeTab==="activity" && (
+                <TabWrapper scope="activity">{d =>
+                  <ActivityTab activityLogs={d.activityLogs} />
+                }</TabWrapper>
+              )}
+              {activeTab==="backup" && (
+                <BackupTab uid={uid} userName={profileData.user?.name} getToken={getToken} />
+              )}
+            </main>
+          </div>
+        )}
       </div>
     </div>
   );
