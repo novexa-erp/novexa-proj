@@ -74,6 +74,7 @@ const BLOCKED_MSGS = {
   access_denied:    { title: "Access Denied",             msg: "You do not have permission to access this panel.",                                                                       icon: "🚫" },
   session_evicted:  { title: "Logged Out Automatically",  msg: "Your account was opened on another device. Only 1 session is allowed at a time.",                                       icon: "📱" },
   password_changed: { title: "Password Changed",          msg: "Your password was recently changed. For your security, you have been signed out. Please sign in with your new password.", icon: "🔐" },
+  staff_inactive:   { title: "Account Deactivated",       msg: "Your staff account has been deactivated. Please contact your admin to restore access.",                                  icon: "⏸️" },
 };
 
 // These get their own full-screen UI instead of a small popup
@@ -206,7 +207,7 @@ function LoginContent() {
       const cred    = await signInWithEmailAndPassword(auth, form.email, form.password);
       const isAdmin = cred.user.uid === process.env.NEXT_PUBLIC_ADMIN_UID;
 
-      // Admin — skip subscription check
+      // Super-admin — skip all checks, go straight to admin panel
       if (isAdmin) {
         setAlert({ show: true, type: "success", title: "Welcome Back! 🎉", message: "Login successful! Redirecting you..." });
         setLoading(false);
@@ -214,7 +215,7 @@ function LoginContent() {
         return;
       }
 
-      // Check subscription BEFORE showing success
+      // Step 1: Check subscription / account status
       try {
         const token = await cred.user.getIdToken();
         const res   = await fetch("/api/admin/check-subscription", {
@@ -224,7 +225,6 @@ function LoginContent() {
         const data = await res.json();
 
         if (!data.allowed) {
-          // Sign out silently — user is blocked
           const { signOut } = await import("firebase/auth");
           await signOut(auth);
           setLoading(false);
@@ -238,6 +238,55 @@ function LoginContent() {
         // Network error — allow in, dashboard will re-check
       }
 
+      // Step 2: Detect if this is a staff login
+      // Force-refresh the token to pick up custom claims set at account creation
+      try {
+        const token = await cred.user.getIdToken(true);
+        const res   = await fetch("/api/staff/resolve", {
+          method: "POST",
+          headers: { authorization: `Bearer ${token}` },
+        });
+        const data = await res.json();
+
+        if (data.error && data.allowed === false) {
+          // Staff account blocked (inactive, deleted, admin frozen)
+          const { signOut } = await import("firebase/auth");
+          await signOut(auth);
+          setLoading(false);
+          setAlert({
+            show: true, type: "error",
+            title: "Access Denied 🚫",
+            message: data.error || "Your account does not have access. Please contact your admin.",
+          });
+          return;
+        }
+
+        if (data.isStaff) {
+          // Persist staff context in sessionStorage so DashboardPage doesn't need
+          // to re-call resolve on every page load (it checks this key first)
+          const ctx = {
+            adminUid:       data.adminUid,
+            allowedModules: data.allowedModules || [],
+            staffDoc:       data.staffDoc,
+            adminPlan:      data.adminPlan || "starter",
+          };
+          sessionStorage.setItem("novexa_staff_context", JSON.stringify(ctx));
+          setAlert({
+            show: true, type: "success",
+            title: `Welcome, ${data.staffDoc?.name || "Staff"}! 👋`,
+            message: "Login successful! Redirecting to your workspace...",
+          });
+          setLoading(false);
+          setTimeout(() => router.push("/dashboard"), 1500);
+          return;
+        }
+        // data.isStaff === false → regular admin login, fall through
+      } catch {
+        // Network error — treat as regular admin login, dashboard will re-resolve
+        sessionStorage.removeItem("novexa_staff_context");
+      }
+
+      // Regular admin login
       setAlert({ show: true, type: "success", title: "Welcome Back! 🎉", message: "Login successful! Redirecting you..." });
       setLoading(false);
       setTimeout(() => router.push("/dashboard"), 1500);

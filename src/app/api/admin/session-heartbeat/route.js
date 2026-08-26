@@ -29,6 +29,51 @@ export async function POST(request) {
     if (decoded.uid === process.env.NEXT_PUBLIC_ADMIN_UID)
       return NextResponse.json({ valid: true });
 
+    // ── Staff heartbeat: validate against parent admin ────────────────────────
+    const isStaffClaim = decoded.role === "staff" && decoded.adminUid;
+    let resolvedAdminUid = null;
+
+    if (isStaffClaim) {
+      resolvedAdminUid = decoded.adminUid;
+    } else {
+      // Check staffLookup fallback
+      const lookupSnap = await adminDb.collection("staffLookup").doc(decoded.uid).get();
+      if (lookupSnap.exists) {
+        resolvedAdminUid = lookupSnap.data().adminUid;
+      }
+    }
+
+    if (resolvedAdminUid) {
+      // Validate parent admin subscription
+      const adminRef  = adminDb.collection("users").doc(resolvedAdminUid);
+      const adminSnap = await adminRef.get();
+      if (!adminSnap.exists) return NextResponse.json({ valid: false, reason: "account_not_found" });
+      const adminData = adminSnap.data();
+      if (adminData.status === "frozen" || adminData.status === "deleted")
+        return NextResponse.json({ valid: false, reason: "account_frozen" });
+      if (adminData.activeTo) {
+        const timeStr   = adminData.activeToTime || "23:59:59";
+        const expiryStr = `${adminData.activeTo}T${timeStr.length === 5 ? timeStr + ":00" : timeStr}`;
+        if (new Date() > new Date(expiryStr)) {
+          return NextResponse.json({ valid: false, reason: "subscription_expired" });
+        }
+      }
+      // Check staff still active
+      const staffSnap = await adminRef.collection("staff").doc(decoded.uid).get();
+      if (!staffSnap.exists || staffSnap.data().deleted || !staffSnap.data().isActive)
+        return NextResponse.json({ valid: false, reason: "account_frozen" });
+
+      // Validate staff session doc (stored under the staff's own uid)
+      const staffSessionRef  = adminDb.collection("users").doc(decoded.uid).collection("sessions").doc(sessionId);
+      const staffSessionSnap = await staffSessionRef.get();
+      if (!staffSessionSnap.exists || !staffSessionSnap.data().active)
+        return NextResponse.json({ valid: false, reason: "session_evicted" });
+
+      await staffSessionRef.update({ lastSeen: new Date().toISOString() });
+      return NextResponse.json({ valid: true });
+    }
+    // ── End staff heartbeat ───────────────────────────────────────────────────
+
     // Check user doc first
     const userRef  = adminDb.collection("users").doc(decoded.uid);
     const userSnap = await userRef.get();

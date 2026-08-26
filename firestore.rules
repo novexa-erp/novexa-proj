@@ -17,9 +17,20 @@ service cloud.firestore {
         && request.auth.uid == "LpfAmmxDFtZgLZnU2npnFknF8tu2";
     }
 
+    // ── Staff helpers ─────────────────────────────────────────────────────────
+    // Returns true when the caller is a staff member whose parent adminUid = userId.
+    // Custom claim { role: "staff", adminUid } is set at staff creation via Admin SDK.
+    function isStaffOf(userId) {
+      return request.auth != null
+        && request.auth.token.get("role", "") == "staff"
+        && request.auth.token.get("adminUid", "") == userId;
+    }
+
     // ── Users ─────────────────────────────────────────────────────────────────
     match /users/{userId} {
-      allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
+      // Owner and super-admin can always read.
+      // Staff can read their parent admin's doc (needed for plan / settings info).
+      allow read: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
 
       allow create: if isSignedIn() && isOwner(userId)
         && request.resource.data.email is string
@@ -28,7 +39,7 @@ service cloud.firestore {
         && request.resource.data.name.size() > 0
         && request.resource.data.name.size() <= 100;
 
-      // Admin can create user doc (restore flow)
+      // Super-admin can create user docs (restore flow)
       allow create: if isAdmin();
 
       // Users can update their own doc EXCEPT protected admin-only fields
@@ -42,84 +53,105 @@ service cloud.firestore {
         && !("plan"         in request.resource.data.diff(resource.data).affectedKeys())
         && !("maxDevices"   in request.resource.data.diff(resource.data).affectedKeys());
 
-      // Admin can update any user doc (all fields)
+      // Super-admin can update any user doc (all fields)
       allow update: if isAdmin();
 
       allow delete: if false;
 
-      // ── Subcollections ──────────────────────────────────────────────────────
+      // ── Business data subcollections ────────────────────────────────────────
+      // Staff of this admin share the same data — they can read/write all
+      // business subcollections under their admin's UID.
       match /invoices/{invoiceId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
       }
       match /customers/{customerId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
         match /invoices/{invoiceId} {
-          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
         }
       }
       match /products/{productId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
       }
       match /locations/{locationId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
       }
       match /payments/{paymentId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
       }
       match /purchases/{purchaseId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
       }
       match /suppliers/{supplierId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
         match /purchases/{purchaseId} {
-          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
         }
         match /orders/{orderId} {
-          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
         }
         match /payments/{paymentId} {
-          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
         }
         match /receipts/{receiptId} {
-          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
         }
         match /returns/{returnId} {
-          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+          allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
         }
       }
       match /supplierPayments/{paymentId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
       }
       match /supplierReceipts/{receiptId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
       }
       match /supplierReturns/{returnId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
       }
       match /expenses/{expenseId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
       }
       match /quotations/{quotationId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
       }
       match /hr/{hrId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
       }
       match /reports/{reportId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
       }
       match /settings/{settingId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
       }
       match /billBookTemplates/{tplId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
       }
       match /billBookHistory/{histId} {
-        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
       }
+
+      // ── Staff subcollection ─────────────────────────────────────────────────
+      // Only the admin owner and super-admin can list / manage staff.
+      // A staff member can read their OWN staff doc (for profile display).
+      // All writes go through the Admin SDK via API routes — no client writes allowed.
+      match /staff/{staffId} {
+        allow read:   if isSignedIn() && (isOwner(userId) || isAdmin() || isOwner(staffId));
+        allow create: if isAdmin();
+        allow update: if isAdmin();
+        allow delete: if isAdmin();
+      }
+
+      // ── Sessions — owner and their staff can read/write ─────────────────────
+      match /sessions/{sessionId} {
+        allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin() || isStaffOf(userId));
+      }
+
+      // ── Activity logs ────────────────────────────────────────────────────────
       match /activityLogs/{logId} {
         allow read, write: if isSignedIn() && (isOwner(userId) || isAdmin());
       }
+
       match /tickets/{ticketId} {
         allow read: if isSignedIn() && (isOwner(userId) || isAdmin());
         allow create: if isSignedIn() && isOwner(userId)
@@ -141,6 +173,26 @@ service cloud.firestore {
         allow update: if isAdmin();
         allow delete: if isAdmin();
       }
+    }
+
+    // ── Staff own session + activity docs ─────────────────────────────────────
+    // Staff Firebase Auth users have their own UID. Their session docs are stored
+    // at users/{staffUid}/sessions and users/{staffUid}/activityLogs.
+    // They can read/write only their own entries; admin can read for monitoring.
+    match /users/{userId}/sessions/{sessionId} {
+      allow read, write: if isSignedIn() && isOwner(userId);
+    }
+    match /users/{userId}/activityLogs/{logId} {
+      allow read, write: if isSignedIn() && isOwner(userId);
+    }
+
+    // ── staffLookup — top-level lookup collection ─────────────────────────────
+    // Stores { adminUid, isActive } keyed by staffUid.
+    // Written only via Admin SDK (API routes). Any signed-in user can read
+    // their own entry (needed during login resolution).
+    match /staffLookup/{staffUid} {
+      allow read:  if isSignedIn() && (isOwner(staffUid) || isAdmin());
+      allow write: if isAdmin();
     }
 
     // ── Businesses ────────────────────────────────────────────────────────────

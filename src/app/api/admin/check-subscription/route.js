@@ -59,6 +59,54 @@ export async function POST(request) {
       return NextResponse.json({ status: "active", allowed: true });
     }
 
+    // ── Staff login: resolve via custom claims or staffLookup ─────────────────
+    const isStaffClaim = decoded.role === "staff" && decoded.adminUid;
+    if (isStaffClaim) {
+      // Staff check-subscription defers to the parent admin's subscription status.
+      // The full staff validation (isActive, allowedModules) happens in /api/staff/resolve.
+      // Here we only block if the parent admin is frozen/expired.
+      const adminSnap = await adminDb.collection("users").doc(decoded.adminUid).get();
+      if (!adminSnap.exists) return NextResponse.json({ status: "not_found", allowed: false });
+      const adminData = adminSnap.data();
+      if (adminData.status === "frozen" || adminData.status === "deleted")
+        return NextResponse.json({ status: adminData.status, allowed: false });
+      if (adminData.activeTo) {
+        const timeStr   = adminData.activeToTime || "23:59:59";
+        const expiryStr = `${adminData.activeTo}T${timeStr.length === 5 ? timeStr + ":00" : timeStr}`;
+        if (new Date() > new Date(expiryStr)) {
+          return NextResponse.json({ status: "frozen", allowed: false, reason: "subscription_expired" });
+        }
+      }
+      // Also check if this staff account is still active
+      const staffSnap = await adminDb
+        .collection("users").doc(decoded.adminUid)
+        .collection("staff").doc(decoded.uid).get();
+      if (!staffSnap.exists || staffSnap.data().deleted || !staffSnap.data().isActive)
+        return NextResponse.json({ status: "frozen", allowed: false, reason: "staff_inactive" });
+      return NextResponse.json({ status: "active", allowed: true, isStaff: true });
+    }
+
+    // Also check staffLookup for accounts without fresh claims
+    const lookupSnap = await adminDb.collection("staffLookup").doc(decoded.uid).get();
+    if (lookupSnap.exists) {
+      const lookupData = lookupSnap.data();
+      const parentUid  = lookupData.adminUid;
+      if (!lookupData.isActive) return NextResponse.json({ status: "frozen", allowed: false, reason: "staff_inactive" });
+      const adminSnap = await adminDb.collection("users").doc(parentUid).get();
+      if (!adminSnap.exists) return NextResponse.json({ status: "not_found", allowed: false });
+      const adminData = adminSnap.data();
+      if (adminData.status === "frozen" || adminData.status === "deleted")
+        return NextResponse.json({ status: adminData.status, allowed: false });
+      if (adminData.activeTo) {
+        const timeStr   = adminData.activeToTime || "23:59:59";
+        const expiryStr = `${adminData.activeTo}T${timeStr.length === 5 ? timeStr + ":00" : timeStr}`;
+        if (new Date() > new Date(expiryStr))
+          return NextResponse.json({ status: "frozen", allowed: false, reason: "subscription_expired" });
+      }
+      return NextResponse.json({ status: "active", allowed: true, isStaff: true });
+    }
+    // ── End staff handling ────────────────────────────────────────────────────
+
     const snap = await adminDb.collection("users").doc(decoded.uid).get();
     if (!snap.exists) {
       return NextResponse.json({ status: "not_found", allowed: false });

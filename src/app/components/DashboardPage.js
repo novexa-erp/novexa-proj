@@ -27,6 +27,7 @@ import AddonsView from "./AddonsView";
 import BackupView from "./BackupView";
 import DigitalRegisterView from "./DigitalRegisterView";
 import PWAInstallButton from "./PWAInstallButton";
+import StaffManagementView from "./StaffManagementView";
 
 // ── Sidebar nav items ────────────────────────────────────────────────────────
 const navItems = [
@@ -40,6 +41,7 @@ const navItems = [
   { icon: "📈", label: "Analytics",   id: "analytics"   },
   { icon: "👔", label: "HR",          id: "hr"          },
   { icon: "🏢", label: "Branches",    id: "branches"    },
+  { icon: "👨‍💼", label: "Staff",       id: "staff"       },
   { icon: "⚙️", label: "Settings",   id: "settings"    },
   { icon: "📞", label: "Contact Us",  id: "contact"     },
   { icon: "🎫", label: "My Tickets",  id: "my-tickets"  },
@@ -147,6 +149,9 @@ function DashboardContent() {
   const [user, setUser]         = useState(null);
   const [userDoc, setUserDoc]   = useState(null);
   const [authLoading, setAuthLoading] = useState(true);
+  // ── Staff context (null = admin, object = staff member) ────────────────────
+  // staffContext = { adminUid, allowedModules: string[], staffDoc: { uid, name, email, role } }
+  const [staffContext, setStaffContext] = useState(null);
   // ── Dynamic plan tabs (loaded from Firestore adminConfig/plans) ─────────────
   const [allowedTabsSet, setAllowedTabsSet] = useState(null); // null = loading
   // ── Plan details modal ────────────────────────────────────────────────────
@@ -156,8 +161,30 @@ function DashboardContent() {
   const [lockedTabInfo, setLockedTabInfo] = useState(null); // { label, id }
 
   // ── Nav / UI ────────────────────────────────────────────────────────────────
-  // Initialize from URL query param or default to "overview"
-  const [activeNav, setActiveNav]   = useState(searchParams.get("view") || "overview");
+  // Initialize from URL query param.
+  // For staff: if no URL param, default to their first allowed module (not "overview")
+  // We read staffContext from sessionStorage synchronously here so no flash occurs.
+  const [activeNav, setActiveNav] = useState(() => {
+    const urlView = searchParams.get("view");
+    if (urlView) return urlView;
+    // Check if this is a staff login — read from sessionStorage synchronously
+    try {
+      const stored = typeof window !== "undefined"
+        ? sessionStorage.getItem("novexa_staff_context")
+        : null;
+      if (stored) {
+        const ctx = JSON.parse(stored);
+        const modules = ctx.allowedModules || [];
+        if (modules.length > 0) {
+          // Return first allowed module that exists in navItems
+          const navIds = ["overview","invoices","customers","inventory","payments","purchases","order-form","analytics","hr","branches","settings","contact","my-tickets","addons","backup","bill-book"];
+          const first = navIds.find(id => modules.includes(id));
+          if (first) return first;
+        }
+      }
+    } catch { /* ignore */ }
+    return "overview";
+  });
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [viewLoading, setViewLoading] = useState(false);
   const [refreshKey, setRefreshKey]   = useState(0);
@@ -210,7 +237,43 @@ function DashboardContent() {
         }
       } catch { /* network error — allow in */ }
 
-      // Step 2: Register session — only if no active sessionId already stored
+      // Step 2: Resolve staff context (if this is a staff login)
+      // Check sessionStorage first to avoid redundant API call on every page refresh
+      const storedStaff = sessionStorage.getItem("novexa_staff_context");
+      if (storedStaff) {
+        try {
+          setStaffContext(JSON.parse(storedStaff));
+        } catch { sessionStorage.removeItem("novexa_staff_context"); }
+      } else {
+        // Call resolve API to determine if this is a staff account
+        try {
+          const token = await u.getIdToken(true); // force refresh to get latest claims
+          const res = await fetch("/api/staff/resolve", {
+            method: "POST",
+            headers: { authorization: `Bearer ${token}` },
+          });
+          const data = await res.json();
+          if (data.isStaff) {
+            const ctx = {
+              adminUid:       data.adminUid,
+              allowedModules: data.allowedModules || [],
+              staffDoc:       data.staffDoc,
+              adminPlan:      data.adminPlan || "starter",
+            };
+            setStaffContext(ctx);
+            sessionStorage.setItem("novexa_staff_context", JSON.stringify(ctx));
+          } else if (data.error && !data.isStaff) {
+            // resolve returned an explicit block — sign out
+            await signOut(auth);
+            sessionStorage.removeItem("novexa_staff_context");
+            router.push("/pages/login?blocked=access_denied");
+            return;
+          }
+          // data.isStaff === false with no error → regular admin, staffContext stays null
+        } catch { /* network blip — treat as admin */ }
+      }
+
+      // Step 3: Register session — only if no active sessionId already stored
       // (prevents creating duplicate sessions on every page refresh)
       const existingSessionId = sessionStorage.getItem("novexa_session_id");
       if (!existingSessionId || existingSessionId === "admin") {
@@ -240,16 +303,16 @@ function DashboardContent() {
   // ── Real-time userDoc listener ───────────────────────────────────────────────
   useEffect(() => {
     if (!user) return;
+    // Staff reads the admin's userDoc for plan/subscription info
+    const docUid = staffContext ? staffContext.adminUid : user.uid;
     const unsubUser = onSnapshot(
-      doc(db, "users", user.uid),
+      doc(db, "users", docUid),
       (snap) => {
         if (snap.exists()) {
           const data = snap.data();
           setUserDoc(data);
-          // ── Check expiry and show popup once per session ──────────────────
-          // Trial users: warn from day 1 (all 7 days show warning)
-          // Regular users: warn 3 days before
-          if (data.activeTo) {
+          // ── Check expiry and show popup once per session (admin only) ──────
+          if (!staffContext && data.activeTo) {
             const diff = Math.ceil(
               (new Date(data.activeTo + "T23:59:59") - new Date()) / 86400000
             );
@@ -268,7 +331,7 @@ function DashboardContent() {
       (err) => { if (err.code !== "permission-denied") console.error("[userDoc listener]", err); }
     );
     return () => unsubUser();
-  }, [user]);
+  }, [user, staffContext]);
 
   // ── Load allowed tabs + plan details from Firestore adminConfig/plans ───────
   useEffect(() => {
@@ -277,23 +340,55 @@ function DashboardContent() {
     import("firebase/firestore").then(({ getDoc, doc: fsDoc }) => {
       import("@/lib/firebase").then(({ db: fdb }) => {
         getDoc(fsDoc(fdb, "adminConfig", "plans")).then(snap => {
+          let planAllowedSet;
           if (snap.exists()) {
             const list = snap.data().list || [];
             const planData = list.find(p => p.id === planId);
             if (planData) {
               setPlanDetails(planData);
               if (planData?.allowedTabs) {
-                setAllowedTabsSet(new Set([...planData.allowedTabs, "trash", "addons", "backup"]));
-                return;
+                planAllowedSet = new Set([...planData.allowedTabs, "trash", "addons", "backup"]);
               }
             }
           }
-          // Fallback to hardcoded
-          setAllowedTabsSet(getPlanPermissions(planId));
-        }).catch(() => setAllowedTabsSet(getPlanPermissions(planId)));
+          if (!planAllowedSet) planAllowedSet = getPlanPermissions(planId);
+
+          if (staffContext) {
+            // Staff: strict intersection — only what admin explicitly assigned
+            const staffModules = new Set(staffContext.allowedModules);
+            const staffAllowed = new Set([...planAllowedSet].filter(t => staffModules.has(t)));
+            setAllowedTabsSet(staffAllowed);
+            // Auto-navigate to first allowed tab if current view is not in their list
+            setActiveNav(prev => {
+              if (!staffAllowed.has(prev)) {
+                const first = navItems.find(n => staffAllowed.has(n.id));
+                return first ? first.id : prev;
+              }
+              return prev;
+            });
+          } else {
+            setAllowedTabsSet(planAllowedSet);
+          }
+        }).catch(() => {
+          const fallback = getPlanPermissions(planId);
+          if (staffContext) {
+            const staffModules = new Set(staffContext.allowedModules);
+            const staffAllowed = new Set([...fallback].filter(t => staffModules.has(t)));
+            setAllowedTabsSet(staffAllowed);
+            setActiveNav(prev => {
+              if (!staffAllowed.has(prev)) {
+                const first = navItems.find(n => staffAllowed.has(n.id));
+                return first ? first.id : prev;
+              }
+              return prev;
+            });
+          } else {
+            setAllowedTabsSet(fallback);
+          }
+        });
       });
     });
-  }, [userDoc?.plan]);
+  }, [userDoc?.plan, staffContext]);
 
   // ── Heartbeat — verify session every 8s ─────────────────────────────────────
   useEffect(() => {
@@ -382,9 +477,11 @@ function DashboardContent() {
 
   // ── Real-time Firestore listeners ────────────────────────────────────────────
   // Subcollections under users/{uid}/ — no composite index needed
+  // Staff use the admin's UID so they read/write to the same business data.
   useEffect(() => {
     if (!user) return;
-    const uid = user.uid;
+    // Staff read/write under the admin's UID — same data, shared workspace
+    const uid = staffContext ? staffContext.adminUid : user.uid;
     let loaded = 0;
     const check = () => { loaded++; if (loaded === 5) setDataLoading(false); };
 
@@ -440,14 +537,14 @@ function DashboardContent() {
     );
 
     return () => { unsubInv(); unsubCust(); unsubProd(); unsubPay(); unsubLoc(); };
-  }, [user]);
+  }, [user, staffContext]);
 
   // ── Fetch total purchasing from supplier orders ────────────────────────────
   // Same formula as PurchasesView: totalBusiness = paidAmount + balance per order
   // (returns are already deducted from balance — no double-counting)
   useEffect(() => {
     if (!user) return;
-    const uid = user.uid;
+    const uid = staffContext ? staffContext.adminUid : user.uid;
     let cancelled = false;
     const unsubSuppliers = onSnapshot(
       query(collection(db, "users", uid, "suppliers"), orderBy("createdAt", "desc")),
@@ -473,7 +570,7 @@ function DashboardContent() {
       () => {}
     );
     return () => { cancelled = true; unsubSuppliers(); };
-  }, [user]);
+  }, [user, staffContext]);
 
   // ── Computed stats ───────────────────────────────────────────────────────────
   // Same logic as AnalyticsView — single source of truth
@@ -619,6 +716,7 @@ function DashboardContent() {
       } catch { /* ignore */ }
       sessionStorage.removeItem("novexa_session_id");
     }
+    sessionStorage.removeItem("novexa_staff_context");
     await signOut(auth);
     router.push("/pages/login");
   }
@@ -635,6 +733,7 @@ function DashboardContent() {
     e.preventDefault();
     if (!user || formSaving) return;
     setFormSaving(true);
+    const dataUid = staffContext ? staffContext.adminUid : user.uid;
 
     // ── Monthly customer limit check ──────────────────────────────────────
     const plan   = userDoc?.plan || "starter";
@@ -645,7 +744,7 @@ function DashboardContent() {
       const { collection: col } = await import("firebase/firestore");
       const { db: fdb } = await import("@/lib/firebase");
       const { allowed, current, limit } = await checkMonthlyLimit(
-        col(fdb, "users", user.uid, "customers"),
+        col(fdb, "users", dataUid, "customers"),
         limits.customersPerMonth,
         userDoc?.activeFrom,
         userDoc?.extraLimits?.customersPerMonth,
@@ -660,7 +759,7 @@ function DashboardContent() {
     }
 
     try {
-      await addDoc(collection(db, "users", user.uid, "customers"), {
+      await addDoc(collection(db, "users", dataUid, "customers"), {
         name:      custForm.name,
         phone:     custForm.phone,
         email:     custForm.email,
@@ -693,8 +792,9 @@ function DashboardContent() {
     e.preventDefault();
     if (!user || formSaving) return;
     setFormSaving(true);
+    const dataUid = staffContext ? staffContext.adminUid : user.uid;
     try {
-      await addDoc(collection(db, "users", user.uid, "products"), {
+      await addDoc(collection(db, "users", dataUid, "products"), {
         name:              prodForm.name,
         stock:             Number(prodForm.stock),
         price:             Number(prodForm.price),
@@ -769,7 +869,9 @@ function DashboardContent() {
     </div>
   );
 
-  const displayName = userDoc?.name || user?.displayName || user?.email?.split("@")[0] || "User";
+  const displayName = staffContext
+    ? (staffContext.staffDoc?.name || user?.email?.split("@")[0] || "Staff")
+    : (userDoc?.name || user?.displayName || user?.email?.split("@")[0] || "User");
   const initials    = displayName.charAt(0).toUpperCase();
 
   const quickActions = [
@@ -905,10 +1007,19 @@ function DashboardContent() {
           {navItems.map((item) => {
             const isActive  = activeNav === item.id;
             const userPlan  = userDoc?.plan || "starter";
-            // Use Firestore-loaded tabs if available, fallback to hardcoded
-            const tabsSet   = allowedTabsSet || getPlanPermissions(userPlan);
+            // Staff: while allowedTabsSet is loading, show nothing (avoid flash of all tabs)
+            // Admin: fallback to hardcoded plan permissions during loading
+            const tabsSet   = staffContext
+              ? (allowedTabsSet || new Set())   // staff sees nothing until loaded
+              : (allowedTabsSet || getPlanPermissions(userPlan));
             const allowed   = tabsSet.has(item.id);
             const isLocked  = !allowed && ALWAYS_SHOW_TABS.has(item.id);
+
+            // Staff tab: only visible to admins (not staff members)
+            if (item.id === "staff" && staffContext) return null;
+
+            // Staff: hide all tabs that are not in their allowed list — no locked/greyed state
+            if (staffContext && !allowed) return null;
 
             if (isLocked) {
               // Show tab greyed out with lock icon — clicking shows upgrade popup
@@ -944,21 +1055,31 @@ function DashboardContent() {
         <div className="px-4 py-4 border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
           <div className="flex items-center gap-3 px-2 py-2 rounded-xl mb-2">
             {/* User Logo/Avatar */}
-            {userDoc?.logoDataUrl ? (
+            {!staffContext && userDoc?.logoDataUrl ? (
               <div className="w-8 h-8 rounded-full overflow-hidden flex-shrink-0" style={{ border: "1px solid rgba(255,255,255,0.1)" }}>
                 <img src={userDoc.logoDataUrl} alt="Logo" className="w-full h-full object-cover" />
               </div>
             ) : (
               <div className="w-8 h-8 rounded-full flex items-center justify-center text-sm font-bold flex-shrink-0"
-                style={{ background: "linear-gradient(135deg,#2563EB,#F59E0B)", color: "#fff" }}>{initials}</div>
+                style={{ background: staffContext ? "linear-gradient(135deg,#7c3aed,#a855f7)" : "linear-gradient(135deg,#2563EB,#F59E0B)", color: "#fff" }}>{initials}</div>
             )}
             <div className="flex-1 min-w-0">
               <p className="text-white text-xs font-semibold truncate">{displayName}</p>
               <p className="text-gray-300 text-[10px] truncate">{user?.email}</p>
             </div>
           </div>
-          {/* Plan badge — click to see details */}
-          {userDoc?.plan && (
+          {/* Staff badge OR Plan badge */}
+          {staffContext ? (
+            <div
+              className="mx-2 mb-2 px-3 py-1.5 rounded-lg flex items-center gap-2 w-full"
+              style={{ background: "rgba(124,58,237,0.12)", border: "1px solid rgba(124,58,237,0.35)" }}>
+              <span className="text-xs">👨‍💼</span>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-bold truncate" style={{ color: "#c084fc" }}>{staffContext.staffDoc?.role || "Staff"}</p>
+                <p className="text-[10px] text-gray-500 truncate">{userDoc?.name || userDoc?.business || "Business"}</p>
+              </div>
+            </div>
+          ) : userDoc?.plan ? (
             <button
               onClick={() => setShowPlanModal(true)}
               className="mx-2 mb-2 px-3 py-1.5 rounded-lg flex items-center gap-2 w-full text-left transition-all duration-200 hover:scale-[1.02] group"
@@ -982,8 +1103,9 @@ function DashboardContent() {
               </span>
               <span className="text-[10px] opacity-0 group-hover:opacity-100 transition-opacity" style={{ color: "#6b7280" }}>ℹ️</span>
             </button>
-          )}
-          {/* View Site Button */}
+          ) : null}
+          {/* View Site Button — hidden for staff */}
+          {!staffContext && (
           <a href="/" target="_blank" rel="noopener noreferrer"
             className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full text-left transition-all duration-200 hover:bg-blue-500/10 group mb-1"
             style={{ color: "#60a5fa", border: "1px solid rgba(37,99,235,0.2)" }}>
@@ -991,7 +1113,9 @@ function DashboardContent() {
             <span>View Site</span>
             <span className="ml-auto opacity-0 group-hover:opacity-100 transition-opacity text-xs">↗</span>
           </a>
-          {/* Trash Button */}
+          )}
+          {/* Trash Button — hidden for staff (they can't restore/manage deleted items) */}
+          {!staffContext && (
           <button
             onClick={() => handleNavChange("trash")}
             className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium w-full text-left transition-all duration-200 hover:bg-red-500/10 mb-2 group"
@@ -1004,6 +1128,7 @@ function DashboardContent() {
             <span>Trash</span>
             {activeNav === "trash" && <span className="ml-auto w-1.5 h-1.5 rounded-full bg-red-400" />}
           </button>
+          )}
           {/* Logout Button */}
           <button 
             onClick={confirmLogout} 
@@ -1542,22 +1667,43 @@ function DashboardContent() {
           })()}
 
           {/* ── Plan-allowed views ── */}
-          {(allowedTabsSet || getPlanPermissions(userDoc?.plan || "starter")).has(activeNav) && (<>
-          {/* ── Invoices full page ── */}
-          {activeNav === "invoices" ? (
-            <InvoicesView key={`invoices-${refreshKey}`} uid={user?.uid} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} locations={locations} userDoc={userDoc} payments={payments} highlightId={searchParams.get("highlightId")} />
+          {/* Staff: while allowedTabsSet is still loading, show a loader instead of overview */}
+          {staffContext && !allowedTabsSet ? (
+            <div className="flex items-center justify-center h-96">
+              <div className="relative">
+                <div className="w-16 h-16 rounded-full border-4 border-t-purple-500 border-r-blue-500 border-b-purple-500 border-l-transparent animate-spin" />
+              </div>
+            </div>
+          ) : ((allowedTabsSet || getPlanPermissions(userDoc?.plan || "starter")).has(activeNav)
+            || (activeNav === "staff" && !staffContext)
+          ) ? (<>
+          {/* ── Staff Management (admin-only) ── */}
+          {activeNav === "staff" ? (
+            !staffContext ? (
+              <StaffManagementView key={`staff-${refreshKey}`} uid={user?.uid} userDoc={userDoc} />
+            ) : (
+              <div className="flex items-center justify-center h-96">
+                <div className="text-center">
+                  <div className="text-5xl mb-4">🚫</div>
+                  <h3 className="text-white font-bold text-lg mb-2">Access Denied</h3>
+                  <p className="text-gray-400 text-sm">Staff members cannot access this section.</p>
+                </div>
+              </div>
+            )
+          ) : activeNav === "invoices" ? (
+            <InvoicesView key={`invoices-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} locations={locations} userDoc={userDoc} payments={payments} highlightId={searchParams.get("highlightId")} />
           ) : activeNav === "customers" ? (
-            <CustomersView key={`customers-${refreshKey}`} uid={user?.uid} customers={customers} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} />
+            <CustomersView key={`customers-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} customers={customers} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} />
           ) : activeNav === "inventory" ? (
-            <InventoryView key={`inventory-${refreshKey}`} uid={user?.uid} locations={locations} />
+            <InventoryView key={`inventory-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} locations={locations} />
           ) : activeNav === "payments" ? (
-            <PaymentsView key={`payments-${refreshKey}`} uid={user?.uid} onNavigate={handleNavChange} />
+            <PaymentsView key={`payments-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} onNavigate={handleNavChange} />
           ) : activeNav === "purchases" ? (
-            <PurchasesView key={`purchases-${refreshKey}`} uid={user?.uid} userDoc={userDoc} onNavigate={handleNavChange} />
+            <PurchasesView key={`purchases-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} userDoc={userDoc} onNavigate={handleNavChange} />
           ) : activeNav === "order-form" ? (
             <OrderFormView key={`orderform-${refreshKey}`} userDoc={userDoc} />
           ) : activeNav === "analytics" ? (
-            <AnalyticsView key={`analytics-${refreshKey}`} uid={user?.uid} />
+            <AnalyticsView key={`analytics-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} />
           ) : activeNav === "hr" ? (
             <ComingSoonView
               key={`hr-${refreshKey}`}
@@ -1577,7 +1723,7 @@ function DashboardContent() {
               accentColor="#3b82f6"
             />
           ) : activeNav === "settings" ? (
-            <SettingsView key={`settings-${refreshKey}`} uid={user?.uid} user={user} userDoc={userDoc} loading={viewLoading}
+            <SettingsView key={`settings-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} user={user} userDoc={userDoc} loading={viewLoading}
               onSettingsSaved={(updated) => setUserDoc(prev => ({ ...prev, ...updated }))} />
           ) : activeNav === "contact" ? (
             <ContactView key={`contact-${refreshKey}`} userDoc={userDoc} user={user} />
@@ -1585,15 +1731,15 @@ function DashboardContent() {
             <MyTicketsView key={`tickets-${refreshKey}`} uid={user?.uid} userDoc={userDoc} user={user}
               onNewTicket={() => setActiveNav("contact")} />
           ) : activeNav === "trash" ? (
-            <TrashView key={`trash-${refreshKey}`} uid={user?.uid} />
+            <TrashView key={`trash-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} />
           ) : activeNav === "addons" ? (
-            <AddonsView key={`addons-${refreshKey}`} uid={user?.uid} userDoc={userDoc} user={user} />
+            <AddonsView key={`addons-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} userDoc={userDoc} user={user} />
           ) : activeNav === "backup" ? (
-            <BackupView key={`backup-${refreshKey}`} uid={user?.uid} userDoc={userDoc} />
+            <BackupView key={`backup-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} userDoc={userDoc} />
           ) : activeNav === "bill-book" ? (
             <DigitalRegisterView
               key={`digital-register-${refreshKey}`}
-              uid={user?.uid}
+              uid={staffContext ? staffContext.adminUid : user?.uid}
               userDoc={userDoc}
               overviewTotalAmount={totalRevenue}
               overviewCollected={totalCollected}
@@ -1875,7 +2021,7 @@ function DashboardContent() {
           )}
           </>
           )}
-          </>)} {/* end plan-allowed views */}
+          </> ) : null} {/* end plan-allowed views */}
         </main>
       </div>
 
