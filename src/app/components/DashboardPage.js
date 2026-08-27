@@ -1691,11 +1691,11 @@ function DashboardContent() {
               </div>
             )
           ) : activeNav === "invoices" ? (
-            <InvoicesView key={`invoices-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} locations={locations} userDoc={userDoc} payments={payments} highlightId={searchParams.get("highlightId")} />
+            <InvoicesView key={`invoices-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} locations={locations} userDoc={userDoc} staffContext={staffContext} payments={payments} highlightId={searchParams.get("highlightId")} />
           ) : activeNav === "customers" ? (
             <CustomersView key={`customers-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} customers={customers} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} />
           ) : activeNav === "inventory" ? (
-            <InventoryView key={`inventory-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} locations={locations} />
+            <InventoryView key={`inventory-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} userDoc={userDoc} locations={locations} />
           ) : activeNav === "payments" ? (
             <PaymentsView key={`payments-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} onNavigate={handleNavChange} />
           ) : activeNav === "purchases" ? (

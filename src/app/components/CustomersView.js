@@ -267,6 +267,12 @@ function DeleteConfirm({ name, onConfirm, onCancel }) {
 
 // ── Customer Detail ───────────────────────────────────────────────────────────
 function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDelete, onEmailConfirm }) {
+  // ★ STAFF PERMISSIONS
+  const isStaff = userDoc?.role === "staff";
+  const staffPerms = isStaff ? (userDoc?.permissions?.customers || {}) : null;
+  const canEdit = !isStaff || (staffPerms?.edit === true);
+  const canDelete = !isStaff || (staffPerms?.delete === true);
+  
   // real-time listener on THIS customer's invoices subcollection
   const [custInvoices, setCustInvoices] = useState([]);
   const [invLoading,   setInvLoading]   = useState(true);
@@ -1225,19 +1231,35 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
               📊 View History
             </button>
             
-            {/* Edit */}
-            <button onClick={onEdit}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-105"
-              style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.25)", color: "#60A5FA" }}>
-              ✏️ Edit
-            </button>
+            {/* ★ Edit - Permission based */}
+            {canEdit ? (
+              <button onClick={onEdit}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-105"
+                style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.25)", color: "#60A5FA" }}>
+                ✏️ Edit
+              </button>
+            ) : (
+              <button disabled title="No edit permission"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold opacity-40 cursor-not-allowed"
+                style={{ background: "rgba(107,114,128,0.1)", border: "1px solid rgba(107,114,128,0.2)", color: "#6b7280" }}>
+                🔒 Edit
+              </button>
+            )}
             
-            {/* Delete */}
-            <button onClick={onDelete}
-              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-105"
-              style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171" }}>
-              🗑 Delete
-            </button>
+            {/* ★ Delete - Permission based */}
+            {canDelete ? (
+              <button onClick={onDelete}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold transition-all hover:scale-105"
+                style={{ background: "rgba(248,113,113,0.1)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171" }}>
+                🗑 Delete
+              </button>
+            ) : (
+              <button disabled title="No delete permission"
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold opacity-40 cursor-not-allowed"
+                style={{ background: "rgba(107,114,128,0.1)", border: "1px solid rgba(107,114,128,0.2)", color: "#6b7280" }}>
+                🔒 Delete
+              </button>
+            )}
           </div>
         </div>
       </div>
@@ -2144,6 +2166,18 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose, userDoc, 
 
 // ── Main CustomersView ────────────────────────────────────────────────────────
 export default function CustomersView({ uid, customers, invoices, loading, products, userDoc }) {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ★ STAFF PERMISSIONS HELPER FUNCTIONS
+  // ═══════════════════════════════════════════════════════════════════════════
+  const isStaff = userDoc?.role === "staff";
+  const staffPerms = isStaff ? (userDoc?.permissions?.customers || {}) : null;
+  
+  // Check permissions
+  const canView   = !isStaff || (staffPerms?.view === "all");
+  const canCreate = !isStaff || (staffPerms?.create === true);
+  const canEdit   = !isStaff || (staffPerms?.edit === true);
+  const canDelete = !isStaff || (staffPerms?.delete === true);
+  
   const router       = useRouter();
   const searchParams = useSearchParams();
 
@@ -2538,15 +2572,27 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
             <p className="text-gray-400 text-xs">Manage your customer base and relationships</p>
           </div>
           
-          <button onClick={() => { setEditTarget(null); setShowModal(true); }}
-            className="group relative px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg">
-            <div className="absolute inset-0 bg-gradient-to-r from-amber-500 to-orange-600 transition-transform group-hover:scale-105" />
-            <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <span className="relative z-10 flex items-center gap-2 text-black font-bold">
-              <span className="text-base group-hover:rotate-90 transition-transform duration-300">+</span>
-              Add Customer
-            </span>
-          </button>
+          {/* ★ Only show Add Customer button if staff has permission */}
+          {canCreate && (
+            <button onClick={() => { setEditTarget(null); setShowModal(true); }}
+              className="group relative px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg">
+              <div className="absolute inset-0 bg-gradient-to-r from-amber-500 to-orange-600 transition-transform group-hover:scale-105" />
+              <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <span className="relative z-10 flex items-center gap-2 text-black font-bold">
+                <span className="text-base group-hover:rotate-90 transition-transform duration-300">+</span>
+                Add Customer
+              </span>
+            </button>
+          )}
+          
+          {/* ★ Show message if staff doesn't have create permission */}
+          {!canCreate && (
+            <div className="flex items-center gap-2 px-4 py-2 rounded-lg"
+              style={{ background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.25)" }}>
+              <span className="text-lg">🔒</span>
+              <span className="text-amber-400 text-xs font-semibold">No create permission</span>
+            </div>
+          )}
         </div>
       </div>
 

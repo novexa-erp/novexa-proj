@@ -68,7 +68,72 @@ function docToForm(inv) {
   };
 }
 
-export default function InvoicesView({ uid, invoices, loading, products = [], locations = [], userDoc, payments = [], highlightId = null }) {
+export default function InvoicesView({ uid, invoices, loading, products = [], locations = [], userDoc, staffContext = null, payments = [], highlightId = null }) {
+  // ═══════════════════════════════════════════════════════════════════════════
+  // ★ STAFF PERMISSIONS HELPER FUNCTIONS
+  // ═══════════════════════════════════════════════════════════════════════════
+  const isStaff = !!staffContext;
+  const staffPerms = isStaff ? (staffContext?.staffDoc?.permissions?.invoices || {}) : null;
+  
+  // Debug: Log permission state ALWAYS when component mounts
+  useEffect(() => {
+    console.log("🔍 InvoicesView Mount Debug:", {
+      isStaff,
+      staffContext: staffContext ? {
+        adminUid: staffContext.adminUid,
+        staffName: staffContext.staffDoc?.name,
+        staffUid: staffContext.staffDoc?.uid,
+        role: staffContext.staffDoc?.role,
+      } : null,
+      staffPerms,
+      permissionsObject: staffContext?.staffDoc?.permissions,
+      invoicePermissions: staffContext?.staffDoc?.permissions?.invoices,
+    });
+  }, [isStaff, staffContext]);
+  
+  // Check if staff can view an invoice
+  const canViewInvoice = (invoice) => {
+    if (!isStaff) return true; // Admin can view all
+    if (staffPerms?.view === "all") return true;
+    if (staffPerms?.view === "own") {
+      // Only show invoices created by this staff member
+      // Old invoices without createdBy → hide from staff (created by admin)
+      if (!invoice.createdBy) {
+        console.log("🔒 Hiding invoice without createdBy:", invoice.id);
+        return false;
+      }
+      const matches = invoice.createdBy === staffContext?.staffDoc?.uid;
+      if (matches) {
+        console.log("✅ Showing staff's own invoice:", invoice.id);
+      }
+      return matches;
+    }
+    console.log("⚠️ No view permission for invoice:", invoice.id);
+    return false; // No view permission
+  };
+  
+  // Check permissions - CRITICAL: Ensure boolean comparison
+  // Convert to boolean if it's a string or other type
+  const canCreate = !isStaff || (staffPerms?.create === true || staffPerms?.create === "true");
+  const canEdit   = !isStaff || (staffPerms?.edit === true || staffPerms?.edit === "true");
+  const canDelete = !isStaff || (staffPerms?.delete === true || staffPerms?.delete === "true");
+  
+  // Debug permissions ALWAYS
+  useEffect(() => {
+    console.log("🔐 Permission Check (Detailed):", {
+      isStaff,
+      staffPerms,
+      createRawValue: staffPerms?.create,
+      createType: typeof staffPerms?.create,
+      createStrictCheck: staffPerms?.create === true,
+      createLooseCheck: staffPerms?.create == true,
+      createStringCheck: staffPerms?.create === "true",
+      finalCanCreate: canCreate,
+      finalCanEdit: canEdit,
+      finalCanDelete: canDelete,
+    });
+  }, [canCreate, canEdit, canDelete, isStaff, staffPerms]);
+  
   const [activeTab,    setActiveTab]    = useState("All");
   const [showModal,    setShowModal]    = useState(false);
   const [editTarget,   setEditTarget]   = useState(null);
@@ -167,8 +232,38 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
     return true;
   });
 
+  // ★ STAFF PERMISSION FILTERING — Filter based on view permission (all/own)
+  const permissionFilteredInvoices = directInvoices.filter(inv => {
+    const result = canViewInvoice(inv);
+    // Debug logging - Log EVERY invoice for staff to see what's happening
+    if (isStaff) {
+      console.log("🔍 Invoice Filter Check:", {
+        invoiceId: inv.id,
+        invoiceNumber: inv.invoiceNumber,
+        invoiceCreatedBy: inv.createdBy,
+        invoiceCreatedByType: typeof inv.createdBy,
+        staffUid: staffContext?.staffDoc?.uid,
+        staffUidType: typeof staffContext?.staffDoc?.uid,
+        viewMode: staffPerms?.view,
+        viewModeType: typeof staffPerms?.view,
+        canView: result,
+        hasCreatedBy: !!inv.createdBy,
+        exactMatch: inv.createdBy === staffContext?.staffDoc?.uid,
+        looseMatch: inv.createdBy == staffContext?.staffDoc?.uid,
+        invoiceData: {
+          customerName: inv.customerName,
+          amount: inv.amount,
+          createdAt: inv.createdAt,
+          createdByName: inv.createdByName,
+          createdByRole: inv.createdByRole,
+        }
+      });
+    }
+    return result;
+  });
+
   // filter — use effectiveStatus (recalculated from actualAmount) not stored status
-  const filtered = directInvoices.filter(inv => {
+  const filtered = permissionFilteredInvoices.filter(inv => {
     const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
     const invActualAmt = inv.actualAmount != null
       ? Number(inv.actualAmount)
@@ -522,7 +617,26 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
           originalAmountPaid: payload.amountPaid,
           originalBalance:    payload.balance,
           originalStatus:     payload.status,
+          createdBy:          isStaff ? staffContext.staffDoc.uid : (userDoc?.uid || uid),
+          createdByName:      isStaff ? staffContext.staffDoc.name : (userDoc?.name || "Admin"),
+          createdByRole:      isStaff ? (staffContext.staffDoc.role || "Staff") : "admin",
           createdAt: serverTimestamp(),
+        });
+
+        // Debug: Log what was saved
+        console.log("✅ Invoice Created:", {
+          invoiceId: newDocRef.id,
+          invoiceNumber,
+          createdBy: isStaff ? staffContext.staffDoc.uid : (userDoc?.uid || uid),
+          createdByName: isStaff ? staffContext.staffDoc.name : (userDoc?.name || "Admin"),
+          createdByRole: isStaff ? (staffContext.staffDoc.role || "Staff") : "admin",
+          isStaffCreated: isStaff,
+          staffContext: isStaff ? {
+            staffUid: staffContext.staffDoc.uid,
+            staffName: staffContext.staffDoc.name,
+            staffRole: staffContext.staffDoc.role,
+            adminUid: staffContext.adminUid,
+          } : null,
         });
 
         // ── Create initial payment record if amountPaid > 0 at invoice creation ──
@@ -812,15 +926,27 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
             <p className="text-gray-400 text-xs">Create and manage customer invoices</p>
           </div>
           
-          <button onClick={() => { setEditTarget(null); setShowModal(true); }}
-            className="group relative px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg">
-            <div className="absolute inset-0 bg-gradient-to-r from-amber-500 to-orange-600 transition-transform group-hover:scale-105" />
-            <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-            <span className="relative z-10 flex items-center gap-2 text-black font-bold">
-              <span className="text-base group-hover:rotate-90 transition-transform duration-300">+</span>
-              Create Invoice
-            </span>
-          </button>
+          {/* ★ Only show Create Invoice button if staff has permission */}
+          {canCreate && (
+            <button onClick={() => { setEditTarget(null); setShowModal(true); }}
+              className="group relative px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg">
+              <div className="absolute inset-0 bg-gradient-to-r from-amber-500 to-orange-600 transition-transform group-hover:scale-105" />
+              <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+              <span className="relative z-10 flex items-center gap-2 text-black font-bold">
+                <span className="text-base group-hover:rotate-90 transition-transform duration-300">+</span>
+                Create Invoice
+              </span>
+            </button>
+          )}
+          
+          {/* ★ Show message if staff doesn't have create permission */}
+          {!canCreate && (
+            <div className="flex items-center gap-2 px-4 py-2 rounded-lg"
+              style={{ background: "rgba(251,191,36,0.1)", border: "1px solid rgba(251,191,36,0.25)" }}>
+              <span className="text-lg">🔒</span>
+              <span className="text-amber-400 text-xs font-semibold">No create permission</span>
+            </div>
+          )}
         </div>
       </div>
 
@@ -874,13 +1000,13 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
           const totalReturns = (inv._pastReturns || []).reduce((s, r) => s + (Number(r.returnAmount) || 0), 0);
           return Math.max(0, base - totalReturns);
         };
-        const statsTotalAmount    = directInvoices.reduce((s, i) => s + getActualAmt(i), 0);
-        const statsTotalCollected = directInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
-        const statsTotalBalance   = directInvoices.reduce((s, i) => s + Math.max(0, getActualAmt(i) - (Number(i.amountPaid) || 0)), 0);
+        const statsTotalAmount    = permissionFilteredInvoices.reduce((s, i) => s + getActualAmt(i), 0);
+        const statsTotalCollected = permissionFilteredInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
+        const statsTotalBalance   = permissionFilteredInvoices.reduce((s, i) => s + Math.max(0, getActualAmt(i) - (Number(i.amountPaid) || 0)), 0);
         return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
         {[
-          { label: "Total Invoices", value: directInvoices.length, icon: "🧾", color: "from-orange-500 to-amber-600" },
+          { label: "Total Invoices", value: permissionFilteredInvoices.length, icon: "🧾", color: "from-orange-500 to-amber-600" },
           { label: "Total Amount", value: formatRs(statsTotalAmount), icon: "💰", color: "from-pink-500 to-purple-600" },
           { label: "Total Collected", value: formatRs(statsTotalCollected), icon: "💵", color: "from-green-500 to-emerald-600" },
           { label: "Total Balance", value: formatRs(statsTotalBalance), icon: "⏳", color: "from-rose-500 to-red-600" },
@@ -925,7 +1051,7 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
 
         <div className="flex flex-wrap gap-2">
           {TABS.map(t => {
-            const count = t === "All" ? directInvoices.length : directInvoices.filter(i => i.status === t).length;
+            const count = t === "All" ? permissionFilteredInvoices.length : permissionFilteredInvoices.filter(i => i.status === t).length;
             const icons = { All: "📋", Unpaid: "❌", Partial: "⚡", Paid: "✅" };
             return (
               <button
@@ -1037,7 +1163,16 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
                     </div>
                     <div className="min-w-0 flex-1">
                       <p className="text-white text-sm font-semibold truncate">{inv.customerName || inv.customer || "Unknown"}</p>
-                      <p className="text-gray-500 text-[10px] whitespace-nowrap">{inv.invoiceNumber || `INV-${num}`} · {dateStr}</p>
+                      <div className="flex items-center gap-2 flex-wrap">
+                        <p className="text-gray-500 text-[10px] whitespace-nowrap">{inv.invoiceNumber || `INV-${num}`} · {dateStr}</p>
+                        {/* Staff Created By Badge - Show role (Manager/Cashier) and name */}
+                        {inv.createdByRole && inv.createdByRole !== "admin" && inv.createdByName && (
+                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md whitespace-nowrap" 
+                            style={{ background: "rgba(168,85,247,0.12)", border: "1px solid rgba(168,85,247,0.25)", color: "#c084fc" }}>
+                            👨‍💼 {inv.createdByRole} ({inv.createdByName})
+                          </span>
+                        )}
+                      </div>
                     </div>
                     <span className="text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0"
                       style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
@@ -1066,12 +1201,20 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
                       style={{ background: "rgba(52,211,153,0.1)", border: "1px solid rgba(52,211,153,0.25)", color: "#34d399" }}>
                       👁 View
                     </button>
-                    {/* Edit */}
-                    <button onClick={() => { setEditTarget({ id: inv.id, form: docToForm(inv) }); setShowModal(true); }}
-                      className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95"
-                      style={{ background: "rgba(96,165,250,0.1)", border: "1px solid rgba(96,165,250,0.25)", color: "#60A5FA" }}>
-                      ✏️ Edit
-                    </button>
+                    {/* ★ Edit - Permission based */}
+                    {canEdit ? (
+                      <button onClick={() => { setEditTarget({ id: inv.id, form: docToForm(inv) }); setShowModal(true); }}
+                        className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95"
+                        style={{ background: "rgba(96,165,250,0.1)", border: "1px solid rgba(96,165,250,0.25)", color: "#60A5FA" }}>
+                        ✏️ Edit
+                      </button>
+                    ) : (
+                      <button disabled title="No edit permission"
+                        className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold opacity-40 cursor-not-allowed"
+                        style={{ background: "rgba(107,114,128,0.1)", border: "1px solid rgba(107,114,128,0.2)", color: "#6b7280" }}>
+                        🔒
+                      </button>
+                    )}
                     {/* Pay — only if balance > 0 */}
                     {invActualBalance > 0 && (
                       <button onClick={() => { setPayForm({ amount: "", method: "cash", payerName: inv.customerName || "", payerContact: inv.phone || "", receiverName: "", receiverContact: "" }); setPayTarget(inv); }}
@@ -1091,12 +1234,20 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
                         </button>
                       ) : null;
                     })()}
-                    {/* Delete */}
-                    <button onClick={() => setDeleteConf(inv.id)}
-                      className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95"
-                      style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>
-                      🗑️
-                    </button>
+                    {/* ★ Delete - Permission based */}
+                    {canDelete ? (
+                      <button onClick={() => setDeleteConf(inv.id)}
+                        className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95"
+                        style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>
+                        🗑️
+                      </button>
+                    ) : (
+                      <button disabled title="No delete permission"
+                        className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold opacity-40 cursor-not-allowed"
+                        style={{ background: "rgba(107,114,128,0.1)", border: "1px solid rgba(107,114,128,0.2)", color: "#6b7280" }}>
+                        🔒
+                      </button>
+                    )}
                   </div>
                 </div>
 
@@ -1111,11 +1262,18 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
                     </div>
                     <div className="min-w-0">
                       <p className="text-white text-sm font-semibold truncate">{inv.customerName || inv.customer || "Unknown"}</p>
-                      <div className="flex items-center gap-2">
+                      <div className="flex items-center gap-2 flex-wrap">
                         <p className="text-gray-500 text-[10px]">{inv.invoiceNumber || `INV-${num}`} · {dateStr}</p>
                         {isOverdue && (
                           <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
                             style={{ background: "rgba(248,113,113,0.12)", color: "#f87171" }}>OVERDUE</span>
+                        )}
+                        {/* Staff Created By Badge - Show role (Manager/Cashier) and name */}
+                        {inv.createdByRole && inv.createdByRole !== "admin" && inv.createdByName && (
+                          <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md whitespace-nowrap" 
+                            style={{ background: "rgba(168,85,247,0.12)", border: "1px solid rgba(168,85,247,0.25)", color: "#c084fc" }}>
+                            👨‍💼 {inv.createdByRole} ({inv.createdByName})
+                          </span>
                         )}
                       </div>
                     </div>
@@ -1174,12 +1332,20 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
                         <div className="absolute right-0 top-full mt-1 z-30 rounded-xl overflow-hidden"
                           style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 8px 32px rgba(0,0,0,0.6)", minWidth: 160 }}>
 
-                          {/* Edit */}
-                          <button onClick={() => { setOpenMenuId(null); setEditTarget({ id: inv.id, form: docToForm(inv) }); setShowModal(true); }}
-                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
-                            style={{ color: "#60A5FA" }}>
-                            ✏️ Edit
-                          </button>
+                          {/* ★ Edit - Only if permission granted */}
+                          {canEdit ? (
+                            <button onClick={() => { setOpenMenuId(null); setEditTarget({ id: inv.id, form: docToForm(inv) }); setShowModal(true); }}
+                              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                              style={{ color: "#60A5FA" }}>
+                              ✏️ Edit
+                            </button>
+                          ) : (
+                            <div className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold opacity-40 cursor-not-allowed"
+                              style={{ color: "#6b7280" }}
+                              title="You don't have permission to edit invoices">
+                              🔒 Edit
+                            </div>
+                          )}
 
                           {/* Pay */}
                           {invActualBalance > 0 && (
@@ -1217,12 +1383,20 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
                           {/* Divider */}
                           <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }} />
 
-                          {/* Delete */}
-                          <button onClick={() => { setOpenMenuId(null); setDeleteConf(inv.id); }}
-                            className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
-                            style={{ color: "#f87171" }}>
-                            🗑️ Delete
-                          </button>
+                          {/* ★ Delete - Only if permission granted */}
+                          {canDelete ? (
+                            <button onClick={() => { setOpenMenuId(null); setDeleteConf(inv.id); }}
+                              className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                              style={{ color: "#f87171" }}>
+                              🗑️ Delete
+                            </button>
+                          ) : (
+                            <div className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold opacity-40 cursor-not-allowed"
+                              style={{ color: "#6b7280" }}
+                              title="You don't have permission to delete invoices">
+                              🔒 Delete
+                            </div>
+                          )}
                         </div>
                       )}
                     </div>

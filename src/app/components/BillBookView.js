@@ -1017,6 +1017,16 @@ function DigitalRegisterTab({ uid, userDoc }) {
   const [alert,       setAlert]         = useState({ show: false, type: "", title: "", message: "" });
   const [emailConfirm,setEmailConfirm]  = useState({ show: false, invoice: null });
 
+  // ── Permission Helpers ────────────────────────────────────────────────────
+  const isStaff = userDoc?.role === "staff";
+  const staffPerms = isStaff ? (userDoc?.permissions?.invoices || {}) : null;
+  const canViewInvoice = (invoice) => {
+    if (!isStaff) return true;
+    if (staffPerms?.view === "all") return true;
+    if (staffPerms?.view === "own") return invoice.createdBy === userDoc.uid;
+    return false;
+  };
+
   // ── Fetch all invoices (direct + every customer's invoices) ─────────────────
   useEffect(() => {
     if (!uid) return;
@@ -1102,6 +1112,9 @@ function DigitalRegisterTab({ uid, userDoc }) {
 
   // ── Filter ───────────────────────────────────────────────────────────────────
   const filtered = allInvoices.filter(inv => {
+    // Staff permission check
+    if (!canViewInvoice(inv)) return false;
+
     const q = search.toLowerCase().trim();
     const matchSearch = !q ||
       (inv.customerName || inv.customer || "").toLowerCase().includes(q) ||
@@ -1130,7 +1143,7 @@ function DigitalRegisterTab({ uid, userDoc }) {
     return Math.max(0, base - totalReturns);
   }
 
-  const activeInvoices = allInvoices.filter(i => !i.deleted);
+  const activeInvoices = allInvoices.filter(i => !i.deleted && canViewInvoice(i));
   const totalInvoices  = activeInvoices.length;
   const totalAmount    = activeInvoices.reduce((s, i) => s + getStatActualAmt(i), 0);
   const totalCollected = activeInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);

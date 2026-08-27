@@ -177,7 +177,7 @@ async function getNextSupplierNumber() {
 }
 
 // ── Supplier Card ─────────────────────────────────────────────────────────────
-function SupplierCard({ supplier, onClick, onEdit, onDelete, index }) {
+function SupplierCard({ supplier, onClick, onEdit, onDelete, canEdit, canDelete, index }) {
   const balance       = Number(supplier.totalBalance)  || 0;
   const totalPaid     = Number(supplier.totalPaid)     || 0;
   const totalBusiness = Number(supplier.totalBusiness) || 0;
@@ -239,10 +239,20 @@ function SupplierCard({ supplier, onClick, onEdit, onDelete, index }) {
           </div>
         </div>
         <div className="flex gap-2 pt-2 border-t border-white/5" onClick={e => e.stopPropagation()}>
-          <button onClick={e => { e.stopPropagation(); e.preventDefault(); onEdit(e); }} className="flex-1 px-3 py-2 rounded-lg text-xs font-semibold hover:scale-105 transition-all"
-            style={{ background: "linear-gradient(135deg,rgba(37,99,235,0.15),rgba(59,130,246,0.25))", border: "1px solid rgba(59,130,246,0.4)", color: "#60A5FA" }}>✎ Edit</button>
-          <button onClick={e => { e.stopPropagation(); e.preventDefault(); onDelete(e); }} className="flex-1 px-3 py-2 rounded-lg text-xs font-semibold hover:scale-105 transition-all"
-            style={{ background: "linear-gradient(135deg,rgba(248,113,113,0.1),rgba(239,68,68,0.2))", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171" }}>🗑️ Delete</button>
+          <button 
+            onClick={canEdit ? (e => { e.stopPropagation(); e.preventDefault(); onEdit(e); }) : undefined}
+            disabled={!canEdit}
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-semibold hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+            style={{ background: "linear-gradient(135deg,rgba(37,99,235,0.15),rgba(59,130,246,0.25))", border: "1px solid rgba(59,130,246,0.4)", color: "#60A5FA" }}>
+            {canEdit ? "✎ Edit" : "🔒 Edit"}
+          </button>
+          <button 
+            onClick={canDelete ? (e => { e.stopPropagation(); e.preventDefault(); onDelete(e); }) : undefined}
+            disabled={!canDelete}
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-semibold hover:scale-105 transition-all disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
+            style={{ background: "linear-gradient(135deg,rgba(248,113,113,0.1),rgba(239,68,68,0.2))", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171" }}>
+            {canDelete ? "🗑️ Delete" : "🔒 Delete"}
+          </button>
         </div>
       </div>
       <style jsx>{`@keyframes fadeInUp{from{opacity:0;transform:translateY(20px)}to{opacity:1;transform:translateY(0)}}`}</style>
@@ -268,6 +278,13 @@ export default function PurchasesView({ uid, userDoc, onNavigate }) {
   const [monthlySupplierCount, setMonthlySupplierCount] = useState(null);
   const [suppliersLimitVal,    setSuppliersLimitVal]    = useState(null);
   const [alert, setAlert]                 = useState({ show: false, type: "", title: "", message: "" });
+
+  // ── Permission Helpers ────────────────────────────────────────────────────
+  const isStaff = userDoc?.role === "staff";
+  const staffPerms = isStaff ? (userDoc?.permissions?.purchases || {}) : null;
+  const canCreate = !isStaff || (staffPerms?.create === true);
+  const canEdit = !isStaff || (staffPerms?.edit === true);
+  const canDelete = !isStaff || (staffPerms?.delete === true);
 
   // URL helpers — same pattern as CustomersView
   function openSupplier(sup) {
@@ -481,15 +498,24 @@ export default function PurchasesView({ uid, userDoc, onNavigate }) {
               </h2>
               <p className="text-gray-300 text-xs">Manage suppliers and track all purchases</p>
             </div>
-            <button onClick={() => { setEditSupplier(null); setShowSupplierModal(true); }}
-              className="group relative px-5 py-2.5 rounded-lg font-semibold text-sm hover:scale-105 transition-all overflow-hidden shadow-lg">
-              <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600" />
-              <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-pink-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-              <span className="relative z-10 flex items-center gap-2 text-white">
-                <span className="text-base group-hover:rotate-90 transition-transform duration-300">+</span>
-                Add Supplier
-              </span>
-            </button>
+            {canCreate ? (
+              <button onClick={() => { setEditSupplier(null); setShowSupplierModal(true); }}
+                className="group relative px-5 py-2.5 rounded-lg font-semibold text-sm hover:scale-105 transition-all overflow-hidden shadow-lg">
+                <div className="absolute inset-0 bg-gradient-to-r from-blue-500 to-purple-600" />
+                <div className="absolute inset-0 bg-gradient-to-r from-purple-500 to-pink-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                <span className="relative z-10 flex items-center gap-2 text-white">
+                  <span className="text-base group-hover:rotate-90 transition-transform duration-300">+</span>
+                  Add Supplier
+                </span>
+              </button>
+            ) : (
+              <div className="px-5 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2 cursor-not-allowed"
+                style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", color: "#6b7280" }}
+                title="You don't have permission to create suppliers">
+                <span>🔒</span>
+                <span>Add Supplier</span>
+              </div>
+            )}
           </div>
         </div>
 
@@ -701,12 +727,15 @@ export default function PurchasesView({ uid, userDoc, onNavigate }) {
               <p className="text-gray-200 text-sm mb-6">
                 {searchQuery ? `No match for "${searchQuery}"` : "Add your first supplier to get started"}
               </p>
-              {!searchQuery && (
+              {!searchQuery && canCreate && (
                 <button onClick={() => { setEditSupplier(null); setShowSupplierModal(true); }}
                   className="px-6 py-3 rounded-lg text-sm font-semibold hover:scale-105 transition-all shadow-lg"
                   style={{ background: "linear-gradient(135deg,#3b82f6,#8b5cf6)", color: "#fff" }}>
                   + Add First Supplier
                 </button>
+              )}
+              {!searchQuery && !canCreate && (
+                <p className="text-gray-600 text-xs mt-4">🔒 You don't have permission to create suppliers</p>
               )}
             </div>
           </div>
@@ -720,6 +749,8 @@ export default function PurchasesView({ uid, userDoc, onNavigate }) {
                 onClick={() => openSupplier(sup)}
                 onEdit={e => { e.stopPropagation(); setEditSupplier(sup); setShowSupplierModal(true); }}
                 onDelete={e => { e.stopPropagation(); setDeleteSupId(sup.id); }}
+                canEdit={canEdit}
+                canDelete={canDelete}
               />
             ))}
           </div>

@@ -42,7 +42,7 @@ const PRODUCT_CATEGORIES = [
   "Other",
 ];
 
-export default function InventoryView({ uid, locations = [] }) {
+export default function InventoryView({ uid, userDoc, locations = [] }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
@@ -53,6 +53,13 @@ export default function InventoryView({ uid, locations = [] }) {
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, name }
   const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
   const [showLocationsManager, setShowLocationsManager] = useState(false);
+
+  // ── Permission Helpers ────────────────────────────────────────────────────
+  const isStaff = userDoc?.role === "staff";
+  const staffPerms = isStaff ? (userDoc?.permissions?.inventory || {}) : null;
+  const canCreate = !isStaff || (staffPerms?.create === true);
+  const canEdit = !isStaff || (staffPerms?.edit === true);
+  const canDelete = !isStaff || (staffPerms?.delete === true);
 
   useEffect(() => {
     if (uid) loadProducts();
@@ -79,6 +86,9 @@ export default function InventoryView({ uid, locations = [] }) {
       } else {
         await addDoc(collection(db, `users/${uid}/products`), {
           ...productData,
+          createdBy: userDoc?.uid || uid,
+          createdByName: userDoc?.name || "Admin",
+          createdByRole: userDoc?.role || "admin",
           createdAt: serverTimestamp(),
         });
         setAlert({ show: true, type: "success", title: "Product Added! 📦", message: `"${productData.name}" has been added to inventory.` });
@@ -232,15 +242,24 @@ export default function InventoryView({ uid, locations = [] }) {
                 )}
               </span>
             </button>
-            <button onClick={openAddModal}
-              className="group relative px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg">
-              <div className="absolute inset-0 bg-gradient-to-r from-amber-500 to-orange-600 transition-transform group-hover:scale-105" />
-              <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
-              <span className="relative z-10 flex items-center gap-2 text-black font-bold">
-                <span className="text-base group-hover:rotate-90 transition-transform duration-300">+</span>
-                Add Product
-              </span>
-            </button>
+            {canCreate ? (
+              <button onClick={openAddModal}
+                className="group relative px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg">
+                <div className="absolute inset-0 bg-gradient-to-r from-amber-500 to-orange-600 transition-transform group-hover:scale-105" />
+                <div className="absolute inset-0 bg-gradient-to-r from-pink-500 to-purple-500 opacity-0 group-hover:opacity-100 transition-opacity duration-300" />
+                <span className="relative z-10 flex items-center gap-2 text-black font-bold">
+                  <span className="text-base group-hover:rotate-90 transition-transform duration-300">+</span>
+                  Add Product
+                </span>
+              </button>
+            ) : (
+              <div className="px-5 py-2.5 rounded-lg text-sm font-semibold flex items-center gap-2 cursor-not-allowed"
+                style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)", color: "#6b7280" }}
+                title="You don't have permission to create products">
+                <span>🔒</span>
+                <span>Add Product</span>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -354,12 +373,15 @@ export default function InventoryView({ uid, locations = [] }) {
                 : "Start by adding your first product"
               }
             </p>
-            {!searchQuery && (
+            {!searchQuery && canCreate && (
               <button onClick={openAddModal}
                 className="px-6 py-3 rounded-lg text-sm font-semibold transition-all duration-300 hover:scale-105 shadow-lg"
                 style={{ background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#000" }}>
                 + Create First Product
               </button>
+            )}
+            {!searchQuery && !canCreate && (
+              <p className="text-gray-600 text-xs mt-4">🔒 You don't have permission to create products</p>
             )}
           </div>
         </div>
@@ -372,6 +394,8 @@ export default function InventoryView({ uid, locations = [] }) {
               locations={locations}
               onEdit={() => openEditModal(prod)} 
               onDelete={() => handleDelete(prod.id)}
+              canEdit={canEdit}
+              canDelete={canDelete}
               index={idx}
             />
           ))}
@@ -400,7 +424,7 @@ export default function InventoryView({ uid, locations = [] }) {
 // ═══════════════════════════════════════════════════════════════════════════
 // Product Card - Professional & Animated
 // ═══════════════════════════════════════════════════════════════════════════
-function ProductCard({ product, locations = [], onEdit, onDelete, index }) {
+function ProductCard({ product, locations = [], onEdit, onDelete, canEdit, canDelete, index }) {
   const hasVariants = product.variantType !== "none" && product.variants?.length > 0;
   const totalStock = hasVariants
     ? product.variants.reduce((sum, v) => sum + (parseInt(v.stock) || 0), 0)
@@ -528,15 +552,19 @@ function ProductCard({ product, locations = [], onEdit, onDelete, index }) {
 
         {/* Actions */}
         <div className="flex gap-2 pt-2 border-t border-white/5">
-          <button onClick={onEdit}
-            className="flex-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-300 hover:scale-105"
+          <button 
+            onClick={canEdit ? onEdit : undefined}
+            disabled={!canEdit}
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
             style={{ background: "linear-gradient(135deg, rgba(37,99,235,0.15), rgba(59,130,246,0.25))", border: "1px solid rgba(59,130,246,0.4)", color: "#60A5FA" }}>
-            ✎ Edit
+            {canEdit ? "✎ Edit" : "🔒 Edit"}
           </button>
-          <button onClick={onDelete}
-            className="flex-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-300 hover:scale-105"
+          <button 
+            onClick={canDelete ? onDelete : undefined}
+            disabled={!canDelete}
+            className="flex-1 px-3 py-2 rounded-lg text-xs font-semibold transition-all duration-300 hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed disabled:hover:scale-100"
             style={{ background: "linear-gradient(135deg, rgba(248,113,113,0.1), rgba(239,68,68,0.2))", border: "1px solid rgba(239,68,68,0.3)", color: "#f87171" }}>
-            ⌫ Delete
+            {canDelete ? "⌫ Delete" : "🔒 Delete"}
           </button>
         </div>
       </div>

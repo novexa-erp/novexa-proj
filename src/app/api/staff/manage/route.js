@@ -63,7 +63,7 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const { name, email, password, role, allowedModules, isActive = true } = body;
+    const { name, email, password, role, allowedModules, permissions, isActive = true } = body;
 
     if (!name?.trim())     return NextResponse.json({ error: "Name is required" }, { status: 400 });
     if (!email?.trim())    return NextResponse.json({ error: "Email is required" }, { status: 400 });
@@ -73,6 +73,16 @@ export async function POST(request) {
 
     // Validate allowedModules — must be a subset of admin's plan modules
     const modules = Array.isArray(allowedModules) ? allowedModules : [];
+    
+    // Default permissions if not provided
+    const defaultPermissions = {
+      invoices:  { view: "own", create: false, edit: false, delete: false },
+      customers: { view: "all", create: false, edit: false, delete: false },
+      inventory: { view: "all", create: false, edit: false, delete: false },
+      payments:  { view: "all", create: false, edit: false, delete: false },
+      purchases: { view: "all", create: false, edit: false, delete: false },
+    };
+    const staffPermissions = permissions || defaultPermissions;
 
     // Create Firebase Auth user
     let staffRecord;
@@ -105,6 +115,7 @@ export async function POST(request) {
       email:          email.trim().toLowerCase(),
       role:           role?.trim() || "Staff",
       allowedModules: modules,
+      permissions:    staffPermissions,
       isActive:       Boolean(isActive),
       createdAt:      now,
       updatedAt:      now,
@@ -143,7 +154,7 @@ export async function PATCH(request) {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const { staffUid, name, role, allowedModules, isActive, password } = body;
+    const { staffUid, name, role, allowedModules, permissions, isActive, password } = body;
     if (!staffUid) return NextResponse.json({ error: "staffUid is required" }, { status: 400 });
 
     // Verify staff belongs to this admin
@@ -158,6 +169,7 @@ export async function PATCH(request) {
     if (name            !== undefined) updates.name           = name.trim();
     if (role            !== undefined) updates.role           = role?.trim() || "Staff";
     if (allowedModules  !== undefined) updates.allowedModules = Array.isArray(allowedModules) ? allowedModules : [];
+    if (permissions     !== undefined) updates.permissions    = permissions;
     if (isActive        !== undefined) updates.isActive       = Boolean(isActive);
 
     await staffRef.update(updates);
