@@ -1272,9 +1272,18 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         </div>
         <div className="flex-1">
           <h2 className="text-white font-black text-xl leading-none mb-1">{customer.name}</h2>
-          {customer.customerNumber && (
-            <p className="text-[11px] font-semibold mb-1" style={{ color: "#60A5FA" }}>{customer.customerNumber}</p>
-          )}
+          <div className="flex items-center gap-2 flex-wrap mb-1">
+            {customer.customerNumber && (
+              <p className="text-[11px] font-semibold whitespace-nowrap" style={{ color: "#60A5FA" }}>{customer.customerNumber}</p>
+            )}
+            {/* Staff Created By Badge - Show role (Manager/Cashier) and name */}
+            {customer.createdByRole && customer.createdByRole !== "admin" && customer.createdByName && (
+              <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md whitespace-nowrap" 
+                style={{ background: "rgba(168,85,247,0.12)", border: "1px solid rgba(168,85,247,0.25)", color: "#c084fc" }}>
+                👨‍💼 {customer.createdByRole} ({customer.createdByName})
+              </span>
+            )}
+          </div>
           {customer.shopName && <p className="text-amber-400 text-sm font-semibold mb-2">{customer.shopName}</p>}
           <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-400">
             {customer.phone   && <span>📞 {customer.phone}</span>}
@@ -2165,18 +2174,29 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose, userDoc, 
 }
 
 // ── Main CustomersView ────────────────────────────────────────────────────────
-export default function CustomersView({ uid, customers, invoices, loading, products, userDoc }) {
+export default function CustomersView({ uid, customers, invoices, loading, products, userDoc, staffContext = null }) {
   // ═══════════════════════════════════════════════════════════════════════════
   // ★ STAFF PERMISSIONS HELPER FUNCTIONS
   // ═══════════════════════════════════════════════════════════════════════════
-  const isStaff = userDoc?.role === "staff";
-  const staffPerms = isStaff ? (userDoc?.permissions?.customers || {}) : null;
+  const isStaff = !!staffContext;
+  const staffPerms = isStaff ? (staffContext?.staffDoc?.permissions?.customers || {}) : null;
+  
+  // Check if staff can view a customer
+  const canViewCustomer = (customer) => {
+    if (!isStaff) return true; // Admin can view all
+    if (staffPerms?.view === "all") return true;
+    if (staffPerms?.view === "own") {
+      // Only show customers created by this staff member
+      if (!customer.createdBy) return false; // Old customers without createdBy → hide from staff
+      return customer.createdBy === staffContext?.staffDoc?.uid;
+    }
+    return false; // No view permission
+  };
   
   // Check permissions
-  const canView   = !isStaff || (staffPerms?.view === "all");
-  const canCreate = !isStaff || (staffPerms?.create === true);
-  const canEdit   = !isStaff || (staffPerms?.edit === true);
-  const canDelete = !isStaff || (staffPerms?.delete === true);
+  const canCreate = !isStaff || (staffPerms?.create === true || staffPerms?.create === "true");
+  const canEdit   = !isStaff || (staffPerms?.edit === true || staffPerms?.edit === "true");
+  const canDelete = !isStaff || (staffPerms?.delete === true || staffPerms?.delete === "true");
   
   const router       = useRouter();
   const searchParams = useSearchParams();
@@ -2352,6 +2372,9 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
           address: form.address || "", city: form.city || "",
           notes: form.notes || "", status: "active",
           customerNumber,
+          createdBy:       isStaff ? staffContext.staffDoc.uid : (userDoc?.uid || uid),
+          createdByName:   isStaff ? staffContext.staffDoc.name : (userDoc?.name || "Admin"),
+          createdByRole:   isStaff ? (staffContext.staffDoc.role || "Staff") : "admin",
           createdAt: serverTimestamp(),
         });
         
@@ -2428,17 +2451,22 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
     setDeleteConf(null);
   }
 
-  // stats — sirf existing customers ki invoices (deleted customers ki exclude)
-  const existingCustomerIds = new Set(customers.map(c => c.id));
+  // ★ Filter customers by staff permission before calculating stats
+  const permissionFilteredCustomers = customers.filter(c => canViewCustomer(c));
+
+  // stats — sirf existing AND permission-filtered customers ki invoices
+  const existingCustomerIds = new Set(permissionFilteredCustomers.map(c => c.id));
   const custLinkedInvoices = invoices.filter(i => i.customerId && existingCustomerIds.has(i.customerId) && !i.deleted);
-  const activeCount  = customers.filter(c => c.status !== "inactive").length;
+  const activeCount  = permissionFilteredCustomers.filter(c => c.status !== "inactive").length;
   const totalRevenue = custLinkedInvoices.filter(i => i.status === "Paid").reduce((s, i) => s + (Number(i.amount) || 0), 0);
   const totalPaid    = custLinkedInvoices.reduce((s, i) => s + (Number(i.amountPaid) || 0), 0);
 
-  // totalBalance = sum of all customerBalances (same source as cards — most accurate)
-  const totalBalance = Object.values(customerBalances).reduce((s, b) => s + (b.balance || 0), 0);
+  // totalBalance = sum of customerBalances for permission-filtered customers only
+  const totalBalance = Object.entries(customerBalances)
+    .filter(([custId]) => existingCustomerIds.has(custId))
+    .reduce((s, [, b]) => s + (b.balance || 0), 0);
 
-  const filtered = customers.filter(c => {
+  const filtered = permissionFilteredCustomers.filter(c => {
     const matchStatus = statusFilter === "All" || c.status === statusFilter || (!c.status && statusFilter === "active");
     const q = search.toLowerCase();
     return matchStatus && (!q ||
@@ -2599,7 +2627,7 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
       {/* Professional Stats */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           {[
-            { label: "Total Customers", value: customers.length, icon: "👥", color: "from-orange-500 to-amber-600" },
+            { label: "Total Customers", value: permissionFilteredCustomers.length, icon: "👥", color: "from-orange-500 to-amber-600" },
             { label: "Active Customers", value: activeCount, icon: "✅", color: "from-pink-500 to-purple-600" },
             { label: "Total Revenue", value: formatRs(totalRevenue), icon: "💰", color: "from-amber-500 to-orange-600" },
             { label: "Total Paid", value: formatRs(totalPaid), icon: "💵", color: "from-green-500 to-emerald-600" },
@@ -2680,9 +2708,9 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
 
         <div className="flex flex-wrap gap-2">
           {[
-            { id: "All", label: "All", icon: "📋", count: customers.length },
+            { id: "All", label: "All", icon: "📋", count: permissionFilteredCustomers.length },
             { id: "active", label: "Active", icon: "✅", count: activeCount },
-            { id: "inactive", label: "Inactive", icon: "❌", count: customers.length - activeCount },
+            { id: "inactive", label: "Inactive", icon: "❌", count: permissionFilteredCustomers.length - activeCount },
           ].map(f => (
             <button
               key={f.id}
@@ -2776,11 +2804,21 @@ export default function CustomersView({ uid, customers, invoices, loading, produ
                     <h3 className="text-white font-bold text-base line-clamp-1 group-hover:text-amber-400 transition-colors">
                       {c.name}
                     </h3>
-                    {c.customerNumber && (
-                      <p className="text-[10px] font-semibold mt-0.5" style={{ color: "#60A5FA" }}>{c.customerNumber}</p>
-                    )}
+                    {/* Customer Number & Badge - centered and stacked if needed */}
+                    <div className="flex flex-col items-center gap-1 mt-1">
+                      {c.customerNumber && (
+                        <p className="text-[10px] font-semibold" style={{ color: "#60A5FA" }}>{c.customerNumber}</p>
+                      )}
+                      {/* Staff Created By Badge */}
+                      {c.createdByRole && c.createdByRole !== "admin" && c.createdByName && (
+                        <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md whitespace-nowrap" 
+                          style={{ background: "rgba(168,85,247,0.12)", border: "1px solid rgba(168,85,247,0.25)", color: "#c084fc" }}>
+                          👨‍💼 {c.createdByRole} ({c.createdByName})
+                        </span>
+                      )}
+                    </div>
                     {c.shopName && (
-                      <p className="text-amber-400 text-sm font-semibold line-clamp-1 mt-0.5">{c.shopName}</p>
+                      <p className="text-amber-400 text-sm font-semibold line-clamp-1 mt-1">{c.shopName}</p>
                     )}
                   </div>
 

@@ -204,11 +204,20 @@ function SupplierCard({ supplier, onClick, onEdit, onDelete, canEdit, canDelete,
           </div>
           <div className="min-w-0">
             <h3 className="text-white font-bold text-base truncate">{supplier.name}</h3>
-            {supplier.supplierNumber && (
-              <p className="text-[10px] font-semibold" style={{ color: "#60A5FA" }}>
-                <span style={{ color: "#6b7280" }}>Supplier No: </span>{supplier.supplierNumber}
-              </p>
-            )}
+            <div className="flex items-center gap-1.5 flex-wrap">
+              {supplier.supplierNumber && (
+                <p className="text-[10px] font-semibold whitespace-nowrap" style={{ color: "#60A5FA" }}>
+                  <span style={{ color: "#6b7280" }}>Supplier No: </span>{supplier.supplierNumber}
+                </p>
+              )}
+              {/* Staff Created By Badge */}
+              {supplier.createdByRole && supplier.createdByRole !== "admin" && supplier.createdByName && (
+                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md whitespace-nowrap" 
+                  style={{ background: "rgba(168,85,247,0.12)", border: "1px solid rgba(168,85,247,0.25)", color: "#c084fc" }}>
+                  👨‍💼 {supplier.createdByRole} ({supplier.createdByName})
+                </span>
+              )}
+            </div>
             {supplier.shopName && <p className="text-amber-400 text-xs font-semibold truncate">{supplier.shopName}</p>}
             <p className="text-gray-500 text-[11px]">{supplier.phone}</p>
           </div>
@@ -261,7 +270,7 @@ function SupplierCard({ supplier, onClick, onEdit, onDelete, canEdit, canDelete,
 }
 
 // ── Main PurchasesView ────────────────────────────────────────────────────────
-export default function PurchasesView({ uid, userDoc, onNavigate }) {
+export default function PurchasesView({ uid, userDoc, onNavigate, staffContext = null }) {
   const router       = useRouter();
   const searchParams = useSearchParams();
   const [suppliers, setSuppliers]         = useState([]);
@@ -280,11 +289,24 @@ export default function PurchasesView({ uid, userDoc, onNavigate }) {
   const [alert, setAlert]                 = useState({ show: false, type: "", title: "", message: "" });
 
   // ── Permission Helpers ────────────────────────────────────────────────────
-  const isStaff = userDoc?.role === "staff";
-  const staffPerms = isStaff ? (userDoc?.permissions?.purchases || {}) : null;
-  const canCreate = !isStaff || (staffPerms?.create === true);
-  const canEdit = !isStaff || (staffPerms?.edit === true);
-  const canDelete = !isStaff || (staffPerms?.delete === true);
+  const isStaff = !!staffContext;
+  const staffPerms = isStaff ? (staffContext?.staffDoc?.permissions?.purchases || {}) : null;
+  
+  // Check if staff can view a supplier
+  const canViewSupplier = (supplier) => {
+    if (!isStaff) return true; // Admin can view all
+    if (staffPerms?.view === "all") return true;
+    if (staffPerms?.view === "own") {
+      // Only show suppliers created by this staff member
+      if (!supplier.createdBy) return false; // Old suppliers without createdBy → hide from staff
+      return supplier.createdBy === staffContext?.staffDoc?.uid;
+    }
+    return false; // No view permission
+  };
+  
+  const canCreate = !isStaff || (staffPerms?.create === true || staffPerms?.create === "true");
+  const canEdit = !isStaff || (staffPerms?.edit === true || staffPerms?.edit === "true");
+  const canDelete = !isStaff || (staffPerms?.delete === true || staffPerms?.delete === "true");
 
   // URL helpers — same pattern as CustomersView
   function openSupplier(sup) {
@@ -425,7 +447,14 @@ export default function PurchasesView({ uid, userDoc, onNavigate }) {
       } else {
         const supplierNumber = await getNextSupplierNumber();
         await addDoc(collection(db, "users", uid, "suppliers"),
-          { ...form, supplierNumber, createdAt: serverTimestamp() });
+          { 
+            ...form, 
+            supplierNumber, 
+            createdBy:       isStaff ? staffContext.staffDoc.uid : (userDoc?.uid || uid),
+            createdByName:   isStaff ? staffContext.staffDoc.name : (userDoc?.name || "Admin"),
+            createdByRole:   isStaff ? (staffContext.staffDoc.role || "Staff") : "admin",
+            createdAt: serverTimestamp() 
+          });
         setAlert({ show: true, type: "success", title: "Supplier Added! 🎉", message: `${form.name} added.` });
       }
       setShowSupplierModal(false);
@@ -455,17 +484,18 @@ export default function PurchasesView({ uid, userDoc, onNavigate }) {
     setDeleteSupId(null);
   }
 
-  // ── if supplier selected → show detail view ───────────────────────────────
-  // (no early return — modals need to be accessible from detail page too)
-  const filtered = suppliers.filter(s =>
+  // ── Filter suppliers by permission and search ─────────────────────────────
+  const permissionFilteredSuppliers = suppliers.filter(s => canViewSupplier(s));
+  
+  const filtered = permissionFilteredSuppliers.filter(s =>
     s.name?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     s.shopName?.toLowerCase().includes(searchQuery.toLowerCase()) ||
     s.phone?.includes(searchQuery)
   );
-  const totalBusiness = suppliers.reduce((s, x) => s + (Number(x.totalBusiness) || 0), 0);
-  const totalReturns  = suppliers.reduce((s, x) => s + (Number(x.totalReturns)  || 0), 0);
-  const totalPaid     = suppliers.reduce((s, x) => s + (Number(x.totalPaid)     || 0), 0);
-  const totalBalance  = suppliers.reduce((s, x) => s + (Number(x.totalBalance)  || 0), 0);
+  const totalBusiness = permissionFilteredSuppliers.reduce((s, x) => s + (Number(x.totalBusiness) || 0), 0);
+  const totalReturns  = permissionFilteredSuppliers.reduce((s, x) => s + (Number(x.totalReturns)  || 0), 0);
+  const totalPaid     = permissionFilteredSuppliers.reduce((s, x) => s + (Number(x.totalPaid)     || 0), 0);
+  const totalBalance  = permissionFilteredSuppliers.reduce((s, x) => s + (Number(x.totalBalance)  || 0), 0);
 
   return (
     <>
@@ -522,7 +552,7 @@ export default function PurchasesView({ uid, userDoc, onNavigate }) {
         {/* Stats */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
           {[
-            { label: "Total Suppliers",  value: suppliers.length,        icon: "👤", color: "from-blue-500 to-indigo-600"   },
+            { label: "Total Suppliers",  value: permissionFilteredSuppliers.length,        icon: "👤", color: "from-blue-500 to-indigo-600"   },
             { label: "Total Business",   value: formatRs(totalBusiness),  icon: "💼", color: "from-purple-500 to-pink-600"  },
             { label: "Total Paid Out",   value: formatRs(totalPaid),      icon: "💸", color: "from-green-500 to-emerald-600" },
             { label: "Goods Return",     value: formatRs(totalReturns),   icon: "↩️", color: "from-red-500 to-rose-600"     },

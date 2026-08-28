@@ -4561,9 +4561,18 @@ export default function SupplierDetail({ supplier, uid, userDoc = {}, onBack, on
           </div>
           <div className="flex-1">
             <h2 className="text-white font-black text-xl leading-none mb-1">{supplier.name}</h2>
-            {supplier.supplierNumber && (
-              <p className="text-[11px] font-semibold mb-1" style={{ color: "#60A5FA" }}>{supplier.supplierNumber}</p>
-            )}
+            <div className="flex items-center gap-2 flex-wrap mb-1">
+              {supplier.supplierNumber && (
+                <p className="text-[11px] font-semibold whitespace-nowrap" style={{ color: "#60A5FA" }}>{supplier.supplierNumber}</p>
+              )}
+              {/* Staff Created By Badge */}
+              {supplier.createdByRole && supplier.createdByRole !== "admin" && supplier.createdByName && (
+                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md whitespace-nowrap" 
+                  style={{ background: "rgba(168,85,247,0.12)", border: "1px solid rgba(168,85,247,0.25)", color: "#c084fc" }}>
+                  👨‍💼 {supplier.createdByRole} ({supplier.createdByName})
+                </span>
+              )}
+            </div>
             {supplier.shopName && <p className="text-amber-400 text-sm font-semibold mb-2">{supplier.shopName}</p>}
             <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs text-gray-400">
               {supplier.phone   && <span>📞 {supplier.phone}</span>}

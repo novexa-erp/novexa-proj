@@ -120,7 +120,7 @@ function Avatar({ name, size = 36 }) {
 }
 
 // ── Main component ────────────────────────────────────────────────────────────
-export default function StaffManagementView({ uid, userDoc }) {
+export default function StaffManagementView({ uid, userDoc, locations = [] }) {
   const [staffList, setStaffList]       = useState([]);
   const [loading,   setLoading]         = useState(true);
   const [saving,    setSaving]          = useState(false);
@@ -137,14 +137,29 @@ export default function StaffManagementView({ uid, userDoc }) {
   // Activity log drawer
   const [activityStaff, setActivityStaff] = useState(null); // staff doc
 
+  // Helper: Get default location ID
+  const getDefaultLocationId = () => {
+    const active = (locations || []).filter(l => !l.deleted);
+    // Strictly find default location only (don't fallback to first location)
+    const def = active.find(l => l.isDefault) || active.find(l => l.id === "default");
+    return def?.id || "";
+  };
+
   // Form state
   const BLANK_FORM = {
     name: "", email: "", password: "", role: "",
     allowedModules: ["overview", "settings"],
+    assignedLocationId: "", // Staff's assigned location - defaults to main shop if empty
     permissions: {
       invoices: { view: "own", create: false, edit: false, delete: false },
       customers: { view: "all", create: false, edit: false, delete: false },
-      inventory: { view: "all", create: false, edit: false, delete: false },
+      inventory: { 
+        view: "own", // "own" = only own products, "all" = all products in location
+        create: false, 
+        edit: false, 
+        delete: false, 
+        canManageLocations: false
+      },
       payments: { view: "all", create: false, edit: false, delete: false },
       purchases: { view: "all", create: false, edit: false, delete: false },
     },
@@ -202,7 +217,7 @@ export default function StaffManagementView({ uid, userDoc }) {
   // ── Helpers ───────────────────────────────────────────────────────────────
   function openCreate() {
     setEditTarget(null);
-    setForm(BLANK_FORM);
+    setForm({ ...BLANK_FORM, assignedLocationId: "" }); // Start with empty - user will select if needed
     setPasswordReset("");
     setShowPassword(false);
     setShowModal(true);
@@ -216,10 +231,17 @@ export default function StaffManagementView({ uid, userDoc }) {
       password:       "", // not pre-filled on edit
       role:           staff.role || "",
       allowedModules: [...(staff.allowedModules || [])],
+      assignedLocationId: staff.assignedLocationId || "",
       permissions:    staff.permissions || {
         invoices:  { view: "own", create: false, edit: false, delete: false },
         customers: { view: "all", create: false, edit: false, delete: false },
-        inventory: { view: "all", create: false, edit: false, delete: false },
+        inventory: { 
+          view: "own", 
+          create: false, 
+          edit: false, 
+          delete: false, 
+          canManageLocations: false
+        },
         payments:  { view: "all", create: false, edit: false, delete: false },
         purchases: { view: "all", create: false, edit: false, delete: false },
       },
@@ -272,8 +294,17 @@ export default function StaffManagementView({ uid, userDoc }) {
     if (!editTarget && !form.password) return showAlert("error", "Required", "Password is required for new staff.");
     if (!editTarget && form.password.length < 8) return showAlert("error", "Weak Password", "Password must be at least 8 characters.");
 
+    // Validate assigned location for inventory "own" view
+    // Removed validation - if empty, will auto-assign to default location
+    // if (form.permissions.inventory?.view === "own" && !form.assignedLocationId) {
+    //   return showAlert("error", "Location Required", "Please select an assigned location for 'Own Only' inventory view.");
+    // }
+
     setSaving(true);
     try {
+      // If assignedLocationId is empty, auto-assign to default location
+      const finalLocationId = form.assignedLocationId || getDefaultLocationId() || "";
+      
       if (!editTarget) {
         // Create
         const data = await callManage("POST", {
@@ -282,6 +313,7 @@ export default function StaffManagementView({ uid, userDoc }) {
           password:       form.password,
           role:           form.role.trim(),
           allowedModules: form.allowedModules,
+          assignedLocationId: finalLocationId,
           permissions:    form.permissions,
           isActive:       form.isActive,
         });
@@ -294,6 +326,7 @@ export default function StaffManagementView({ uid, userDoc }) {
           name:           form.name.trim(),
           role:           form.role.trim(),
           allowedModules: form.allowedModules,
+          assignedLocationId: finalLocationId,
           permissions:    form.permissions,
           isActive:       form.isActive,
         };
@@ -440,6 +473,7 @@ export default function StaffManagementView({ uid, userDoc }) {
           onClearAll={clearAll}
           onSubmit={handleSubmit}
           onClose={() => setShowModal(false)}
+          locations={locations}
         />
       )}
 
@@ -507,10 +541,19 @@ function StaffCard({ staff, planModules, onEdit, onToggleActive, onDelete, onVie
           <div className="flex-1 min-w-0">
             <p className="text-white font-bold text-sm truncate">{staff.name}</p>
             <p className="text-gray-400 text-xs truncate">{staff.email}</p>
-            <span className="inline-flex items-center gap-1 mt-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
-              style={{ background: "rgba(124,58,237,0.12)", border: "1px solid rgba(124,58,237,0.25)", color: "#c084fc" }}>
-              {staff.role || "Staff"}
-            </span>
+            <div className="flex items-center gap-1.5 mt-1">
+              <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                style={{ background: "rgba(124,58,237,0.12)", border: "1px solid rgba(124,58,237,0.25)", color: "#c084fc" }}>
+                {staff.role || "Staff"}
+              </span>
+              {/* Assigned Location Badge */}
+              {staff.assignedLocationId && (
+                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold"
+                  style={{ background: "rgba(245,158,11,0.12)", border: "1px solid rgba(245,158,11,0.25)", color: "#fbbf24" }}>
+                  📍 Location
+                </span>
+              )}
+            </div>
           </div>
           {/* Active toggle */}
           <button onClick={onToggleActive}
@@ -587,6 +630,7 @@ function StaffFormModal({
   editTarget, form, setForm, planModules, saving,
   showPassword, setShowPassword, passwordReset, setPasswordReset,
   onToggleModule, onSelectAll, onClearAll, onSubmit, onClose,
+  locations = [],
 }) {
   const isEdit = Boolean(editTarget);
   const [step, setStep] = useState(1); // 1 = Basic Info + Modules, 2 = Permissions
@@ -889,54 +933,70 @@ function StaffFormModal({
                     <p className="text-white text-xs font-bold">Customers</p>
                   </div>
                   
-                  <div className="grid grid-cols-4 gap-2">
-                <button type="button"
-                  onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, customers: { ...f.permissions.customers, view: f.permissions.customers.view === "all" ? "none" : "all" } } }))}
-                  className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
-                  style={{
-                    background: form.permissions.customers.view === "all" ? "rgba(37,99,235,0.15)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.permissions.customers.view === "all" ? "rgba(37,99,235,0.4)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.permissions.customers.view === "all" ? "#60a5fa" : "#6b7280",
-                  }}>
-                  <span className="text-sm">{form.permissions.customers.view === "all" ? "✅" : "👁️"}</span>
-                  <span>View</span>
-                </button>
-                <button type="button"
-                  onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, customers: { ...f.permissions.customers, create: !f.permissions.customers.create } } }))}
-                  className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
-                  style={{
-                    background: form.permissions.customers.create ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.permissions.customers.create ? "rgba(16,185,129,0.4)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.permissions.customers.create ? "#34d399" : "#6b7280",
-                  }}>
-                  <span className="text-sm">{form.permissions.customers.create ? "✅" : "➕"}</span>
-                  <span>Create</span>
-                </button>
-                <button type="button"
-                  onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, customers: { ...f.permissions.customers, edit: !f.permissions.customers.edit } } }))}
-                  className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
-                  style={{
-                    background: form.permissions.customers.edit ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.permissions.customers.edit ? "rgba(59,130,246,0.4)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.permissions.customers.edit ? "#60a5fa" : "#6b7280",
-                  }}>
-                  <span className="text-sm">{form.permissions.customers.edit ? "✅" : "✏️"}</span>
-                  <span>Edit</span>
-                </button>
-                <button type="button"
-                  onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, customers: { ...f.permissions.customers, delete: !f.permissions.customers.delete } } }))}
-                  className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
-                  style={{
-                    background: form.permissions.customers.delete ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.permissions.customers.delete ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.permissions.customers.delete ? "#f87171" : "#6b7280",
-                  }}>
-                  <span className="text-sm">{form.permissions.customers.delete ? "✅" : "🗑️"}</span>
-                  <span>Delete</span>
-                </button>
-              </div>
-            </div>
+                  {/* View Permission */}
+                  <div className="mb-2">
+                    <label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>View Access</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button"
+                        onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, customers: { ...f.permissions.customers, view: "all" } } }))}
+                        className="px-3 py-2 rounded-lg text-[11px] font-semibold transition-all"
+                        style={{
+                          background: form.permissions.customers.view === "all" ? "rgba(37,99,235,0.18)" : "rgba(255,255,255,0.04)",
+                          border: `1.5px solid ${form.permissions.customers.view === "all" ? "rgba(37,99,235,0.5)" : "rgba(255,255,255,0.08)"}`,
+                          color: form.permissions.customers.view === "all" ? "#93c5fd" : "#6b7280",
+                        }}>
+                        👁️ All Customers
+                      </button>
+                      <button type="button"
+                        onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, customers: { ...f.permissions.customers, view: "own" } } }))}
+                        className="px-3 py-2 rounded-lg text-[11px] font-semibold transition-all"
+                        style={{
+                          background: form.permissions.customers.view === "own" ? "rgba(245,158,11,0.18)" : "rgba(255,255,255,0.04)",
+                          border: `1.5px solid ${form.permissions.customers.view === "own" ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.08)"}`,
+                          color: form.permissions.customers.view === "own" ? "#fbbf24" : "#6b7280",
+                        }}>
+                        👤 Own Only
+                      </button>
+                    </div>
+                  </div>
 
+                  {/* Create, Edit, Delete */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, customers: { ...f.permissions.customers, create: !f.permissions.customers.create } } }))}
+                      className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
+                      style={{
+                        background: form.permissions.customers.create ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.04)",
+                        border: `1.5px solid ${form.permissions.customers.create ? "rgba(16,185,129,0.4)" : "rgba(255,255,255,0.08)"}`,
+                        color: form.permissions.customers.create ? "#34d399" : "#6b7280",
+                      }}>
+                      <span className="text-sm">{form.permissions.customers.create ? "✅" : "➕"}</span>
+                      <span>Create</span>
+                    </button>
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, customers: { ...f.permissions.customers, edit: !f.permissions.customers.edit } } }))}
+                      className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
+                      style={{
+                        background: form.permissions.customers.edit ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.04)",
+                        border: `1.5px solid ${form.permissions.customers.edit ? "rgba(59,130,246,0.4)" : "rgba(255,255,255,0.08)"}`,
+                        color: form.permissions.customers.edit ? "#60a5fa" : "#6b7280",
+                      }}>
+                      <span className="text-sm">{form.permissions.customers.edit ? "✅" : "✏️"}</span>
+                      <span>Edit</span>
+                    </button>
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, customers: { ...f.permissions.customers, delete: !f.permissions.customers.delete } } }))}
+                      className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
+                      style={{
+                        background: form.permissions.customers.delete ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.04)",
+                        border: `1.5px solid ${form.permissions.customers.delete ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.08)"}`,
+                        color: form.permissions.customers.delete ? "#f87171" : "#6b7280",
+                      }}>
+                      <span className="text-sm">{form.permissions.customers.delete ? "✅" : "🗑️"}</span>
+                      <span>Delete</span>
+                    </button>
+                  </div>
+                </div>
               )}
 
               {/* Inventory Permissions - Only show if selected */}
@@ -947,52 +1007,143 @@ function StaffFormModal({
                     <p className="text-white text-xs font-bold">Inventory</p>
                   </div>
                   
-                  <div className="grid grid-cols-4 gap-2">
-                <button type="button"
-                  onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, inventory: { ...f.permissions.inventory, view: f.permissions.inventory.view === "all" ? "none" : "all" } } }))}
-                  className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
-                  style={{
-                    background: form.permissions.inventory.view === "all" ? "rgba(37,99,235,0.15)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.permissions.inventory.view === "all" ? "rgba(37,99,235,0.4)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.permissions.inventory.view === "all" ? "#60a5fa" : "#6b7280",
-                  }}>
-                  <span className="text-sm">{form.permissions.inventory.view === "all" ? "✅" : "👁️"}</span>
-                  <span>View</span>
-                </button>
-                <button type="button"
-                  onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, inventory: { ...f.permissions.inventory, create: !f.permissions.inventory.create } } }))}
-                  className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
-                  style={{
-                    background: form.permissions.inventory.create ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.permissions.inventory.create ? "rgba(16,185,129,0.4)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.permissions.inventory.create ? "#34d399" : "#6b7280",
-                  }}>
-                  <span className="text-sm">{form.permissions.inventory.create ? "✅" : "➕"}</span>
-                  <span>Create</span>
-                </button>
-                <button type="button"
-                  onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, inventory: { ...f.permissions.inventory, edit: !f.permissions.inventory.edit } } }))}
-                  className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
-                  style={{
-                    background: form.permissions.inventory.edit ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.permissions.inventory.edit ? "rgba(59,130,246,0.4)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.permissions.inventory.edit ? "#60a5fa" : "#6b7280",
-                  }}>
-                  <span className="text-sm">{form.permissions.inventory.edit ? "✅" : "✏️"}</span>
-                  <span>Edit</span>
-                </button>
-                <button type="button"
-                  onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, inventory: { ...f.permissions.inventory, delete: !f.permissions.inventory.delete } } }))}
-                  className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
-                  style={{
-                    background: form.permissions.inventory.delete ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.permissions.inventory.delete ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.permissions.inventory.delete ? "#f87171" : "#6b7280",
-                  }}>
-                  <span className="text-sm">{form.permissions.inventory.delete ? "✅" : "🗑️"}</span>
-                  <span>Delete</span>
-                </button>
-              </div>
+                  {/* View Permission */}
+                  <div className="mb-2">
+                    <label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>View Access</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button"
+                        onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, inventory: { ...f.permissions.inventory, view: "all" } } }))}
+                        className="px-3 py-2 rounded-lg text-[11px] font-semibold transition-all"
+                        style={{
+                          background: form.permissions.inventory.view === "all" ? "rgba(37,99,235,0.18)" : "rgba(255,255,255,0.04)",
+                          border: `1.5px solid ${form.permissions.inventory.view === "all" ? "rgba(37,99,235,0.5)" : "rgba(255,255,255,0.08)"}`,
+                          color: form.permissions.inventory.view === "all" ? "#93c5fd" : "#6b7280",
+                        }}>
+                        👁️ All Products
+                      </button>
+                      <button type="button"
+                        onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, inventory: { ...f.permissions.inventory, view: "own" } } }))}
+                        className="px-3 py-2 rounded-lg text-[11px] font-semibold transition-all"
+                        style={{
+                          background: form.permissions.inventory.view === "own" ? "rgba(245,158,11,0.18)" : "rgba(255,255,255,0.04)",
+                          border: `1.5px solid ${form.permissions.inventory.view === "own" ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.08)"}`,
+                          color: form.permissions.inventory.view === "own" ? "#fbbf24" : "#6b7280",
+                        }}>
+                        👤 Own Only
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Assigned Location - Always visible for inventory module */}
+                  <div className="mb-2">
+                    <label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>
+                      📍 Assigned Location
+                      <span className="ml-2 text-[9px] text-blue-400">(Controls inventory access)</span>
+                    </label>
+                    <select
+                      value={form.assignedLocationId || ""}
+                      onChange={(e) => setForm(f => ({ ...f, assignedLocationId: e.target.value }))}
+                      className="w-full px-3 py-2 rounded-lg text-xs text-white transition-all"
+                      style={{
+                        background: "rgba(255,255,255,0.04)",
+                        border: "1.5px solid rgba(255,255,255,0.08)",
+                      }}>
+                      <option value="" style={{ background: "#1a1a1a", color: "#6b7280" }}>
+                        🏪 Default Location (Main Shop Only)
+                      </option>
+                      <option value="__both__" style={{ background: "#1a1a1a", color: "#6b7280" }}>
+                        🏪+🏭 Both (Default Shop + All Warehouses)
+                      </option>
+                      {locations.filter(loc => !loc.deleted).map(loc => (
+                        <option key={loc.id} value={loc.id} style={{ background: "#1a1a1a" }}>
+                          {loc.type === "warehouse" ? "🏭" : loc.type === "shop" ? "🏪" : "📍"} {loc.name} Only
+                        </option>
+                      ))}
+                    </select>
+                    {!form.assignedLocationId && (
+                      <p className="text-blue-400 text-[9px] mt-1">
+                        ℹ️ Staff will work with <strong>default shop location</strong> only
+                      </p>
+                    )}
+                    {form.assignedLocationId === "__both__" && (
+                      <p className="text-green-400 text-[9px] mt-1">
+                        ℹ️ Staff will have access to <strong>default shop + all warehouses</strong>
+                      </p>
+                    )}
+                    {form.assignedLocationId && form.assignedLocationId !== "__both__" && (
+                      <p className="text-amber-400 text-[9px] mt-1">
+                        📍 Staff will only see products from <strong>{locations.find(l => l.id === form.assignedLocationId)?.name || "selected location"}</strong>
+                      </p>
+                    )}
+                  </div>
+
+                  {/* Create, Edit, Delete */}
+                  <div className="grid grid-cols-3 gap-2 mb-2">
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, inventory: { ...f.permissions.inventory, create: !f.permissions.inventory.create } } }))}
+                      className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
+                      style={{
+                        background: form.permissions.inventory.create ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.04)",
+                        border: `1.5px solid ${form.permissions.inventory.create ? "rgba(16,185,129,0.4)" : "rgba(255,255,255,0.08)"}`,
+                        color: form.permissions.inventory.create ? "#34d399" : "#6b7280",
+                      }}>
+                      <span className="text-sm">{form.permissions.inventory.create ? "✅" : "➕"}</span>
+                      <span>Create</span>
+                    </button>
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, inventory: { ...f.permissions.inventory, edit: !f.permissions.inventory.edit } } }))}
+                      className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
+                      style={{
+                        background: form.permissions.inventory.edit ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.04)",
+                        border: `1.5px solid ${form.permissions.inventory.edit ? "rgba(59,130,246,0.4)" : "rgba(255,255,255,0.08)"}`,
+                        color: form.permissions.inventory.edit ? "#60a5fa" : "#6b7280",
+                      }}>
+                      <span className="text-sm">{form.permissions.inventory.edit ? "✅" : "✏️"}</span>
+                      <span>Edit</span>
+                    </button>
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, inventory: { ...f.permissions.inventory, delete: !f.permissions.inventory.delete } } }))}
+                      className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
+                      style={{
+                        background: form.permissions.inventory.delete ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.04)",
+                        border: `1.5px solid ${form.permissions.inventory.delete ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.08)"}`,
+                        color: form.permissions.inventory.delete ? "#f87171" : "#6b7280",
+                      }}>
+                      <span className="text-sm">{form.permissions.inventory.delete ? "✅" : "🗑️"}</span>
+                      <span>Delete</span>
+                    </button>
+                  </div>
+
+                  {/* Can Manage Locations Checkbox */}
+                  <button type="button"
+                    onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, inventory: { ...f.permissions.inventory, canManageLocations: !f.permissions.inventory.canManageLocations } } }))}
+                    className="w-full px-3 py-2 rounded-lg text-[10px] font-semibold transition-all flex items-center justify-center gap-2"
+                    style={{
+                      background: form.permissions.inventory.canManageLocations ? "rgba(168,85,247,0.15)" : "rgba(255,255,255,0.04)",
+                      border: `1.5px solid ${form.permissions.inventory.canManageLocations ? "rgba(168,85,247,0.4)" : "rgba(255,255,255,0.08)"}`,
+                      color: form.permissions.inventory.canManageLocations ? "#c084fc" : "#6b7280",
+                    }}>
+                    <span className="text-sm">{form.permissions.inventory.canManageLocations ? "✅" : "📍"}</span>
+                    <span>Can Manage Locations</span>
+                  </button>
+
+                  {/* Show Only Default Location Checkbox */}
+                  <button type="button"
+                    onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, inventory: { ...f.permissions.inventory, showOnlyDefaultLocation: !f.permissions.inventory.showOnlyDefaultLocation } } }))}
+                    className="w-full px-3 py-2 rounded-lg text-[10px] font-semibold transition-all flex items-center justify-center gap-2 mt-2"
+                    style={{
+                      background: form.permissions.inventory.showOnlyDefaultLocation ? "rgba(34,197,94,0.15)" : "rgba(255,255,255,0.04)",
+                      border: `1.5px solid ${form.permissions.inventory.showOnlyDefaultLocation ? "rgba(34,197,94,0.4)" : "rgba(255,255,255,0.08)"}`,
+                      color: form.permissions.inventory.showOnlyDefaultLocation ? "#4ade80" : "#6b7280",
+                    }}>
+                    <span className="text-sm">{form.permissions.inventory.showOnlyDefaultLocation ? "✅" : "🏠"}</span>
+                    <span>Hide Custom Locations (Only show default)</span>
+                  </button>
+                  {form.permissions.inventory.showOnlyDefaultLocation && (
+                    <p className="text-green-400 text-[9px] mt-1 text-center">
+                      ℹ️ Staff will only see default inventory location, custom locations will be hidden
+                    </p>
+                  )}
                 </div>
               )}
 
@@ -1004,52 +1155,69 @@ function StaffFormModal({
                     <p className="text-white text-xs font-bold">Payments</p>
                   </div>
                   
-                  <div className="grid grid-cols-4 gap-2">
-                <button type="button"
-                  onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, payments: { ...f.permissions.payments, view: f.permissions.payments.view === "all" ? "none" : "all" } } }))}
-                  className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
-                  style={{
-                    background: form.permissions.payments.view === "all" ? "rgba(37,99,235,0.15)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.permissions.payments.view === "all" ? "rgba(37,99,235,0.4)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.permissions.payments.view === "all" ? "#60a5fa" : "#6b7280",
-                  }}>
-                  <span className="text-sm">{form.permissions.payments.view === "all" ? "✅" : "👁️"}</span>
-                  <span>View</span>
-                </button>
-                <button type="button"
-                  onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, payments: { ...f.permissions.payments, create: !f.permissions.payments.create } } }))}
-                  className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
-                  style={{
-                    background: form.permissions.payments.create ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.permissions.payments.create ? "rgba(16,185,129,0.4)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.permissions.payments.create ? "#34d399" : "#6b7280",
-                  }}>
-                  <span className="text-sm">{form.permissions.payments.create ? "✅" : "➕"}</span>
-                  <span>Create</span>
-                </button>
-                <button type="button"
-                  onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, payments: { ...f.permissions.payments, edit: !f.permissions.payments.edit } } }))}
-                  className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
-                  style={{
-                    background: form.permissions.payments.edit ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.permissions.payments.edit ? "rgba(59,130,246,0.4)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.permissions.payments.edit ? "#60a5fa" : "#6b7280",
-                  }}>
-                  <span className="text-sm">{form.permissions.payments.edit ? "✅" : "✏️"}</span>
-                  <span>Edit</span>
-                </button>
-                <button type="button"
-                  onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, payments: { ...f.permissions.payments, delete: !f.permissions.payments.delete } } }))}
-                  className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
-                  style={{
-                    background: form.permissions.payments.delete ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.permissions.payments.delete ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.permissions.payments.delete ? "#f87171" : "#6b7280",
-                  }}>
-                  <span className="text-sm">{form.permissions.payments.delete ? "✅" : "🗑️"}</span>
-                  <span>Delete</span>
-                </button>
-              </div>
+                  {/* View Permission */}
+                  <div className="mb-2">
+                    <label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>View Access</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button"
+                        onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, payments: { ...f.permissions.payments, view: "all" } } }))}
+                        className="px-3 py-2 rounded-lg text-[11px] font-semibold transition-all"
+                        style={{
+                          background: form.permissions.payments.view === "all" ? "rgba(37,99,235,0.18)" : "rgba(255,255,255,0.04)",
+                          border: `1.5px solid ${form.permissions.payments.view === "all" ? "rgba(37,99,235,0.5)" : "rgba(255,255,255,0.08)"}`,
+                          color: form.permissions.payments.view === "all" ? "#93c5fd" : "#6b7280",
+                        }}>
+                        👁️ All Payments
+                      </button>
+                      <button type="button"
+                        onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, payments: { ...f.permissions.payments, view: "own" } } }))}
+                        className="px-3 py-2 rounded-lg text-[11px] font-semibold transition-all"
+                        style={{
+                          background: form.permissions.payments.view === "own" ? "rgba(245,158,11,0.18)" : "rgba(255,255,255,0.04)",
+                          border: `1.5px solid ${form.permissions.payments.view === "own" ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.08)"}`,
+                          color: form.permissions.payments.view === "own" ? "#fbbf24" : "#6b7280",
+                        }}>
+                        👤 Own Only
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Create, Edit, Delete */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, payments: { ...f.permissions.payments, create: !f.permissions.payments.create } } }))}
+                      className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
+                      style={{
+                        background: form.permissions.payments.create ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.04)",
+                        border: `1.5px solid ${form.permissions.payments.create ? "rgba(16,185,129,0.4)" : "rgba(255,255,255,0.08)"}`,
+                        color: form.permissions.payments.create ? "#34d399" : "#6b7280",
+                      }}>
+                      <span className="text-sm">{form.permissions.payments.create ? "✅" : "➕"}</span>
+                      <span>Create</span>
+                    </button>
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, payments: { ...f.permissions.payments, edit: !f.permissions.payments.edit } } }))}
+                      className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
+                      style={{
+                        background: form.permissions.payments.edit ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.04)",
+                        border: `1.5px solid ${form.permissions.payments.edit ? "rgba(59,130,246,0.4)" : "rgba(255,255,255,0.08)"}`,
+                        color: form.permissions.payments.edit ? "#60a5fa" : "#6b7280",
+                      }}>
+                      <span className="text-sm">{form.permissions.payments.edit ? "✅" : "✏️"}</span>
+                      <span>Edit</span>
+                    </button>
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, payments: { ...f.permissions.payments, delete: !f.permissions.payments.delete } } }))}
+                      className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
+                      style={{
+                        background: form.permissions.payments.delete ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.04)",
+                        border: `1.5px solid ${form.permissions.payments.delete ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.08)"}`,
+                        color: form.permissions.payments.delete ? "#f87171" : "#6b7280",
+                      }}>
+                      <span className="text-sm">{form.permissions.payments.delete ? "✅" : "🗑️"}</span>
+                      <span>Delete</span>
+                    </button>
+                  </div>
                 </div>
               )}
 
@@ -1061,54 +1229,71 @@ function StaffFormModal({
                     <p className="text-white text-xs font-bold">Purchases</p>
                   </div>
                   
-                  <div className="grid grid-cols-4 gap-2">
-                <button type="button"
-                  onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, purchases: { ...f.permissions.purchases, view: f.permissions.purchases.view === "all" ? "none" : "all" } } }))}
-                  className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
-                  style={{
-                    background: form.permissions.purchases.view === "all" ? "rgba(37,99,235,0.15)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.permissions.purchases.view === "all" ? "rgba(37,99,235,0.4)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.permissions.purchases.view === "all" ? "#60a5fa" : "#6b7280",
-                  }}>
-                  <span className="text-sm">{form.permissions.purchases.view === "all" ? "✅" : "👁️"}</span>
-                  <span>View</span>
-                </button>
-                <button type="button"
-                  onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, purchases: { ...f.permissions.purchases, create: !f.permissions.purchases.create } } }))}
-                  className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
-                  style={{
-                    background: form.permissions.purchases.create ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.permissions.purchases.create ? "rgba(16,185,129,0.4)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.permissions.purchases.create ? "#34d399" : "#6b7280",
-                  }}>
-                  <span className="text-sm">{form.permissions.purchases.create ? "✅" : "➕"}</span>
-                  <span>Create</span>
-                </button>
-                <button type="button"
-                  onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, purchases: { ...f.permissions.purchases, edit: !f.permissions.purchases.edit } } }))}
-                  className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
-                  style={{
-                    background: form.permissions.purchases.edit ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.permissions.purchases.edit ? "rgba(59,130,246,0.4)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.permissions.purchases.edit ? "#60a5fa" : "#6b7280",
-                  }}>
-                  <span className="text-sm">{form.permissions.purchases.edit ? "✅" : "✏️"}</span>
-                  <span>Edit</span>
-                </button>
-                <button type="button"
-                  onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, purchases: { ...f.permissions.purchases, delete: !f.permissions.purchases.delete } } }))}
-                  className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
-                  style={{
-                    background: form.permissions.purchases.delete ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.04)",
-                    border: `1.5px solid ${form.permissions.purchases.delete ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.08)"}`,
-                    color: form.permissions.purchases.delete ? "#f87171" : "#6b7280",
-                  }}>
-                  <span className="text-sm">{form.permissions.purchases.delete ? "✅" : "🗑️"}</span>
-                  <span>Delete</span>
-                </button>
-              </div>
-            </div>
-          )}
+                  {/* View Permission */}
+                  <div className="mb-2">
+                    <label style={{ ...lbl, fontSize: 10, marginBottom: 4 }}>View Access</label>
+                    <div className="grid grid-cols-2 gap-2">
+                      <button type="button"
+                        onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, purchases: { ...f.permissions.purchases, view: "all" } } }))}
+                        className="px-3 py-2 rounded-lg text-[11px] font-semibold transition-all"
+                        style={{
+                          background: form.permissions.purchases.view === "all" ? "rgba(37,99,235,0.18)" : "rgba(255,255,255,0.04)",
+                          border: `1.5px solid ${form.permissions.purchases.view === "all" ? "rgba(37,99,235,0.5)" : "rgba(255,255,255,0.08)"}`,
+                          color: form.permissions.purchases.view === "all" ? "#93c5fd" : "#6b7280",
+                        }}>
+                        👁️ All Purchases
+                      </button>
+                      <button type="button"
+                        onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, purchases: { ...f.permissions.purchases, view: "own" } } }))}
+                        className="px-3 py-2 rounded-lg text-[11px] font-semibold transition-all"
+                        style={{
+                          background: form.permissions.purchases.view === "own" ? "rgba(245,158,11,0.18)" : "rgba(255,255,255,0.04)",
+                          border: `1.5px solid ${form.permissions.purchases.view === "own" ? "rgba(245,158,11,0.5)" : "rgba(255,255,255,0.08)"}`,
+                          color: form.permissions.purchases.view === "own" ? "#fbbf24" : "#6b7280",
+                        }}>
+                        👤 Own Only
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Create, Edit, Delete */}
+                  <div className="grid grid-cols-3 gap-2">
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, purchases: { ...f.permissions.purchases, create: !f.permissions.purchases.create } } }))}
+                      className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
+                      style={{
+                        background: form.permissions.purchases.create ? "rgba(16,185,129,0.15)" : "rgba(255,255,255,0.04)",
+                        border: `1.5px solid ${form.permissions.purchases.create ? "rgba(16,185,129,0.4)" : "rgba(255,255,255,0.08)"}`,
+                        color: form.permissions.purchases.create ? "#34d399" : "#6b7280",
+                      }}>
+                      <span className="text-sm">{form.permissions.purchases.create ? "✅" : "➕"}</span>
+                      <span>Create</span>
+                    </button>
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, purchases: { ...f.permissions.purchases, edit: !f.permissions.purchases.edit } } }))}
+                      className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
+                      style={{
+                        background: form.permissions.purchases.edit ? "rgba(59,130,246,0.15)" : "rgba(255,255,255,0.04)",
+                        border: `1.5px solid ${form.permissions.purchases.edit ? "rgba(59,130,246,0.4)" : "rgba(255,255,255,0.08)"}`,
+                        color: form.permissions.purchases.edit ? "#60a5fa" : "#6b7280",
+                      }}>
+                      <span className="text-sm">{form.permissions.purchases.edit ? "✅" : "✏️"}</span>
+                      <span>Edit</span>
+                    </button>
+                    <button type="button"
+                      onClick={() => setForm(f => ({ ...f, permissions: { ...f.permissions, purchases: { ...f.permissions.purchases, delete: !f.permissions.purchases.delete } } }))}
+                      className="px-2 py-2 rounded-lg text-[10px] font-semibold transition-all flex flex-col items-center gap-1"
+                      style={{
+                        background: form.permissions.purchases.delete ? "rgba(239,68,68,0.15)" : "rgba(255,255,255,0.04)",
+                        border: `1.5px solid ${form.permissions.purchases.delete ? "rgba(239,68,68,0.4)" : "rgba(255,255,255,0.08)"}`,
+                        color: form.permissions.purchases.delete ? "#f87171" : "#6b7280",
+                      }}>
+                      <span className="text-sm">{form.permissions.purchases.delete ? "✅" : "🗑️"}</span>
+                      <span>Delete</span>
+                    </button>
+                  </div>
+                </div>
+              )}
           
           {/* Back and Submit Buttons for Step 2 */}
           <div className="flex gap-3 mt-2">

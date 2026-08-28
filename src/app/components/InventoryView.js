@@ -42,24 +42,90 @@ const PRODUCT_CATEGORIES = [
   "Other",
 ];
 
-export default function InventoryView({ uid, userDoc, locations = [] }) {
+export default function InventoryView({ uid, userDoc, locations = [], staffContext = null }) {
   const [products, setProducts] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showAddModal, setShowAddModal] = useState(false);
   const [editProduct, setEditProduct] = useState(null);
   const [searchQuery, setSearchQuery] = useState("");
   const [filterType, setFilterType] = useState("all");
-  const [filterLocation, setFilterLocation] = useState("all");
+  const [filterLocation, setFilterLocation] = useState(() => {
+    // For staff, default to their assigned location
+    if (staffContext?.staffDoc?.assignedLocationId) {
+      return staffContext.staffDoc.assignedLocationId;
+    }
+    // For staff with no assigned location (default) or admin
+    return "all";
+  });
   const [deleteConfirm, setDeleteConfirm] = useState(null); // { id, name }
   const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
   const [showLocationsManager, setShowLocationsManager] = useState(false);
 
   // ── Permission Helpers ────────────────────────────────────────────────────
-  const isStaff = userDoc?.role === "staff";
-  const staffPerms = isStaff ? (userDoc?.permissions?.inventory || {}) : null;
-  const canCreate = !isStaff || (staffPerms?.create === true);
-  const canEdit = !isStaff || (staffPerms?.edit === true);
-  const canDelete = !isStaff || (staffPerms?.delete === true);
+  const isStaff = !!staffContext;
+  const staffPerms = isStaff ? (staffContext?.staffDoc?.permissions?.inventory || {}) : null;
+  
+  // Check if staff can view a product
+  const canViewProduct = (product) => {
+    if (!isStaff) return true; // Admin can view all
+    
+    // Get staff's assigned location (empty = default, "__both__" = all locations)
+    const assignedLocationId = staffContext?.staffDoc?.assignedLocationId || "";
+    const staffUid = staffContext?.staffDoc?.uid;
+    
+    // If staff has "both" access, they can see all locations
+    if (assignedLocationId === "__both__") {
+      // Check view permission only
+      if (staffPerms?.view === "all") {
+        return true; // See all products across all locations
+      } else if (staffPerms?.view === "own") {
+        return product.createdBy === staffUid; // See only own products across all locations
+      }
+      return false;
+    }
+    
+    // Get product's location (empty = default)
+    const productLocationId = product.locationId || "";
+    
+    // Helper: Check if a location ID represents default location
+    const isDefaultLocation = (locId) => {
+      if (!locId || locId === "") return true; // Empty = default
+      const loc = locations?.find(l => l.id === locId);
+      return loc?.isDefault === true;
+    };
+    
+    // Check if both are in same location
+    const staffInDefault = isDefaultLocation(assignedLocationId);
+    const productInDefault = isDefaultLocation(productLocationId);
+    
+    // Match logic:
+    // 1. Both in default location
+    if (staffInDefault && productInDefault) {
+      // Continue to view permission check
+    }
+    // 2. Both in same custom location
+    else if (!staffInDefault && !productInDefault && assignedLocationId === productLocationId) {
+      // Continue to view permission check
+    }
+    // 3. Different locations - hide product
+    else {
+      return false;
+    }
+    
+    // Now check view permission
+    if (staffPerms?.view === "all") {
+      return true;
+    } else if (staffPerms?.view === "own") {
+      return product.createdBy === staffUid;
+    }
+    
+    return false;
+  };
+  
+  const canCreate = !isStaff || (staffPerms?.create === true || staffPerms?.create === "true");
+  const canEdit = !isStaff || (staffPerms?.edit === true || staffPerms?.edit === "true");
+  const canDelete = !isStaff || (staffPerms?.delete === true || staffPerms?.delete === "true");
+  const canManageLocations = !isStaff || (staffPerms?.canManageLocations === true || staffPerms?.canManageLocations === "true");
 
   useEffect(() => {
     if (uid) loadProducts();
@@ -84,13 +150,25 @@ export default function InventoryView({ uid, userDoc, locations = [] }) {
         });
         setAlert({ show: true, type: "success", title: "Product Updated! ✓", message: `"${productData.name}" has been updated successfully.` });
       } else {
-        await addDoc(collection(db, `users/${uid}/products`), {
+        const newProductData = {
           ...productData,
-          createdBy: userDoc?.uid || uid,
-          createdByName: userDoc?.name || "Admin",
-          createdByRole: userDoc?.role || "admin",
+          createdBy:       isStaff ? staffContext.staffDoc.uid : (userDoc?.uid || uid),
+          createdByName:   isStaff ? staffContext.staffDoc.name : (userDoc?.name || "Admin"),
+          createdByRole:   isStaff ? (staffContext.staffDoc.role || "Staff") : "admin",
           createdAt: serverTimestamp(),
-        });
+        };
+        
+        // If staff is logged in, handle location assignment
+        if (isStaff && staffContext?.staffDoc?.assignedLocationId) {
+          const assignedLoc = staffContext.staffDoc.assignedLocationId;
+          // If staff has "both" access, they can choose location (already in productData)
+          // If staff has specific location, auto-assign it
+          if (assignedLoc !== "__both__") {
+            newProductData.locationId = assignedLoc;
+          }
+        }
+        
+        await addDoc(collection(db, `users/${uid}/products`), newProductData);
         setAlert({ show: true, type: "success", title: "Product Added! 📦", message: `"${productData.name}" has been added to inventory.` });
       }
       await loadProducts();
@@ -136,21 +214,24 @@ export default function InventoryView({ uid, userDoc, locations = [] }) {
     setEditProduct(null);
   }
 
-  const filteredProducts = products.filter(p => {
+  // ── Filter products by permission first ───────────────────────────────────
+  const permissionFilteredProducts = products.filter(p => canViewProduct(p));
+
+  const filteredProducts = permissionFilteredProducts.filter(p => {
     const matchesSearch = p.name?.toLowerCase().includes(searchQuery.toLowerCase());
     const matchesFilter = filterType === "all" || p.variantType === filterType;
     const matchesLocation = filterLocation === "all" || (filterLocation === "default" ? (!p.locationId || p.locationId === "default") : p.locationId === filterLocation);
     return matchesSearch && matchesFilter && matchesLocation;
   });
 
-  const totalProducts = products.length;
-  const totalStock = products.reduce((sum, p) => {
+  const totalProducts = permissionFilteredProducts.length;
+  const totalStock = permissionFilteredProducts.reduce((sum, p) => {
     if (p.variantType !== "none" && p.variants?.length > 0) {
       return sum + p.variants.reduce((s, v) => s + (parseInt(v.stock) || 0), 0);
     }
     return sum + (parseInt(p.stock) || 0);
   }, 0);
-  const lowStockCount = products.filter(p => {
+  const lowStockCount = permissionFilteredProducts.filter(p => {
     const stock = p.variantType !== "none" && p.variants?.length > 0
       ? p.variants.reduce((s, v) => s + (parseInt(v.stock) || 0), 0)
       : parseInt(p.stock) || 0;
@@ -225,23 +306,65 @@ export default function InventoryView({ uid, userDoc, locations = [] }) {
               Inventory Management
             </h2>
             <p className="text-gray-400 text-xs">Track and manage your product inventory</p>
+            
+            {/* Staff Location Access Indicator */}
+            {isStaff && (
+              <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold"
+                style={{ 
+                  background: staffContext?.staffDoc?.assignedLocationId === "__both__" 
+                    ? "rgba(34,197,94,0.15)" 
+                    : "rgba(99,102,241,0.15)", 
+                  border: staffContext?.staffDoc?.assignedLocationId === "__both__"
+                    ? "1px solid rgba(34,197,94,0.35)"
+                    : "1px solid rgba(99,102,241,0.35)",
+                  color: staffContext?.staffDoc?.assignedLocationId === "__both__"
+                    ? "#4ade80"
+                    : "#a5b4fc"
+                }}>
+                <span className="text-sm">
+                  {staffContext?.staffDoc?.assignedLocationId === "__both__" 
+                    ? "🏪+🏭" 
+                    : staffContext?.staffDoc?.assignedLocationId 
+                      ? "📍" 
+                      : "🏪"}
+                </span>
+                <span>
+                  Your Access: {
+                    staffContext?.staffDoc?.assignedLocationId === "__both__" 
+                      ? "All Locations (Shop + Warehouses)"
+                      : staffContext?.staffDoc?.assignedLocationId
+                        ? locations?.find(l => l.id === staffContext.staffDoc.assignedLocationId)?.name || "Custom Location"
+                        : "Default Shop Only"
+                  }
+                </span>
+                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                  style={{ 
+                    background: staffPerms?.view === "all" ? "rgba(34,197,94,0.25)" : "rgba(245,158,11,0.25)", 
+                    color: staffPerms?.view === "all" ? "#86efac" : "#fcd34d" 
+                  }}>
+                  {staffPerms?.view === "all" ? "All Products" : "Own Only"}
+                </span>
+              </div>
+            )}
           </div>
           
           <div className="flex flex-wrap items-center gap-2">
-            <button onClick={() => setShowLocationsManager(true)}
-              className="group relative px-4 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg"
-              style={{ background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.35)", color: "#a5b4fc" }}>
-              <span className="relative z-10 flex items-center gap-2 font-bold">
-                <span className="text-base">📍</span>
-                Manage Locations
-                {(locations || []).filter(l => !l.deleted).length > 0 && (
-                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
-                    style={{ background: "rgba(99,102,241,0.3)", color: "#c7d2fe" }}>
-                    {(locations || []).filter(l => !l.deleted).length}
-                  </span>
-                )}
-              </span>
-            </button>
+            {canManageLocations && (
+              <button onClick={() => setShowLocationsManager(true)}
+                className="group relative px-4 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg"
+                style={{ background: "rgba(99,102,241,0.15)", border: "1px solid rgba(99,102,241,0.35)", color: "#a5b4fc" }}>
+                <span className="relative z-10 flex items-center gap-2 font-bold">
+                  <span className="text-base">📍</span>
+                  Manage Locations
+                  {(locations || []).filter(l => !l.deleted).length > 0 && (
+                    <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                      style={{ background: "rgba(99,102,241,0.3)", color: "#c7d2fe" }}>
+                      {(locations || []).filter(l => !l.deleted).length}
+                    </span>
+                  )}
+                </span>
+              </button>
+            )}
             {canCreate ? (
               <button onClick={openAddModal}
                 className="group relative px-5 py-2.5 rounded-lg font-semibold text-sm transition-all duration-300 hover:scale-105 overflow-hidden shadow-lg">
@@ -329,8 +452,8 @@ export default function InventoryView({ uid, userDoc, locations = [] }) {
         </div>
       </div>
 
-      {/* Location Filter (only show if locations exist) */}
-      {(locations || []).filter(l => !l.deleted).length > 0 && (
+      {/* Location Filter - Show for admin or staff with "both" access */}
+      {(!isStaff || staffContext?.staffDoc?.assignedLocationId === "__both__") && (locations || []).filter(l => !l.deleted).length > 0 && (
         <div className="flex flex-wrap gap-2">
           {[
             { id: "all",  label: "All Locations", icon: "📍" },
@@ -403,7 +526,7 @@ export default function InventoryView({ uid, userDoc, locations = [] }) {
       )}
 
       {showAddModal && (
-        <AddProductModal product={editProduct} locations={locations} onSave={handleSave} onClose={closeModal} />
+        <AddProductModal product={editProduct} locations={locations} onSave={handleSave} onClose={closeModal} isStaff={isStaff} staffContext={staffContext} staffPerms={staffPerms} />
       )}
 
       <style jsx global>{`
@@ -486,6 +609,13 @@ function ProductCard({ product, locations = [], onEdit, onDelete, canEdit, canDe
           <h3 className="text-white font-bold text-base line-clamp-1 group-hover:text-amber-400 transition-colors">
             {product.name}
           </h3>
+          {/* Staff Created By Badge */}
+          {product.createdByRole && product.createdByRole !== "admin" && product.createdByName && (
+            <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md whitespace-nowrap inline-block mt-1" 
+              style={{ background: "rgba(168,85,247,0.12)", border: "1px solid rgba(168,85,247,0.25)", color: "#c084fc" }}>
+              👨‍💼 {product.createdByRole} ({product.createdByName})
+            </span>
+          )}
           {product.description && (
             <p className="text-gray-500 text-[11px] line-clamp-2 mt-1">{product.description}</p>
           )}
@@ -589,11 +719,16 @@ function ProductCard({ product, locations = [], onEdit, onDelete, canEdit, canDe
 // ═══════════════════════════════════════════════════════════════════════════
 // Add/Edit Product Modal
 // ═══════════════════════════════════════════════════════════════════════════
-function AddProductModal({ product, locations = [], onSave, onClose }) {
+function AddProductModal({ product, locations = [], onSave, onClose, isStaff, staffContext, staffPerms }) {
   const fileInputRef = useRef(null);
 
   // Find the default location ID to pre-select (prefer isDefault flag, fallback to "default" id)
   const defaultLocId = (() => {
+    // If staff with "own" view → use their assigned location
+    if (isStaff && staffPerms?.view === "own" && staffContext?.staffDoc?.assignedLocationId) {
+      return staffContext.staffDoc.assignedLocationId;
+    }
+    // Otherwise, find default location
     const active = (locations || []).filter(l => !l.deleted);
     const def = active.find(l => l.isDefault) || active.find(l => l.id === "default") || active[0];
     return def?.id || "";
@@ -853,22 +988,74 @@ function AddProductModal({ product, locations = [], onSave, onClose }) {
           </div>
 
           {/* Location — only show if user has more than one location */}
-          {(locations || []).filter(l => !l.deleted).length > 1 && (
+          {(locations || []).filter(l => !l.deleted).filter(l => {
+            // If staff with showOnlyDefaultLocation, only show default location
+            if (isStaff && staffPerms?.showOnlyDefaultLocation) {
+              return l.isDefault || l.id === "default";
+            }
+            // If staff with "own" view assigned to default location (or empty), only show default location
+            if (isStaff && staffPerms?.view === "own") {
+              const assignedLocationId = staffContext?.staffDoc?.assignedLocationId;
+              // If no location assigned or empty, show only default
+              if (!assignedLocationId || assignedLocationId === "") {
+                return l.isDefault || l.id === "default";
+              }
+              // If assigned location is default, show only default
+              const assignedLocation = locations?.find(loc => loc.id === assignedLocationId);
+              const isAssignedDefault = assignedLocation?.isDefault || assignedLocationId === "default";
+              if (isAssignedDefault) {
+                return l.isDefault || l.id === "default";
+              }
+            }
+            return true;
+          }).length > 1 && (
             <div>
               <label className="text-gray-300 text-[10px] font-semibold uppercase tracking-wide mb-1.5 block">
                 📍 Location (Shop / Warehouse)
+                {isStaff && staffContext?.staffDoc?.assignedLocationId !== "__both__" && (
+                  <span className="ml-2 text-[9px] text-amber-400">(Auto-assigned to your location)</span>
+                )}
               </label>
               <select
                 value={formData.locationId}
                 onChange={e => setFormData(f => ({ ...f, locationId: e.target.value }))}
+                disabled={isStaff && staffContext?.staffDoc?.assignedLocationId !== "__both__"}
                 className="w-full px-4 py-2.5 rounded-lg text-sm text-white outline-none"
-                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
-                {(locations || []).filter(l => !l.deleted).map(loc => (
+                style={{ 
+                  background: "rgba(255,255,255,0.05)", 
+                  border: "1px solid rgba(255,255,255,0.1)",
+                  opacity: (isStaff && staffContext?.staffDoc?.assignedLocationId !== "__both__") ? 0.6 : 1,
+                  cursor: (isStaff && staffContext?.staffDoc?.assignedLocationId !== "__both__") ? "not-allowed" : "pointer"
+                }}>
+                {(locations || []).filter(l => !l.deleted).filter(l => {
+                  // If staff with single location assignment, only show that location
+                  if (isStaff) {
+                    const assignedLocationId = staffContext?.staffDoc?.assignedLocationId;
+                    
+                    // If "both" access, show all locations
+                    if (assignedLocationId === "__both__") return true;
+                    
+                    // If no assigned location (empty), show only default
+                    if (!assignedLocationId) {
+                      return l.isDefault || l.id === "default";
+                    }
+                    
+                    // Show only assigned location
+                    return l.id === assignedLocationId;
+                  }
+                  // Admin can see all locations
+                  return true;
+                }).map(loc => (
                   <option key={loc.id} value={loc.id} style={{ background: "#0d1117", color: "#fff" }}>
                     {getLocationIcon(loc.type)} {loc.name}
                   </option>
                 ))}
               </select>
+              {isStaff && staffContext?.staffDoc?.assignedLocationId === "__both__" && (
+                <p className="text-green-400 text-[9px] mt-1">
+                  ℹ️ You have access to all locations - select where to add this product
+                </p>
+              )}
             </div>
           )}
 

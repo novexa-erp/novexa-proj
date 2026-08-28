@@ -333,6 +333,49 @@ function DashboardContent() {
     return () => unsubUser();
   }, [user, staffContext]);
 
+  // ── Real-time staff document listener (for permission updates) ───────────────
+  useEffect(() => {
+    if (!user || !staffContext) return; // Only for staff members
+    
+    const adminUid = staffContext.adminUid;
+    const staffUid = staffContext.staffDoc.uid;
+    
+    const unsubStaff = onSnapshot(
+      doc(db, "users", adminUid, "staff", staffUid),
+      (snap) => {
+        if (snap.exists()) {
+          const staffDoc = snap.data();
+          // Update staffContext with latest permissions
+          const updatedContext = {
+            adminUid: staffContext.adminUid,
+            allowedModules: staffDoc.allowedModules || [],
+            staffDoc: {
+              uid: staffDoc.uid || staffUid,
+              name: staffDoc.name,
+              email: staffDoc.email,
+              role: staffDoc.role,
+              permissions: staffDoc.permissions,
+            },
+            adminPlan: staffContext.adminPlan,
+          };
+          setStaffContext(updatedContext);
+          sessionStorage.setItem("novexa_staff_context", JSON.stringify(updatedContext));
+          console.log("🔄 Staff permissions updated in real-time:", staffDoc.permissions);
+        } else {
+          // Staff document deleted — force logout
+          sessionStorage.removeItem("novexa_staff_context");
+          signOut(auth);
+          router.push("/pages/login?blocked=access_denied");
+        }
+      },
+      (err) => { 
+        if (err.code !== "permission-denied") console.error("[staff doc listener]", err); 
+      }
+    );
+    
+    return () => unsubStaff();
+  }, [user, staffContext?.adminUid, staffContext?.staffDoc?.uid]);
+
   // ── Load allowed tabs + plan details from Firestore adminConfig/plans ───────
   useEffect(() => {
     if (!userDoc?.plan) return;
@@ -1680,7 +1723,7 @@ function DashboardContent() {
           {/* ── Staff Management (admin-only) ── */}
           {activeNav === "staff" ? (
             !staffContext ? (
-              <StaffManagementView key={`staff-${refreshKey}`} uid={user?.uid} userDoc={userDoc} />
+              <StaffManagementView key={`staff-${refreshKey}`} uid={user?.uid} userDoc={userDoc} locations={locations} />
             ) : (
               <div className="flex items-center justify-center h-96">
                 <div className="text-center">
@@ -1693,13 +1736,13 @@ function DashboardContent() {
           ) : activeNav === "invoices" ? (
             <InvoicesView key={`invoices-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} locations={locations} userDoc={userDoc} staffContext={staffContext} payments={payments} highlightId={searchParams.get("highlightId")} />
           ) : activeNav === "customers" ? (
-            <CustomersView key={`customers-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} customers={customers} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} />
+            <CustomersView key={`customers-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} customers={customers} invoices={invoices} loading={dataLoading || viewLoading} products={inventory} userDoc={userDoc} staffContext={staffContext} />
           ) : activeNav === "inventory" ? (
-            <InventoryView key={`inventory-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} userDoc={userDoc} locations={locations} />
+            <InventoryView key={`inventory-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} userDoc={userDoc} locations={locations} staffContext={staffContext} />
           ) : activeNav === "payments" ? (
             <PaymentsView key={`payments-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} onNavigate={handleNavChange} />
           ) : activeNav === "purchases" ? (
-            <PurchasesView key={`purchases-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} userDoc={userDoc} onNavigate={handleNavChange} />
+            <PurchasesView key={`purchases-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} userDoc={userDoc} onNavigate={handleNavChange} staffContext={staffContext} />
           ) : activeNav === "order-form" ? (
             <OrderFormView key={`orderform-${refreshKey}`} userDoc={userDoc} />
           ) : activeNav === "analytics" ? (
@@ -1861,7 +1904,16 @@ function DashboardContent() {
                           </div>
                           <div className="min-w-0">
                             <p className="text-white text-sm font-semibold truncate">{displayName}</p>
-                            <p className="text-gray-300 text-[11px]">{displayInvNum} · {dateStr}</p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <p className="text-gray-300 text-[11px] whitespace-nowrap">{displayInvNum} · {dateStr}</p>
+                              {/* Staff Created By Badge - Show role (Manager/Cashier) and name */}
+                              {inv.createdByRole && inv.createdByRole !== "admin" && inv.createdByName && (
+                                <span className="text-[9px] font-semibold px-1.5 py-0.5 rounded-md whitespace-nowrap" 
+                                  style={{ background: "rgba(168,85,247,0.12)", border: "1px solid rgba(168,85,247,0.25)", color: "#c084fc" }}>
+                                  👨‍💼 {inv.createdByRole} ({inv.createdByName})
+                                </span>
+                              )}
+                            </div>
                           </div>
                         </div>
                         <div className="flex items-center gap-2.5 flex-shrink-0">
