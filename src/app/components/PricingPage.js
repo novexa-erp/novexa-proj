@@ -92,6 +92,7 @@ const plans = [
       inventory: true, purchases: true, payments: true, analytics: false,
       locations: "Default Only",
       digitalRegister: true,
+      whatsapp: true,
       email: "Email Support", orderForm: false, multiBranch: false, api: false,
       support: "Email Support",
     },
@@ -113,6 +114,7 @@ const plans = [
       inventory: true, purchases: true, payments: true, analytics: true,
       locations: "1 Warehouse",
       digitalRegister: true,
+      whatsapp: true,
       email: "Email Notifications", orderForm: true, multiBranch: false, api: false,
       support: "Priority Support",
     },
@@ -134,6 +136,7 @@ const plans = [
       inventory: true, purchases: true, payments: true, analytics: "Advanced",
       locations: "2 Warehouses",
       digitalRegister: true,
+      whatsapp: true,
       email: "Email Automation", orderForm: true, multiBranch: true, api: "Coming Soon",
       support: "Priority Support",
     },
@@ -155,6 +158,7 @@ const plans = [
       inventory: true, purchases: true, payments: true, analytics: "Advanced",
       locations: "4 Warehouses",
       digitalRegister: true,
+      whatsapp: true,
       email: "Email Automation", orderForm: true, multiBranch: "Unlimited", api: true,
       support: "SLA + Dedicated AM",
     },
@@ -194,7 +198,7 @@ function CountdownBanner() {
     { label: "Seconds", val: pad(seconds) },
   ];
 
-  // Offer koi lagyae to uska countdown hay 
+  // Countdown for special offer if enabled
 
   return (
     <div
@@ -213,7 +217,7 @@ function CountdownBanner() {
           <span className="text-2xl">🔥</span>
           <div>
             <p className="text-white font-bold text-sm md:text-base">Early Bird Offer — Limited Time!</p>
-            <p className="text-gray-400 text-xs">Yeh discount offer sirf kuch waqt ke liye hai. Jaldi karein!</p>
+            <p className="text-gray-400 text-xs">This exclusive discount is available for a limited time only. Act fast!</p>
           </div>
         </div>
 
@@ -287,6 +291,7 @@ function getDynamicFeatures(plan, fsData) {
                    ? (plan.id === "professional" || plan.id === "enterprise" ? "Advanced" : true)
                    : false,
     digitalRegister: tabs.includes("bill-book") || tabs.includes("billbook"),
+    whatsapp:    true, // All plans have WhatsApp integration
     email:       plan.features.email,   // keep static — not in PackageManager
     orderForm:   tabs.includes("order-form"),
     multiBranch: tabs.includes("branches")
@@ -533,14 +538,15 @@ function CompareTable({ isYearly, fsPlans }) {
     >
       <div className="text-center mb-10">
         <h2 className="text-2xl md:text-3xl font-bold text-white mb-2">Detailed Plan Comparison</h2>
-        <p className="text-gray-500 text-sm">Har feature ek jagah compare karein</p>
+        <p className="text-gray-500 text-sm">Compare all features side by side</p>
       </div>
 
       <div
-        className="rounded-3xl overflow-x-auto"
+        className="rounded-3xl"
         style={{ border: "1px solid rgba(255,255,255,0.07)", background: "rgba(255,255,255,0.02)" }}
       >
-        <table className="w-full min-w-[640px]">
+        <div className="overflow-x-auto">
+          <table className="w-full min-w-[640px]">
           <thead>
             <tr style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
               <th className="text-left px-6 py-5 text-gray-400 text-sm font-semibold w-[200px]">Feature</th>
@@ -632,6 +638,7 @@ function CompareTable({ isYearly, fsPlans }) {
             </tr>
           </tbody>
         </table>
+        </div>
       </div>
     </section>
   );
@@ -639,12 +646,12 @@ function CompareTable({ isYearly, fsPlans }) {
 
 // ── FAQ ───────────────────────────────────────────────────────────────────────
 const faqs = [
-  { q: "Kya free trial available hai?",             a: "Haan, har plan ke saath 7-day free trial milta hai. Koi credit card required nahi." },
-  { q: "Yearly plan mein kitni savings hoti hain?",        a: "Yearly plan mein 2 months free milte hain — approximately 17% ki savings." },
-  { q: "Early bird offer kab tak valid hai?",              a: "Yeh limited-time offer hai aur jab tak timer chal raha hai tab tak valid hai. Uske baad original prices apply honge." },
-  { q: "Kya main plan baad mein upgrade kar sakta hoon?",  a: "Bilkul! Aap kabhi bhi upgrade ya downgrade kar sakte hain. Charges pro-rated basis par hote hain." },
-  { q: "Payment kaise ho sakti hai?",                      a: "Hum PKR mein payment accept karte hain — EasyPaisa, JazzCash, aur bank transfer ke zariye." },
-  { q: "Data secure hai?",                                 a: "Haan, bank-level SSL encryption, daily backups, aur role-based access control se aapka data protected hai." },
+  { q: "Is a free trial available?",             a: "Yes, every plan includes a 7-day free trial. No credit card required." },
+  { q: "How much can I save with yearly plans?",        a: "Yearly plans include 2 months free — approximately 17% savings compared to monthly." },
+  { q: "How long is the early bird offer valid?",              a: "This limited-time offer is valid while the countdown timer is running. Original prices will apply after expiration." },
+  { q: "Can I upgrade my plan later?",  a: "Absolutely! You can upgrade or downgrade anytime. Charges are calculated on a pro-rated basis." },
+  { q: "What payment methods do you accept?",                      a: "We accept payments in PKR via EasyPaisa, JazzCash, and bank transfer." },
+  { q: "Is my data secure?",                                 a: "Yes, your data is protected with bank-level SSL encryption, daily backups, and role-based access control." },
 ];
 
 function FAQItem({ q, a }) {
@@ -683,7 +690,7 @@ export default function PricingPage() {
   const [ctaRef,    ctaVisible]   = useInView(0.1);
 
   return (
-    <div className="min-h-screen bg-[#0d1117] overflow-x-hidden">
+    <div className="min-h-screen bg-[#0d1117]">
 
       {/* Ambient glow + grid */}
       <div className="fixed inset-0 pointer-events-none -z-10">
@@ -714,14 +721,14 @@ export default function PricingPage() {
           💰 Simple, Transparent Pricing
         </div>
         <h1 className="text-4xl md:text-6xl font-black text-white mb-4 leading-tight">
-          Apne Business ke liye{" "}
+          Choose the{" "}
           <span className="bg-gradient-to-r from-[#2563EB] via-[#60A5FA] to-[#F59E0B] bg-clip-text text-transparent">
-            Sahi Plan
+            Right Plan
           </span>{" "}
-          Chunein
+          for Your Business
         </h1>
         <p className="text-gray-400 text-lg md:text-xl max-w-2xl mx-auto mb-10">
-          Koi hidden charges nahi. Koi lock-in nahi. 7-day free trial ke saath shuru karein.
+          No hidden charges. No lock-in. Start with a 7-day free trial.
         </p>
 
         {/* Billing Toggle */}
@@ -811,8 +818,8 @@ export default function PricingPage() {
         }}
       >
         <div className="text-center mb-10">
-          <h2 className="text-2xl md:text-3xl font-bold text-white mb-2">Aksar Pooche Jane Wale Sawalat</h2>
-          <p className="text-gray-500 text-sm">Pricing ke baare mein common questions</p>
+          <h2 className="text-2xl md:text-3xl font-bold text-white mb-2">Frequently Asked Questions</h2>
+          <p className="text-gray-500 text-sm">Common Questions About Pricing</p>
         </div>
         <div className="flex flex-col gap-3">
           {faqs.map((f, i) => <FAQItem key={i} q={f.q} a={f.a} />)}
@@ -841,9 +848,9 @@ export default function PricingPage() {
           <div className="absolute -bottom-10 -left-10 w-48 h-48 bg-amber-500/8 rounded-full blur-3xl pointer-events-none" />
           <div className="relative z-10">
             <p className="text-4xl mb-4">🎯</p>
-            <h2 className="text-3xl md:text-4xl font-black text-white mb-4">Abhi Free Demo Book Karein</h2>
+            <h2 className="text-3xl md:text-4xl font-black text-white mb-4">Book Your Free Demo Today</h2>
             <p className="text-gray-400 text-lg mb-8 max-w-xl mx-auto">
-              7 din bilkul free. Koi credit card required nahi. Humari team aapko setup mein help karegi.
+              7 days completely free. No credit card required. Our team will help you get started.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link href="/pages/contact"
