@@ -116,14 +116,15 @@ export async function POST(request) {
       adminUid,
       allowedModules: staffData.allowedModules || [],
       staffDoc: {
-        uid:         decoded.uid,
-        name:        staffData.name,
-        email:       staffData.email,
-        role:        staffData.role,
-        permissions: staffData.permissions || {
+        uid:                decoded.uid,
+        name:               staffData.name,
+        email:              staffData.email,
+        role:               staffData.role,
+        assignedLocationId: staffData.assignedLocationId || "", // ADD THIS FIELD
+        permissions:        staffData.permissions || {
           invoices:  { view: "own", create: false, edit: false, delete: false },
           customers: { view: "all", create: false, edit: false, delete: false },
-          inventory: { view: "all", create: false, edit: false, delete: false },
+          inventory: { view: "own", create: false, edit: false, delete: false },
           payments:  { view: "all", create: false, edit: false, delete: false },
           purchases: { view: "all", create: false, edit: false, delete: false },
         },

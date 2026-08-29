@@ -37,6 +37,8 @@ const DEFAULT_PLANS = [
     afterYearlyPrice: null,
     discountLabel: "",        // e.g. "Early Bird" — blank = no badge
     maxDevices: 1,
+    maxStaff: 1,              // Max staff members allowed
+    maxLocations: 0,          // Max warehouse locations (0 = default location only)
     limits: {
       invoicesPerMonth: 100,
       invoicesPerCustomerPerMonth: 100,
@@ -57,6 +59,8 @@ const DEFAULT_PLANS = [
     afterYearlyPrice: null,
     discountLabel: "",
     maxDevices: 5,
+    maxStaff: 2,              // Max staff members allowed
+    maxLocations: 1,          // Max warehouse locations (1 = default + 1 warehouse)
     limits: {
       invoicesPerMonth: 1000,
       invoicesPerCustomerPerMonth: 1000,
@@ -77,6 +81,8 @@ const DEFAULT_PLANS = [
     afterYearlyPrice: null,
     discountLabel: "",
     maxDevices: 15,
+    maxStaff: 4,              // Max staff members allowed
+    maxLocations: 2,          // Max warehouse locations (2 = default + 2 warehouses)
     limits: {
       invoicesPerMonth: 5000,
       invoicesPerCustomerPerMonth: 5000,
@@ -97,6 +103,8 @@ const DEFAULT_PLANS = [
     afterYearlyPrice: null,
     discountLabel: "",
     maxDevices: 50,
+    maxStaff: 10,             // Max staff members allowed
+    maxLocations: 4,          // Max warehouse locations (4 = default + 4 warehouses)
     limits: {
       invoicesPerMonth: null,
       invoicesPerCustomerPerMonth: null,
@@ -357,6 +365,16 @@ export default function PackageManager({ getToken, onToast }) {
                 <div>
                   <label style={{ display: "block", color: "#9ca3af", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>Max Devices</label>
                   <input type="number" min="1" value={activePlan.maxDevices ?? ""} onChange={e => updatePlan(activePlan.id, "maxDevices", e.target.value === "" ? null : Number(e.target.value))} style={inputSt} placeholder="e.g. 5" />
+                </div>
+                <div>
+                  <label style={{ display: "block", color: "#9ca3af", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>Max Staff</label>
+                  <input type="number" min="1" value={activePlan.maxStaff ?? ""} onChange={e => updatePlan(activePlan.id, "maxStaff", e.target.value === "" ? null : Number(e.target.value))} style={inputSt} placeholder="e.g. 2" />
+                  <p style={{ color: "#6b7280", fontSize: 10, marginTop: 4 }}>1 Owner + X Staff members</p>
+                </div>
+                <div>
+                  <label style={{ display: "block", color: "#9ca3af", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 }}>Max Locations</label>
+                  <input type="number" min="0" value={activePlan.maxLocations ?? ""} onChange={e => updatePlan(activePlan.id, "maxLocations", e.target.value === "" ? null : Number(e.target.value))} style={inputSt} placeholder="e.g. 1" />
+                  <p style={{ color: "#6b7280", fontSize: 10, marginTop: 4 }}>Warehouses (0 = default only)</p>
                 </div>
               </div>
             </div>

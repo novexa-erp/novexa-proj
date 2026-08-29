@@ -126,16 +126,49 @@ export default function StaffManagementView({ uid, userDoc, locations = [] }) {
   const [saving,    setSaving]          = useState(false);
   const [alert,     setAlert]           = useState({ show: false, type: "", title: "", message: "" });
   const [planModules, setPlanModules]   = useState(new Set());
+  const [planConfig, setPlanConfig]     = useState(null); // Firestore plan config
 
   // Modal state
   const [showModal,  setShowModal]      = useState(false);
   const [editTarget, setEditTarget]     = useState(null); // null = create, object = edit
 
-  // Confirm delete
-  const [confirmDelete, setConfirmDelete] = useState(null); // { uid, name }
+  // Confirmation dialogs
+  const [confirmAction, setConfirmAction] = useState(null); // { type: 'suspend'|'reactivate'|'remove', staff: {...} }
 
   // Activity log drawer
   const [activityStaff, setActivityStaff] = useState(null); // staff doc
+
+  // Fetch plan config from Firestore
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      doc(db, "adminConfig", "plans"),
+      (snap) => {
+        if (snap.exists()) {
+          const list = snap.data().list || [];
+          const config = {};
+          list.forEach(p => { config[p.id] = p; });
+          setPlanConfig(config);
+        }
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  // Get staff limit based on plan (from Firestore or fallback)
+  function getStaffLimit(plan) {
+    // Try to get from Firestore first
+    if (planConfig && planConfig[plan]?.maxStaff !== undefined) {
+      return planConfig[plan].maxStaff;
+    }
+    // Fallback to hardcoded
+    const limits = {
+      starter:      1,
+      business:     2,
+      professional: 4,
+      enterprise:   10,
+    };
+    return limits[plan] || 1;
+  }
 
   // Helper: Get default location ID
   const getDefaultLocationId = () => {
@@ -348,35 +381,71 @@ export default function StaffManagementView({ uid, userDoc, locations = [] }) {
   }
 
   // ── Toggle active status ──────────────────────────────────────────────────
-  async function toggleActive(staff) {
+  // ── Suspend Staff ─────────────────────────────────────────────────────────
+  async function handleSuspend(staff) {
+    setSaving(true);
     try {
       const data = await callManage("PATCH", {
         staffUid: staff.id,
-        isActive: !staff.isActive,
+        isActive: false,
+        action: "suspend" // Signal backend to revoke tokens
       });
       if (data.error) return showAlert("error", "Failed", data.error);
       showAlert(
         "success",
-        staff.isActive ? "Deactivated" : "Activated",
-        `${staff.name} has been ${staff.isActive ? "deactivated" : "activated"}.`
+        "Staff Suspended",
+        `${staff.name} has been suspended and logged out from all devices.`
       );
-    } catch (err) {
-      showAlert("error", "Error", err.message);
-    }
-  }
-
-  // ── Delete ────────────────────────────────────────────────────────────────
-  async function handleDelete(staffUid) {
-    setSaving(true);
-    try {
-      const data = await callManage("DELETE", { staffUid });
-      if (data.error) return showAlert("error", "Failed", data.error);
-      showAlert("success", "Removed", "Staff member has been removed.");
     } catch (err) {
       showAlert("error", "Error", err.message);
     } finally {
       setSaving(false);
-      setConfirmDelete(null);
+      setConfirmAction(null);
+    }
+  }
+
+  // ── Reactivate Staff ──────────────────────────────────────────────────────
+  async function handleReactivate(staff) {
+    setSaving(true);
+    try {
+      const data = await callManage("PATCH", {
+        staffUid: staff.id,
+        isActive: true,
+        action: "reactivate"
+      });
+      if (data.error) return showAlert("error", "Failed", data.error);
+      showAlert(
+        "success",
+        "Staff Reactivated",
+        `${staff.name} has been reactivated and can log in again.`
+      );
+    } catch (err) {
+      showAlert("error", "Error", err.message);
+    } finally {
+      setSaving(false);
+      setConfirmAction(null);
+    }
+  }
+
+  // ── Remove Staff (Permanent) ──────────────────────────────────────────────
+  async function handleRemove(staff) {
+    setSaving(true);
+    try {
+      const data = await callManage("DELETE", { 
+        staffUid: staff.id,
+        action: "remove" // Signal backend to revoke tokens + soft delete
+      });
+      if (data.error) return showAlert("error", "Failed", data.error);
+      showAlert(
+        "success",
+        "Staff Removed",
+        `${staff.name} has been permanently removed. All business records remain intact.`
+      );
+    } catch (err) {
+      showAlert("error", "Error", err.message);
+    } finally {
+      setSaving(false);
+      setConfirmAction(null);
     }
   }
 
@@ -386,6 +455,11 @@ export default function StaffManagementView({ uid, userDoc, locations = [] }) {
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
+  const currentPlan = userDoc?.plan || "starter";
+  const staffLimit = getStaffLimit(currentPlan);
+  const activeStaffCount = staffList.filter(s => !s.deleted).length;
+  const canAddStaff = activeStaffCount < staffLimit;
+
   return (
     <div className="w-full min-h-full">
       <SweetAlert
@@ -401,12 +475,39 @@ export default function StaffManagementView({ uid, userDoc, locations = [] }) {
             Manage your team — create accounts, assign modules, control access.
           </p>
         </div>
-        <button onClick={openCreate}
-          className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm text-white transition-all hover:scale-105 flex-shrink-0"
-          style={{ background: "linear-gradient(135deg,#2563EB,#1d4ed8)", boxShadow: "0 4px 16px rgba(37,99,235,0.3)" }}>
-          <span>➕</span>
-          <span className="hidden sm:inline">Add Staff</span>
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Staff count indicator */}
+          <div className="text-right">
+            <p className="text-xs text-gray-500 font-medium">
+              Staff: <span className={activeStaffCount >= staffLimit ? "text-red-400" : "text-blue-400"}>
+                {activeStaffCount}/{staffLimit}
+              </span>
+            </p>
+            {!canAddStaff && (
+              <p className="text-xs text-amber-400 font-semibold">
+                ⚠️ Limit Reached
+              </p>
+            )}
+          </div>
+          <button 
+            onClick={canAddStaff ? openCreate : () => {
+              showAlert("error", "Staff Limit Reached", 
+                `Your ${currentPlan} plan allows maximum ${staffLimit} staff member${staffLimit > 1 ? 's' : ''}. Upgrade your plan to add more staff.`
+              );
+            }}
+            disabled={!canAddStaff}
+            className="flex items-center gap-2 px-5 py-2.5 rounded-xl font-bold text-sm text-white transition-all flex-shrink-0"
+            style={{ 
+              background: canAddStaff ? "linear-gradient(135deg,#2563EB,#1d4ed8)" : "rgba(107,114,128,0.3)", 
+              boxShadow: canAddStaff ? "0 4px 16px rgba(37,99,235,0.3)" : "none",
+              opacity: canAddStaff ? 1 : 0.6,
+              cursor: canAddStaff ? "pointer" : "not-allowed",
+              transform: canAddStaff ? "scale(1)" : "scale(1)",
+            }}>
+            <span>➕</span>
+            <span className="hidden sm:inline">Add Staff</span>
+          </button>
+        </div>
       </div>
 
       {/* ── Stats strip ── */}
@@ -448,8 +549,9 @@ export default function StaffManagementView({ uid, userDoc, locations = [] }) {
               staff={staff}
               planModules={planModules}
               onEdit={() => openEdit(staff)}
-              onToggleActive={() => toggleActive(staff)}
-              onDelete={() => setConfirmDelete({ uid: staff.id, name: staff.name })}
+              onSuspend={() => setConfirmAction({ type: 'suspend', staff })}
+              onReactivate={() => setConfirmAction({ type: 'reactivate', staff })}
+              onRemove={() => setConfirmAction({ type: 'remove', staff })}
               onViewActivity={() => setActivityStaff(staff)}
             />
           ))}
@@ -477,33 +579,113 @@ export default function StaffManagementView({ uid, userDoc, locations = [] }) {
         />
       )}
 
-      {/* ── Delete Confirm Modal ── */}
-      {confirmDelete && (
+      {/* ── Confirmation Dialog (Suspend/Reactivate/Remove) ── */}
+      {confirmAction && (
         <div className="fixed inset-0 z-[100] flex items-center justify-center p-4"
           style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)" }}
-          onClick={e => e.target === e.currentTarget && setConfirmDelete(null)}>
-          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
-            style={{ background: "#0d1117", border: "1.5px solid rgba(239,68,68,0.4)" }}>
-            <div style={{ height: 4, background: "linear-gradient(to right,#ef4444,#f97316)" }} />
-            <div className="p-6 text-center">
-              <div className="w-14 h-14 rounded-2xl flex items-center justify-center text-3xl mx-auto mb-4"
-                style={{ background: "rgba(239,68,68,0.1)", border: "2px solid rgba(239,68,68,0.3)" }}>
-                🗑️
+          onClick={e => e.target === e.currentTarget && setConfirmAction(null)}>
+          <div className="w-full max-w-md rounded-2xl overflow-hidden"
+            style={{ 
+              background: "#0d1117", 
+              border: `1.5px solid ${
+                confirmAction.type === 'remove' ? "rgba(239,68,68,0.4)" :
+                confirmAction.type === 'suspend' ? "rgba(251,146,60,0.4)" :
+                "rgba(34,197,94,0.4)"
+              }`
+            }}>
+            <div style={{ 
+              height: 4, 
+              background: confirmAction.type === 'remove' 
+                ? "linear-gradient(to right,#ef4444,#f97316)" 
+                : confirmAction.type === 'suspend'
+                ? "linear-gradient(to right,#fb923c,#f59e0b)"
+                : "linear-gradient(to right,#22c55e,#16a34a)"
+            }} />
+            <div className="p-6">
+              <div className="flex items-start gap-4">
+                <div className="w-12 h-12 rounded-xl flex items-center justify-center text-2xl flex-shrink-0"
+                  style={{ 
+                    background: confirmAction.type === 'remove' 
+                      ? "rgba(239,68,68,0.1)" 
+                      : confirmAction.type === 'suspend'
+                      ? "rgba(251,146,60,0.1)"
+                      : "rgba(34,197,94,0.1)", 
+                    border: `2px solid ${
+                      confirmAction.type === 'remove' 
+                        ? "rgba(239,68,68,0.3)" 
+                        : confirmAction.type === 'suspend'
+                        ? "rgba(251,146,60,0.3)"
+                        : "rgba(34,197,94,0.3)"
+                    }`
+                  }}>
+                  {confirmAction.type === 'remove' ? '🗑️' : confirmAction.type === 'suspend' ? '⏸️' : '▶️'}
+                </div>
+                <div className="flex-1">
+                  <h3 className="text-white font-black text-base leading-tight">
+                    {confirmAction.type === 'remove' && 'Permanently Remove Staff?'}
+                    {confirmAction.type === 'suspend' && 'Suspend Staff Access?'}
+                    {confirmAction.type === 'reactivate' && 'Reactivate Staff Account?'}
+                  </h3>
+                  <p className="text-gray-400 text-xs mt-2 leading-relaxed">
+                    {confirmAction.type === 'remove' && (
+                      <>
+                        <strong className="text-white">{confirmAction.staff.name}</strong> will be permanently removed from the system. 
+                        Their login access will be revoked immediately across all devices. 
+                        <span className="text-emerald-400"> All business records (invoices, payments, etc.) created by them will remain محفوظ.</span>
+                      </>
+                    )}
+                    {confirmAction.type === 'suspend' && (
+                      <>
+                        <strong className="text-white">{confirmAction.staff.name}</strong> will be suspended and logged out from all devices immediately. 
+                        They won't be able to access the ERP system until reactivated. 
+                        <span className="text-blue-400"> All their data will remain intact.</span>
+                      </>
+                    )}
+                    {confirmAction.type === 'reactivate' && (
+                      <>
+                        <strong className="text-white">{confirmAction.staff.name}</strong> will be reactivated and can log in again. 
+                        They will regain access to their assigned modules with their existing permissions.
+                      </>
+                    )}
+                  </p>
+                </div>
               </div>
-              <h3 className="text-white font-black text-lg">Remove Staff Member?</h3>
-              <p className="text-gray-400 text-sm mt-2 leading-relaxed">
-                <strong className="text-white">{confirmDelete.name}</strong> will be removed and their login access will be revoked immediately.
-              </p>
-              <div className="flex gap-3 mt-6">
-                <button onClick={() => setConfirmDelete(null)}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-semibold"
+              
+              <div className="flex gap-3 mt-5">
+                <button onClick={() => setConfirmAction(null)}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-semibold transition-all hover:bg-white/10"
                   style={{ background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
                   Cancel
                 </button>
-                <button onClick={() => handleDelete(confirmDelete.uid)} disabled={saving}
-                  className="flex-1 py-2.5 rounded-xl text-sm font-bold text-white transition-all hover:scale-[1.02]"
-                  style={{ background: "linear-gradient(135deg,#ef4444,#dc2626)", opacity: saving ? 0.7 : 1 }}>
-                  {saving ? "Removing..." : "Yes, Remove"}
+                <button 
+                  onClick={() => {
+                    if (confirmAction.type === 'remove') handleRemove(confirmAction.staff);
+                    else if (confirmAction.type === 'suspend') handleSuspend(confirmAction.staff);
+                    else if (confirmAction.type === 'reactivate') handleReactivate(confirmAction.staff);
+                  }} 
+                  disabled={saving}
+                  className="flex-1 py-2.5 rounded-xl text-xs font-bold text-white transition-all hover:scale-[1.02]"
+                  style={{ 
+                    background: confirmAction.type === 'remove' 
+                      ? "linear-gradient(135deg,#ef4444,#dc2626)" 
+                      : confirmAction.type === 'suspend'
+                      ? "linear-gradient(135deg,#fb923c,#f59e0b)"
+                      : "linear-gradient(135deg,#22c55e,#16a34a)",
+                    opacity: saving ? 0.7 : 1 
+                  }}>
+                  {saving ? (
+                    <>
+                      {confirmAction.type === 'remove' && 'Removing...'}
+                      {confirmAction.type === 'suspend' && 'Suspending...'}
+                      {confirmAction.type === 'reactivate' && 'Reactivating...'}
+                    </>
+                  ) : (
+                    <>
+                      {confirmAction.type === 'remove' && 'Yes, Remove Permanently'}
+                      {confirmAction.type === 'suspend' && 'Yes, Suspend Access'}
+                      {confirmAction.type === 'reactivate' && 'Yes, Reactivate Now'}
+                    </>
+                  )}
                 </button>
               </div>
             </div>
@@ -524,7 +706,7 @@ export default function StaffManagementView({ uid, userDoc, locations = [] }) {
 }
 
 // ── Staff Card ────────────────────────────────────────────────────────────────
-function StaffCard({ staff, planModules, onEdit, onToggleActive, onDelete, onViewActivity }) {
+function StaffCard({ staff, planModules, onEdit, onSuspend, onReactivate, onRemove, onViewActivity }) {
   const moduleCount = (staff.allowedModules || []).filter(m => planModules.has(m)).length;
 
   return (
@@ -555,17 +737,15 @@ function StaffCard({ staff, planModules, onEdit, onToggleActive, onDelete, onVie
               )}
             </div>
           </div>
-          {/* Active toggle */}
-          <button onClick={onToggleActive}
-            className="flex-shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold transition-all hover:scale-105"
+          {/* Status Badge */}
+          <div className="flex-shrink-0 px-2.5 py-1 rounded-lg text-[11px] font-bold"
             style={{
-              background: staff.isActive ? "rgba(16,185,129,0.12)" : "rgba(107,114,128,0.12)",
-              border:     staff.isActive ? "1px solid rgba(16,185,129,0.35)" : "1px solid rgba(107,114,128,0.3)",
-              color:      staff.isActive ? "#34d399" : "#6b7280",
-            }}
-            title={staff.isActive ? "Click to deactivate" : "Click to activate"}>
-            {staff.isActive ? "Active" : "Inactive"}
-          </button>
+              background: staff.isActive ? "rgba(16,185,129,0.12)" : "rgba(239,68,68,0.12)",
+              border:     staff.isActive ? "1px solid rgba(16,185,129,0.35)" : "1px solid rgba(239,68,68,0.35)",
+              color:      staff.isActive ? "#34d399" : "#f87171",
+            }}>
+            {staff.isActive ? "Active" : "Suspended"}
+          </div>
         </div>
 
         {/* Module pills */}
@@ -605,21 +785,42 @@ function StaffCard({ staff, planModules, onEdit, onToggleActive, onDelete, onVie
 
       {/* Action bar */}
       <div className="flex border-t" style={{ borderColor: "rgba(255,255,255,0.06)" }}>
-        {[
-          { icon: "✏️", label: "Edit",     action: onEdit,           color: "#60a5fa" },
-          { icon: "📋", label: "Activity", action: onViewActivity,   color: "#a78bfa" },
-          { icon: "🗑️", label: "Remove",   action: onDelete,         color: "#f87171" },
-        ].map((btn, i) => (
-          <button key={btn.label} onClick={btn.action}
+        <button onClick={onEdit}
+          className="flex-1 py-2.5 flex items-center justify-center gap-1.5 text-xs font-semibold transition-all hover:bg-white/5"
+          style={{ color: "#60a5fa" }}>
+          <span>✏️</span>
+          <span className="hidden sm:inline">Edit</span>
+        </button>
+        
+        <button onClick={onViewActivity}
+          className="flex-1 py-2.5 flex items-center justify-center gap-1.5 text-xs font-semibold transition-all hover:bg-white/5"
+          style={{ color: "#a78bfa", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
+          <span>📋</span>
+          <span className="hidden sm:inline">Activity</span>
+        </button>
+
+        {staff.isActive ? (
+          <button onClick={onSuspend}
             className="flex-1 py-2.5 flex items-center justify-center gap-1.5 text-xs font-semibold transition-all hover:bg-white/5"
-            style={{
-              color:       btn.color,
-              borderLeft:  i > 0 ? "1px solid rgba(255,255,255,0.06)" : "none",
-            }}>
-            <span>{btn.icon}</span>
-            <span className="hidden sm:inline">{btn.label}</span>
+            style={{ color: "#fb923c", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
+            <span>⏸️</span>
+            <span className="hidden sm:inline">Suspend</span>
           </button>
-        ))}
+        ) : (
+          <button onClick={onReactivate}
+            className="flex-1 py-2.5 flex items-center justify-center gap-1.5 text-xs font-semibold transition-all hover:bg-white/5"
+            style={{ color: "#34d399", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
+            <span>▶️</span>
+            <span className="hidden sm:inline">Reactivate</span>
+          </button>
+        )}
+        
+        <button onClick={onRemove}
+          className="flex-1 py-2.5 flex items-center justify-center gap-1.5 text-xs font-semibold transition-all hover:bg-white/5"
+          style={{ color: "#f87171", borderLeft: "1px solid rgba(255,255,255,0.06)" }}>
+          <span>🗑️</span>
+          <span className="hidden sm:inline">Remove</span>
+        </button>
       </div>
     </div>
   );

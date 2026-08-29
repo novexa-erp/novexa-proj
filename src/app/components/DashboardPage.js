@@ -286,6 +286,16 @@ function DashboardContent() {
           const data = await res.json();
           if (data.sessionId && data.sessionId !== "admin") {
             sessionStorage.setItem("novexa_session_id", data.sessionId);
+            
+            // Show notification if previous sessions were evicted
+            if (data.evictedCount > 0) {
+              setAlert({
+                show: true,
+                type: "warning",
+                title: "Login Successful",
+                message: "You're now logged in. Your previous session on another device has been logged out.",
+              });
+            }
           }
         } catch { /* ignore — session tracking optional */ }
       }
@@ -345,6 +355,25 @@ function DashboardContent() {
       (snap) => {
         if (snap.exists()) {
           const staffDoc = snap.data();
+          
+          // ⚠️ CHECK: If staff is suspended or deleted, force logout immediately
+          if (staffDoc.deleted) {
+            sessionStorage.removeItem("novexa_staff_context");
+            sessionStorage.removeItem("novexa_session_id");
+            signOut(auth);
+            router.push("/pages/login?blocked=account_removed");
+            return;
+          }
+          
+          // Only logout if explicitly set to false (not undefined or missing)
+          if (staffDoc.isActive === false) {
+            sessionStorage.removeItem("novexa_staff_context");
+            sessionStorage.removeItem("novexa_session_id");
+            signOut(auth);
+            router.push("/pages/login?blocked=account_suspended");
+            return;
+          }
+          
           // Update staffContext with latest permissions
           const updatedContext = {
             adminUid: staffContext.adminUid,
@@ -355,6 +384,7 @@ function DashboardContent() {
               email: staffDoc.email,
               role: staffDoc.role,
               permissions: staffDoc.permissions,
+              assignedLocationId: staffDoc.assignedLocationId || "", // ADD THIS LINE
             },
             adminPlan: staffContext.adminPlan,
           };
@@ -364,6 +394,7 @@ function DashboardContent() {
         } else {
           // Staff document deleted — force logout
           sessionStorage.removeItem("novexa_staff_context");
+          sessionStorage.removeItem("novexa_session_id");
           signOut(auth);
           router.push("/pages/login?blocked=access_denied");
         }
@@ -925,7 +956,33 @@ function DashboardContent() {
   ];
 
   return (
-    <div className="min-h-screen bg-[#0d1117] flex" style={{ fontFamily: "var(--font-poppins, sans-serif)" }}>
+    <>
+      <style jsx>{`
+        @keyframes fadeIn {
+          from { opacity: 0; }
+          to { opacity: 1; }
+        }
+        @keyframes slideUp {
+          from { 
+            transform: translateY(100%);
+            opacity: 0;
+          }
+          to { 
+            transform: translateY(0);
+            opacity: 1;
+          }
+        }
+        @keyframes bounce-slow {
+          0%, 100% { transform: translateY(0); }
+          50% { transform: translateY(-8px); }
+        }
+        @keyframes pulse {
+          0%, 100% { opacity: 0.3; }
+          50% { opacity: 0.5; }
+        }
+      `}</style>
+      
+      <div className="min-h-screen bg-[#0d1117] flex" style={{ fontFamily: "var(--font-poppins, sans-serif)" }}>
       {/* Sweet Alert */}
       <SweetAlert
         show={alert.show}
@@ -1203,76 +1260,116 @@ function DashboardContent() {
       {/* ── Plan Details Modal ── */}
       {showPlanModal && (
         <div
-          className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center"
-          style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)" }}
+          className="fixed inset-0 z-[80] flex items-end sm:items-center justify-center animate-fadeIn"
+          style={{ 
+            background: "rgba(0,0,0,0.85)", 
+            backdropFilter: "blur(12px)",
+            animation: "fadeIn 0.2s ease-out"
+          }}
           onClick={e => e.target === e.currentTarget && setShowPlanModal(false)}
         >
           {/* Modal container — bottom sheet on mobile, centered on sm+ */}
           <div
-            className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl flex flex-col"
+            className="w-full sm:max-w-md rounded-t-3xl sm:rounded-3xl flex flex-col relative overflow-hidden"
             style={{
-              background: "#0d1117",
-              border: `1px solid ${
-                userDoc?.plan === "enterprise" ? "rgba(168,85,247,0.35)"
-                : userDoc?.plan === "professional" ? "rgba(245,158,11,0.35)"
-                : userDoc?.plan === "business" ? "rgba(37,99,235,0.35)"
-                : "rgba(16,185,129,0.35)"
+              background: "linear-gradient(135deg, #0d1117 0%, #161b22 50%, #0d1117 100%)",
+              border: `1.5px solid ${
+                userDoc?.plan === "enterprise" ? "rgba(168,85,247,0.4)"
+                : userDoc?.plan === "professional" ? "rgba(245,158,11,0.4)"
+                : userDoc?.plan === "business" ? "rgba(37,99,235,0.4)"
+                : "rgba(16,185,129,0.4)"
               }`,
-              boxShadow: "0 -8px 40px rgba(0,0,0,0.6)",
+              boxShadow: `0 20px 60px -10px ${
+                userDoc?.plan === "enterprise" ? "rgba(168,85,247,0.3)"
+                : userDoc?.plan === "professional" ? "rgba(245,158,11,0.3)"
+                : userDoc?.plan === "business" ? "rgba(37,99,235,0.3)"
+                : "rgba(16,185,129,0.3)"
+              }, 0 0 0 1px rgba(255,255,255,0.05)`,
               maxHeight: "90vh",
+              animation: "slideUp 0.3s cubic-bezier(0.34, 1.56, 0.64, 1)"
             }}
           >
+            {/* Animated gradient background */}
+            <div className="absolute inset-0 opacity-30 pointer-events-none"
+              style={{
+                background: `radial-gradient(circle at 50% 0%, ${
+                  userDoc?.plan === "enterprise" ? "rgba(168,85,247,0.15)"
+                  : userDoc?.plan === "professional" ? "rgba(245,158,11,0.12)"
+                  : userDoc?.plan === "business" ? "rgba(37,99,235,0.15)"
+                  : "rgba(16,185,129,0.12)"
+                } 0%, transparent 70%)`,
+                animation: "pulse 3s ease-in-out infinite"
+              }}
+            />
+            
             {/* Drag handle (mobile) */}
-            <div className="flex justify-center pt-3 pb-1 sm:hidden">
-              <div className="w-10 h-1 rounded-full" style={{ background: "rgba(255,255,255,0.15)" }} />
+            <div className="flex justify-center pt-3 pb-1 sm:hidden relative z-10">
+              <div className="w-10 h-1 rounded-full" style={{ background: "rgba(255,255,255,0.2)" }} />
             </div>
 
             {/* Header — sticky */}
             <div
-              className="flex items-center justify-between px-5 py-4 flex-shrink-0 rounded-t-3xl"
+              className="flex items-center justify-between px-5 py-4 flex-shrink-0 rounded-t-3xl relative z-10"
               style={{
-                borderBottom: "1px solid rgba(255,255,255,0.07)",
+                borderBottom: "1px solid rgba(255,255,255,0.1)",
                 background: `linear-gradient(135deg, ${
-                  userDoc?.plan === "enterprise" ? "rgba(168,85,247,0.1)"
-                  : userDoc?.plan === "professional" ? "rgba(245,158,11,0.08)"
-                  : userDoc?.plan === "business" ? "rgba(37,99,235,0.1)"
-                  : "rgba(16,185,129,0.08)"
-                }, transparent)`,
+                  userDoc?.plan === "enterprise" ? "rgba(168,85,247,0.12)"
+                  : userDoc?.plan === "professional" ? "rgba(245,158,11,0.1)"
+                  : userDoc?.plan === "business" ? "rgba(37,99,235,0.12)"
+                  : "rgba(16,185,129,0.1)"
+                }, rgba(255,255,255,0.02))`,
+                backdropFilter: "blur(10px)"
               }}
             >
               <div className="flex items-center gap-3">
                 <div
-                  className="w-9 h-9 rounded-xl flex items-center justify-center text-lg flex-shrink-0"
+                  className="w-11 h-11 rounded-2xl flex items-center justify-center text-xl flex-shrink-0 animate-bounce-slow"
                   style={{
-                    background: userDoc?.plan === "enterprise" ? "rgba(168,85,247,0.15)"
-                      : userDoc?.plan === "professional" ? "rgba(245,158,11,0.12)"
-                      : userDoc?.plan === "business" ? "rgba(37,99,235,0.15)"
-                      : "rgba(16,185,129,0.12)",
-                    border: `1px solid ${
-                      userDoc?.plan === "enterprise" ? "rgba(168,85,247,0.3)"
-                      : userDoc?.plan === "professional" ? "rgba(245,158,11,0.3)"
-                      : userDoc?.plan === "business" ? "rgba(37,99,235,0.3)"
-                      : "rgba(16,185,129,0.3)"
+                    background: `linear-gradient(135deg, ${
+                      userDoc?.plan === "enterprise" ? "rgba(168,85,247,0.2)"
+                      : userDoc?.plan === "professional" ? "rgba(245,158,11,0.15)"
+                      : userDoc?.plan === "business" ? "rgba(37,99,235,0.2)"
+                      : "rgba(16,185,129,0.15)"
+                    }, rgba(255,255,255,0.05))`,
+                    border: `1.5px solid ${
+                      userDoc?.plan === "enterprise" ? "rgba(168,85,247,0.4)"
+                      : userDoc?.plan === "professional" ? "rgba(245,158,11,0.4)"
+                      : userDoc?.plan === "business" ? "rgba(37,99,235,0.4)"
+                      : "rgba(16,185,129,0.4)"
                     }`,
+                    boxShadow: `0 4px 12px ${
+                      userDoc?.plan === "enterprise" ? "rgba(168,85,247,0.25)"
+                      : userDoc?.plan === "professional" ? "rgba(245,158,11,0.25)"
+                      : userDoc?.plan === "business" ? "rgba(37,99,235,0.25)"
+                      : "rgba(16,185,129,0.25)"
+                    }`,
+                    animation: "bounce-slow 2s ease-in-out infinite"
                   }}
                 >
                   {planDetails?.icon || (userDoc?.plan === "enterprise" ? "🏢" : userDoc?.plan === "professional" ? "👑" : userDoc?.plan === "business" ? "🚀" : "💎")}
                 </div>
                 <div>
-                  <h2 className="text-white font-black text-base leading-tight capitalize">
+                  <h2 className="text-white font-black text-lg leading-tight capitalize" style={{
+                    textShadow: `0 2px 8px ${
+                      userDoc?.plan === "enterprise" ? "rgba(168,85,247,0.3)"
+                      : userDoc?.plan === "professional" ? "rgba(245,158,11,0.3)"
+                      : userDoc?.plan === "business" ? "rgba(37,99,235,0.3)"
+                      : "rgba(16,185,129,0.3)"
+                    }`
+                  }}>
                     {userDoc?.subscriptionType === "trial"
                       ? `⏳ Trial — ${planDetails?.name || userDoc?.plan}`
                       : `${planDetails?.name || userDoc?.plan} Plan`}
                   </h2>
-                  <p className="text-gray-300 text-[11px] mt-0.5">
+                  <p className="text-gray-400 text-[11px] mt-0.5 font-medium">
                     {userDoc?.subscriptionType === "trial" ? "7-day free trial" : "Aapka current subscription"}
                   </p>
                 </div>
               </div>
               <button
                 onClick={() => setShowPlanModal(false)}
-                className="w-8 h-8 rounded-xl flex items-center justify-center flex-shrink-0 transition-all hover:bg-white/10"
-                style={{ color: "#6b7280" }}
+                className="w-9 h-9 rounded-xl flex items-center justify-center flex-shrink-0 transition-all hover:bg-white/10 hover:rotate-90 duration-300"
+                style={{ color: "#9ca3af" }}
               >✕</button>
             </div>
 
@@ -1392,16 +1489,16 @@ function DashboardContent() {
                 <div>
                   <p className="text-[10px] font-bold uppercase tracking-widest text-gray-600 mb-2">📊 Monthly Limits</p>
                   <div className="flex flex-col gap-1.5">
-                    {/* Device / User Seats — from userDoc.maxDevices */}
+                    {/* Device / User Seats — Fixed: Owner = 2, Staff = 1 */}
                     <div
                       className="flex items-center justify-between px-3 py-2 rounded-xl"
                       style={{ background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.2)" }}
                     >
                       <span className="text-gray-400 text-xs flex items-center gap-1.5">
-                        <span>📱</span> Login Devices / Sessions
+                        <span>📱</span> Owner Login Devices
                       </span>
                       <span className="text-xs font-black ml-2 flex-shrink-0" style={{ color: "#c4b5fd" }}>
-                        {Number(userDoc?.maxDevices) || 1} device{(Number(userDoc?.maxDevices) || 1) !== 1 ? "s" : ""}
+                        2 devices (fixed)
                       </span>
                     </div>
                     {[
@@ -1422,6 +1519,35 @@ function DashboardContent() {
                         </span>
                       </div>
                     ))}
+                    
+                    {/* Staff and Location Limits */}
+                    {planDetails.maxStaff !== undefined && (
+                      <div
+                        className="flex items-center justify-between px-3 py-2 rounded-xl"
+                        style={{ background: "rgba(139,92,246,0.06)", border: "1px solid rgba(139,92,246,0.2)" }}
+                      >
+                        <span className="text-gray-400 text-xs flex items-center gap-1.5">
+                          <span>👥</span> Staff Members
+                        </span>
+                        <span className="text-xs font-black ml-2 flex-shrink-0" style={{ color: "#c4b5fd" }}>
+                          {planDetails.maxStaff === 0 ? "Owner Only" : `${planDetails.maxStaff} staff`}
+                        </span>
+                      </div>
+                    )}
+                    
+                    {planDetails.maxLocations !== undefined && (
+                      <div
+                        className="flex items-center justify-between px-3 py-2 rounded-xl"
+                        style={{ background: "rgba(245,158,11,0.06)", border: "1px solid rgba(245,158,11,0.2)" }}
+                      >
+                        <span className="text-gray-400 text-xs flex items-center gap-1.5">
+                          <span>🏪</span> Warehouse / Locations
+                        </span>
+                        <span className="text-xs font-black ml-2 flex-shrink-0" style={{ color: "#fbbf24" }}>
+                          {planDetails.maxLocations === 0 ? "Default Only" : `${planDetails.maxLocations} location${planDetails.maxLocations > 1 ? 's' : ''}`}
+                        </span>
+                      </div>
+                    )}
                   </div>
                 </div>
               )}
@@ -2159,6 +2285,7 @@ function DashboardContent() {
       )}
 
     </div>
+    </>
   );
 }
 

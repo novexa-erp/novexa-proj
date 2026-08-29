@@ -87,8 +87,11 @@ const plans = [
     cta: "Start Free Demo",
     ctaStyle: "green",
     features: {
-      users: "4 User", invoices: "100 / Month", customers: "100 Customers",
+      users: "1 Owner + 1 Staff", invoices: "100 / Month", customers: "100 Customers",
+      suppliers: "10 / Month", ordersPerSupplier: "20 / Month",
       inventory: true, purchases: true, payments: true, analytics: false,
+      locations: "Default Only",
+      digitalRegister: true,
       email: "Email Support", orderForm: false, multiBranch: false, api: false,
       support: "Email Support",
     },
@@ -105,8 +108,11 @@ const plans = [
     cta: "Start Free Demo",
     ctaStyle: "blue",
     features: {
-      users: "8 Users", invoices: "Unlimited", customers: "Unlimited",
+      users: "1 Owner + 2 Staff", invoices: "Unlimited", customers: "Unlimited",
+      suppliers: "50 / Month", ordersPerSupplier: "100 / Month",
       inventory: true, purchases: true, payments: true, analytics: true,
+      locations: "1 Warehouse",
+      digitalRegister: true,
       email: "Email Notifications", orderForm: true, multiBranch: false, api: false,
       support: "Priority Support",
     },
@@ -123,8 +129,11 @@ const plans = [
     cta: "Start Free Demo",
     ctaStyle: "amber",
     features: {
-      users: "14 Users", invoices: "Unlimited", customers: "Unlimited",
+      users: "1 Owner + 4 Staff", invoices: "Unlimited", customers: "Unlimited",
+      suppliers: "Unlimited", ordersPerSupplier: "Unlimited",
       inventory: true, purchases: true, payments: true, analytics: "Advanced",
+      locations: "2 Warehouses",
+      digitalRegister: true,
       email: "Email Automation", orderForm: true, multiBranch: true, api: "Coming Soon",
       support: "Priority Support",
     },
@@ -141,8 +150,11 @@ const plans = [
     cta: "Contact Sales",
     ctaStyle: "purple",
     features: {
-      users: "Unlimited", invoices: "Unlimited", customers: "Unlimited",
+      users: "1 Owner + 10 Staff", invoices: "Unlimited", customers: "Unlimited",
+      suppliers: "Unlimited", ordersPerSupplier: "Unlimited",
       inventory: true, purchases: true, payments: true, analytics: "Advanced",
+      locations: "4 Warehouses",
+      digitalRegister: true,
       email: "Email Automation", orderForm: true, multiBranch: "Unlimited", api: true,
       support: "SLA + Dedicated AM",
     },
@@ -153,10 +165,15 @@ const compareRows = [
   { key: "users",       label: "Users" },
   { key: "invoices",    label: "Invoices" },
   { key: "customers",   label: "Customers" },
+  { key: "suppliers",   label: "Suppliers" },
+  { key: "ordersPerSupplier", label: "Orders per Supplier" },
   { key: "inventory",   label: "Inventory" },
+  { key: "locations",   label: "Locations" },
   { key: "purchases",   label: "Purchases" },
   { key: "payments",    label: "Payments" },
   { key: "analytics",   label: "Analytics" },
+  { key: "digitalRegister", label: "Digital Register" },
+  { key: "whatsapp",    label: "WhatsApp Integration" },
   { key: "email",       label: "Email" },
   { key: "orderForm",   label: "Order Form" },
   { key: "multiBranch", label: "Multi-Branch" },
@@ -242,17 +259,34 @@ function getDynamicFeatures(plan, fsData) {
     return `${Number(val).toLocaleString()} / Month`;
   };
 
+  // Format staff limit: "1 Owner + X Staff"
+  const formatStaffLimit = (maxStaff) => {
+    if (!maxStaff || maxStaff === null) return "1 Owner + Unlimited Staff";
+    return `1 Owner + ${maxStaff} Staff`;
+  };
+
+  // Format location limit
+  const formatLocationLimit = (maxLocations) => {
+    if (maxLocations === null || maxLocations === undefined) return "Unlimited";
+    if (maxLocations === 0) return "Default Only";
+    return `${maxLocations} Warehouse${maxLocations > 1 ? 's' : ''}`;
+  };
+
   return {
-    users:       fsData.maxDevices ? `${fsData.maxDevices} User${fsData.maxDevices > 1 ? "s" : ""}` : plan.features.users,
+    users:       fsData.maxStaff !== undefined ? formatStaffLimit(fsData.maxStaff) : plan.features.users,
     invoices:    fmtLimit(limits.invoicesPerMonth),
     customers:   limits.customersPerMonth === null || limits.customersPerMonth === undefined
                    ? "Unlimited" : `${Number(limits.customersPerMonth).toLocaleString()} Customers`,
+    suppliers:   fmtLimit(limits.suppliersPerMonth),
+    ordersPerSupplier: fmtLimit(limits.ordersPerSupplierPerMonth),
     inventory:   tabs.includes("inventory"),
+    locations:   fsData.maxLocations !== undefined ? formatLocationLimit(fsData.maxLocations) : plan.features.locations,
     purchases:   tabs.includes("purchases"),
     payments:    tabs.includes("payments"),
     analytics:   tabs.includes("analytics")
                    ? (plan.id === "professional" || plan.id === "enterprise" ? "Advanced" : true)
                    : false,
+    digitalRegister: tabs.includes("bill-book") || tabs.includes("billbook"),
     email:       plan.features.email,   // keep static — not in PackageManager
     orderForm:   tabs.includes("order-form"),
     multiBranch: tabs.includes("branches")
@@ -605,7 +639,7 @@ function CompareTable({ isYearly, fsPlans }) {
 
 // ── FAQ ───────────────────────────────────────────────────────────────────────
 const faqs = [
-  { q: "Kya 14-day free trial available hai?",             a: "Haan, har plan ke saath 14-day free trial milta hai. Koi credit card required nahi." },
+  { q: "Kya free trial available hai?",             a: "Haan, har plan ke saath 7-day free trial milta hai. Koi credit card required nahi." },
   { q: "Yearly plan mein kitni savings hoti hain?",        a: "Yearly plan mein 2 months free milte hain — approximately 17% ki savings." },
   { q: "Early bird offer kab tak valid hai?",              a: "Yeh limited-time offer hai aur jab tak timer chal raha hai tab tak valid hai. Uske baad original prices apply honge." },
   { q: "Kya main plan baad mein upgrade kar sakta hoon?",  a: "Bilkul! Aap kabhi bhi upgrade ya downgrade kar sakte hain. Charges pro-rated basis par hote hain." },
@@ -687,7 +721,7 @@ export default function PricingPage() {
           Chunein
         </h1>
         <p className="text-gray-400 text-lg md:text-xl max-w-2xl mx-auto mb-10">
-          Koi hidden charges nahi. Koi lock-in nahi. 14-day free trial ke saath shuru karein.
+          Koi hidden charges nahi. Koi lock-in nahi. 7-day free trial ke saath shuru karein.
         </p>
 
         {/* Billing Toggle */}
@@ -809,7 +843,7 @@ export default function PricingPage() {
             <p className="text-4xl mb-4">🎯</p>
             <h2 className="text-3xl md:text-4xl font-black text-white mb-4">Abhi Free Demo Book Karein</h2>
             <p className="text-gray-400 text-lg mb-8 max-w-xl mx-auto">
-              14 din bilkul free. Koi credit card required nahi. Humari team aapko setup mein help karegi.
+              7 din bilkul free. Koi credit card required nahi. Humari team aapko setup mein help karegi.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link href="/pages/contact"

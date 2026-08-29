@@ -153,13 +153,78 @@ function LocationModal({ location, onSave, onClose }) {
 }
 
 // ── Main LocationsManager ──────────────────────────────────────────────────────
-export default function LocationsManager({ uid, locations, onClose }) {
+export default function LocationsManager({ uid, locations, userDoc, onClose }) {
   const [showModal, setShowModal]   = useState(false);
   const [editLoc,   setEditLoc]     = useState(null);
   const [deleteConf, setDeleteConf] = useState(null);
   const [alert, setAlert] = useState({ show: false, type: "", title: "", message: "" });
+  const [planConfig, setPlanConfig] = useState(null); // Firestore plan config
+
+  // Fetch plan config from Firestore
+  useEffect(() => {
+    const unsubscribe = onSnapshot(
+      doc(db, "adminConfig", "plans"),
+      (snap) => {
+        if (snap.exists()) {
+          const list = snap.data().list || [];
+          const config = {};
+          list.forEach(p => { config[p.id] = p; });
+          setPlanConfig(config);
+        }
+      }
+    );
+    return () => unsubscribe();
+  }, []);
+
+  // Get location limit based on plan (from Firestore or fallback)
+  function getLocationLimit(plan) {
+    // Try to get from Firestore first
+    if (planConfig && planConfig[plan]?.maxLocations !== undefined) {
+      return planConfig[plan].maxLocations;
+    }
+    // Fallback to hardcoded
+    const limits = {
+      starter:      0,
+      business:     1,
+      professional: 2,
+      enterprise:   4,
+    };
+    return limits[plan] || 0;
+  }
+
+  const currentPlan = userDoc?.plan || "starter";
+  const locationLimit = getLocationLimit(currentPlan);
+  const activeLocations = (locations || []).filter(l => !l.deleted);
+  // Count only non-default locations (warehouses)
+  const warehouseCount = activeLocations.filter(l => !l.isDefault && l.id !== "default").length;
+  const canAddLocation = warehouseCount < locationLimit;
+
+  function openAddModal() {
+    if (!canAddLocation) {
+      setAlert({ 
+        show: true, 
+        type: "error", 
+        title: "Location Limit Reached", 
+        message: `Your ${currentPlan} plan allows maximum ${locationLimit} warehouse location${locationLimit !== 1 ? 's' : ''} (excluding default). Upgrade your plan to add more locations.`
+      });
+      return;
+    }
+    setShowModal(true);
+  }
 
   async function handleSave(data) {
+    // Double-check limit on save (in case of race condition)
+    if (!editLoc && !canAddLocation) {
+      setAlert({ 
+        show: true, 
+        type: "error", 
+        title: "Location Limit Reached", 
+        message: `Your ${currentPlan} plan allows maximum ${locationLimit} warehouse location${locationLimit !== 1 ? 's' : ''}.`
+      });
+      setShowModal(false);
+      return;
+    }
+
     try {
       if (editLoc) {
         await updateDoc(doc(db, "users", uid, "locations", editLoc.id), {
@@ -194,8 +259,6 @@ export default function LocationsManager({ uid, locations, onClose }) {
     }
     setDeleteConf(null);
   }
-
-  const activeLocations = (locations || []).filter(l => !l.deleted);
 
   return (
     <>
@@ -260,13 +323,24 @@ export default function LocationsManager({ uid, locations, onClose }) {
             style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
             <div>
               <h3 className="text-white font-bold text-base">📍 Locations</h3>
-              <p className="text-gray-500 text-[11px] mt-0.5">Shop aur Warehouse manage karein</p>
+              <p className="text-gray-500 text-[11px] mt-0.5">
+                Warehouses: <span className={warehouseCount >= locationLimit ? "text-red-400" : "text-blue-400"}>
+                  {warehouseCount}/{locationLimit}
+                </span>
+                {!canAddLocation && <span className="text-amber-400 ml-2">⚠️ Limit reached</span>}
+              </p>
             </div>
             <div className="flex items-center gap-2">
               <button
-                onClick={() => { setEditLoc(null); setShowModal(true); }}
-                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:scale-105"
-                style={{ background: "linear-gradient(135deg, #F59E0B, #D97706)", color: "#000" }}>
+                onClick={openAddModal}
+                disabled={!canAddLocation}
+                className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all"
+                style={{ 
+                  background: canAddLocation ? "linear-gradient(135deg, #F59E0B, #D97706)" : "rgba(107,114,128,0.3)", 
+                  color: canAddLocation ? "#000" : "#6b7280",
+                  opacity: canAddLocation ? 1 : 0.6,
+                  cursor: canAddLocation ? "pointer" : "not-allowed",
+                }}>
                 + Add
               </button>
               <button onClick={onClose}

@@ -266,6 +266,7 @@ export default function InventoryView({ uid, userDoc, locations = [], staffConte
         <LocationsManager
           uid={uid}
           locations={locations}
+          userDoc={userDoc}
           onClose={() => setShowLocationsManager(false)}
         />
       )}
@@ -308,44 +309,60 @@ export default function InventoryView({ uid, userDoc, locations = [], staffConte
             <p className="text-gray-400 text-xs">Track and manage your product inventory</p>
             
             {/* Staff Location Access Indicator */}
-            {isStaff && (
-              <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold"
-                style={{ 
-                  background: staffContext?.staffDoc?.assignedLocationId === "__both__" 
-                    ? "rgba(34,197,94,0.15)" 
-                    : "rgba(99,102,241,0.15)", 
-                  border: staffContext?.staffDoc?.assignedLocationId === "__both__"
-                    ? "1px solid rgba(34,197,94,0.35)"
-                    : "1px solid rgba(99,102,241,0.35)",
-                  color: staffContext?.staffDoc?.assignedLocationId === "__both__"
-                    ? "#4ade80"
-                    : "#a5b4fc"
-                }}>
-                <span className="text-sm">
-                  {staffContext?.staffDoc?.assignedLocationId === "__both__" 
-                    ? "🏪+🏭" 
-                    : staffContext?.staffDoc?.assignedLocationId 
-                      ? "📍" 
-                      : "🏪"}
-                </span>
-                <span>
-                  Your Access: {
-                    staffContext?.staffDoc?.assignedLocationId === "__both__" 
-                      ? "All Locations (Shop + Warehouses)"
-                      : staffContext?.staffDoc?.assignedLocationId
-                        ? locations?.find(l => l.id === staffContext.staffDoc.assignedLocationId)?.name || "Custom Location"
-                        : "Default Shop Only"
-                  }
-                </span>
-                <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+            {isStaff && (() => {
+              // Debug logging
+              console.log("🔍 Staff Header Debug:", {
+                assignedLocationId: staffContext?.staffDoc?.assignedLocationId,
+                locationsAvailable: locations?.length || 0,
+                locations: locations?.map(l => ({ id: l.id, name: l.name }))
+              });
+              
+              return (
+                <div className="mt-2 inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-xs font-semibold"
                   style={{ 
-                    background: staffPerms?.view === "all" ? "rgba(34,197,94,0.25)" : "rgba(245,158,11,0.25)", 
-                    color: staffPerms?.view === "all" ? "#86efac" : "#fcd34d" 
+                    background: staffContext?.staffDoc?.assignedLocationId === "__both__" 
+                      ? "rgba(34,197,94,0.15)" 
+                      : "rgba(99,102,241,0.15)", 
+                    border: staffContext?.staffDoc?.assignedLocationId === "__both__"
+                      ? "1px solid rgba(34,197,94,0.35)"
+                      : "1px solid rgba(99,102,241,0.35)",
+                    color: staffContext?.staffDoc?.assignedLocationId === "__both__"
+                      ? "#4ade80"
+                      : "#a5b4fc"
                   }}>
-                  {staffPerms?.view === "all" ? "All Products" : "Own Only"}
-                </span>
-              </div>
-            )}
+                  <span className="text-sm">
+                    {staffContext?.staffDoc?.assignedLocationId === "__both__" 
+                      ? "🏪+🏭" 
+                      : staffContext?.staffDoc?.assignedLocationId 
+                        ? "📍" 
+                        : "🏪"}
+                  </span>
+                  <span>
+                    Your Access: {(() => {
+                      const assignedId = staffContext?.staffDoc?.assignedLocationId;
+                      
+                      if (assignedId === "__both__") {
+                        return "All Locations (Shop + Warehouses)";
+                      } else if (assignedId) {
+                        // Find location by ID
+                        const loc = locations?.find(l => l.id === assignedId);
+                        // If location found, show name, else show ID for debugging
+                        return loc?.name || `Warehouse (${assignedId.substring(0, 8)}...)`;
+                      } else {
+                        return "Default Shop Only";
+                      }
+                    })()}
+                  </span>
+                  <span className="px-1.5 py-0.5 rounded-full text-[10px] font-bold"
+                    style={{ 
+                      background: staffPerms?.view === "all" ? "rgba(34,197,94,0.25)" : "rgba(245,158,11,0.25)", 
+                      color: staffPerms?.view === "all" ? "#86efac" : "#fcd34d" 
+                    }}>
+                    {staffPerms?.view === "all" ? "All Products" : "Own Only"}
+                  </span>
+                </div>
+              );
+            })()}
           </div>
           
           <div className="flex flex-wrap items-center gap-2">

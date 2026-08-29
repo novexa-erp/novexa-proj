@@ -49,11 +49,62 @@ export async function POST(request) {
     if (decoded.uid === process.env.NEXT_PUBLIC_ADMIN_UID)
       return NextResponse.json({ allowed: true, sessionId: "admin" });
 
-    const userSnap = await adminDb.collection("users").doc(decoded.uid).get();
-    if (!userSnap.exists) return NextResponse.json({ allowed: false, reason: "not_found" });
-
-    const userData   = userSnap.data();
-    const maxDevices = Number(userData.maxDevices) || 1;
+    // Determine if this is a staff login
+    const isStaff = decoded.role === "staff" || decoded.adminUid;
+    
+    // For staff, sessions are stored under the staff user's UID (not admin's)
+    // but we need to check the staff document exists
+    let targetUid = decoded.uid; // Staff UID or Owner UID
+    let maxDevices = 2; // Default for owners
+    
+    if (isStaff) {
+      maxDevices = 1; // Staff can only have 1 session
+      
+      // Verify staff document exists under admin
+      const adminUid = decoded.adminUid;
+      if (!adminUid) {
+        return NextResponse.json({ allowed: false, reason: "staff_missing_admin" }, { status: 403 });
+      }
+      
+      const staffSnap = await adminDb
+        .collection("users").doc(adminUid)
+        .collection("staff").doc(decoded.uid)
+        .get();
+        
+      if (!staffSnap.exists) {
+        return NextResponse.json({ allowed: false, reason: "staff_not_found" }, { status: 403 });
+      }
+      
+      const staffData = staffSnap.data();
+      if (staffData.deleted || staffData.isActive === false) {
+        return NextResponse.json({ allowed: false, reason: "staff_inactive" }, { status: 403 });
+      }
+      
+      // Use staff UID for sessions (each staff has their own sessions subcollection)
+      targetUid = decoded.uid;
+      
+      // Create top-level user doc if it doesn't exist (for backward compatibility)
+      const topLevelDoc = await adminDb.collection("users").doc(decoded.uid).get();
+      if (!topLevelDoc.exists || !topLevelDoc.data()?.type) {
+        await adminDb.collection("users").doc(decoded.uid).set({
+          email: staffData.email,
+          name: staffData.name,
+          role: "staff",
+          adminUid,
+          createdAt: staffData.createdAt || new Date().toISOString(),
+          type: "staff_account",
+        });
+      }
+    } else {
+      // Regular owner/admin login - verify user doc exists
+      const userSnap = await adminDb.collection("users").doc(decoded.uid).get();
+      if (!userSnap.exists) return NextResponse.json({ allowed: false, reason: "not_found" });
+      
+      const userData = userSnap.data();
+      if (userData.status === "frozen" || userData.status === "deleted") {
+        return NextResponse.json({ allowed: false, reason: "account_inactive" }, { status: 403 });
+      }
+    }
 
     const ua  = request.headers.get("user-agent") || "";
     const ip  = request.headers.get("x-forwarded-for")?.split(",")[0]?.trim()
@@ -62,8 +113,9 @@ export async function POST(request) {
     const now   = new Date().toISOString();
     const newId = randomUUID();
 
+    // Sessions stored under the staff UID (or owner UID)
     const sessionsRef = adminDb
-      .collection("users").doc(decoded.uid)
+      .collection("users").doc(targetUid)
       .collection("sessions");
 
     // ── Fetch active sessions WITHOUT composite index ──────────────────────────
@@ -78,8 +130,10 @@ export async function POST(request) {
     const batch = adminDb.batch();
 
     // Evict oldest sessions if at or over capacity
+    let evictedCount = 0;
     if (activeDocs.length >= maxDevices) {
       const toEvict = activeDocs.slice(0, activeDocs.length - maxDevices + 1);
+      evictedCount = toEvict.length;
       toEvict.forEach(({ ref }) => {
         batch.update(ref, {
           active:    false,
@@ -101,20 +155,22 @@ export async function POST(request) {
       ua: ua.slice(0, 200),
     });
 
-    // Update user's last login info
-    batch.update(adminDb.collection("users").doc(decoded.uid), {
-      lastLogin:    now,
-      lastLoginIP:  ip,
-      lastBrowser:  browser,
-      lastDevice:   device,
-      lastActiveAt: now,
-    });
+    // Update last login info (only for owners, not staff)
+    if (!isStaff) {
+      batch.update(adminDb.collection("users").doc(targetUid), {
+        lastLogin:    now,
+        lastLoginIP:  ip,
+        lastBrowser:  browser,
+        lastDevice:   device,
+        lastActiveAt: now,
+      });
+    }
 
     await batch.commit();
 
-    console.log(`[session-login] uid=${decoded.uid} newSession=${newId} evicted=${Math.max(0, activeDocs.length - maxDevices + 1)} maxDevices=${maxDevices}`);
+    console.log(`[session-login] uid=${targetUid} role=${isStaff ? 'staff' : 'owner'} newSession=${newId} evicted=${evictedCount} maxDevices=${maxDevices}`);
 
-    return NextResponse.json({ allowed: true, sessionId: newId });
+    return NextResponse.json({ allowed: true, sessionId: newId, evictedCount });
   } catch (err) {
     console.error("[session-login] ERROR:", err.message);
     return NextResponse.json({ error: err.message }, { status: 500 });

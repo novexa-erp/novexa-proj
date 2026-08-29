@@ -63,13 +63,38 @@ export async function POST(request) {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const { name, email, password, role, allowedModules, permissions, isActive = true } = body;
+    const { name, email, password, role, allowedModules, assignedLocationId, permissions, isActive = true } = body;
 
     if (!name?.trim())     return NextResponse.json({ error: "Name is required" }, { status: 400 });
     if (!email?.trim())    return NextResponse.json({ error: "Email is required" }, { status: 400 });
     if (!password)         return NextResponse.json({ error: "Password is required" }, { status: 400 });
     if (password.length < 8)
       return NextResponse.json({ error: "Password must be at least 8 characters" }, { status: 400 });
+
+    // ── Check staff limit based on admin's plan ──────────────────────────────
+    const planLimits = {
+      starter:      1,
+      business:     2,
+      professional: 4,
+      enterprise:   10,
+    };
+    const adminPlan = adminData.plan || "starter";
+    const staffLimit = planLimits[adminPlan] || 1;
+
+    // Count existing active staff (not deleted)
+    const staffSnap = await adminDb
+      .collection("users").doc(adminUid)
+      .collection("staff")
+      .where("deleted", "!=", true)
+      .get();
+    
+    const activeStaffCount = staffSnap.size;
+
+    if (activeStaffCount >= staffLimit) {
+      return NextResponse.json({ 
+        error: `Staff limit reached. Your ${adminPlan} plan allows maximum ${staffLimit} staff member${staffLimit > 1 ? 's' : ''}. Please upgrade your plan to add more staff.`
+      }, { status: 403 });
+    }
 
     // Validate allowedModules — must be a subset of admin's plan modules
     const modules = Array.isArray(allowedModules) ? allowedModules : [];
@@ -78,7 +103,7 @@ export async function POST(request) {
     const defaultPermissions = {
       invoices:  { view: "own", create: false, edit: false, delete: false },
       customers: { view: "all", create: false, edit: false, delete: false },
-      inventory: { view: "all", create: false, edit: false, delete: false },
+      inventory: { view: "own", create: false, edit: false, delete: false },
       payments:  { view: "all", create: false, edit: false, delete: false },
       purchases: { view: "all", create: false, edit: false, delete: false },
     };
@@ -109,16 +134,17 @@ export async function POST(request) {
 
     // Write staff doc under admin's subcollection
     const staffDoc = {
-      uid:            staffRecord.uid,
+      uid:               staffRecord.uid,
       adminUid,
-      name:           name.trim(),
-      email:          email.trim().toLowerCase(),
-      role:           role?.trim() || "Staff",
-      allowedModules: modules,
-      permissions:    staffPermissions,
-      isActive:       Boolean(isActive),
-      createdAt:      now,
-      updatedAt:      now,
+      name:              name.trim(),
+      email:             email.trim().toLowerCase(),
+      role:              role?.trim() || "Staff",
+      allowedModules:    modules,
+      assignedLocationId: assignedLocationId || "", // Add this field
+      permissions:       staffPermissions,
+      isActive:          Boolean(isActive),
+      createdAt:         now,
+      updatedAt:         now,
     };
 
     await adminDb
@@ -132,6 +158,17 @@ export async function POST(request) {
       adminUid,
       isActive: Boolean(isActive),
       createdAt: now,
+    });
+    
+    // Create a minimal top-level user doc for session storage
+    // This allows staff to have their own sessions subcollection
+    await adminDb.collection("users").doc(staffRecord.uid).set({
+      email:     email.trim().toLowerCase(),
+      name:      name.trim(),
+      role:      "staff",
+      adminUid,
+      createdAt: now,
+      type:      "staff_account", // Marker to distinguish from regular users
     });
 
     return NextResponse.json({ success: true, uid: staffRecord.uid, staff: staffDoc });
@@ -154,7 +191,7 @@ export async function PATCH(request) {
       return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
     }
 
-    const { staffUid, name, role, allowedModules, permissions, isActive, password } = body;
+    const { staffUid, name, role, allowedModules, assignedLocationId, permissions, isActive, password, action } = body;
     if (!staffUid) return NextResponse.json({ error: "staffUid is required" }, { status: 400 });
 
     // Verify staff belongs to this admin
@@ -166,11 +203,12 @@ export async function PATCH(request) {
       return NextResponse.json({ error: "Staff member not found" }, { status: 404 });
 
     const updates = { updatedAt: new Date().toISOString() };
-    if (name            !== undefined) updates.name           = name.trim();
-    if (role            !== undefined) updates.role           = role?.trim() || "Staff";
-    if (allowedModules  !== undefined) updates.allowedModules = Array.isArray(allowedModules) ? allowedModules : [];
-    if (permissions     !== undefined) updates.permissions    = permissions;
-    if (isActive        !== undefined) updates.isActive       = Boolean(isActive);
+    if (name               !== undefined) updates.name               = name.trim();
+    if (role               !== undefined) updates.role               = role?.trim() || "Staff";
+    if (allowedModules     !== undefined) updates.allowedModules     = Array.isArray(allowedModules) ? allowedModules : [];
+    if (assignedLocationId !== undefined) updates.assignedLocationId = assignedLocationId || ""; // Add this
+    if (permissions        !== undefined) updates.permissions        = permissions;
+    if (isActive           !== undefined) updates.isActive           = Boolean(isActive);
 
     await staffRef.update(updates);
 
@@ -191,6 +229,15 @@ export async function PATCH(request) {
     // Enable/disable Firebase Auth account to match isActive
     if (isActive !== undefined) {
       await adminAuth.updateUser(staffUid, { disabled: !Boolean(isActive) });
+    }
+
+    // If suspending (isActive = false), revoke all refresh tokens to force logout from all devices
+    if (action === "suspend" && isActive === false) {
+      try {
+        await adminAuth.revokeRefreshTokens(staffUid);
+      } catch (err) {
+        console.error("[staff/manage PATCH] Failed to revoke tokens:", err);
+      }
     }
 
     return NextResponse.json({ success: true });

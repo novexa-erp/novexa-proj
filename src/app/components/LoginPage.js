@@ -70,11 +70,13 @@ function firebaseError(code) {
 }
 
 const BLOCKED_MSGS = {
-  not_started:      { title: "Access Not Started",        msg: "Your subscription has not started yet. Please wait or contact admin.",                                                  icon: "📅" },
-  access_denied:    { title: "Access Denied",             msg: "You do not have permission to access this panel.",                                                                       icon: "🚫" },
-  session_evicted:  { title: "Logged Out Automatically",  msg: "Your account was opened on another device. Only 1 session is allowed at a time.",                                       icon: "📱" },
-  password_changed: { title: "Password Changed",          msg: "Your password was recently changed. For your security, you have been signed out. Please sign in with your new password.", icon: "🔐" },
-  staff_inactive:   { title: "Account Deactivated",       msg: "Your staff account has been deactivated. Please contact your admin to restore access.",                                  icon: "⏸️" },
+  not_started:        { title: "Access Not Started",        msg: "Your subscription has not started yet. Please wait or contact admin.",                                                  icon: "📅" },
+  access_denied:      { title: "Access Denied",             msg: "You do not have permission to access this panel.",                                                                       icon: "🚫" },
+  session_evicted:    { title: "Logged Out Automatically",  msg: "Your account was opened on another device. Only 1 session is allowed at a time.",                                       icon: "📱" },
+  password_changed:   { title: "Password Changed",          msg: "Your password was recently changed. For your security, you have been signed out. Please sign in with your new password.", icon: "🔐" },
+  staff_inactive:     { title: "Account Deactivated",       msg: "Your staff account has been deactivated. Please contact your admin to restore access.",                                  icon: "⏸️" },
+  account_suspended:  { title: "Account Suspended",         msg: "Your account has been temporarily suspended. Please contact your admin to reactivate your access.",                      icon: "⏸️" },
+  account_removed:    { title: "Account Removed",           msg: "Your staff account has been permanently removed. Please contact your admin for more information.",                       icon: "🚫" },
 };
 
 // These get their own full-screen UI instead of a small popup
