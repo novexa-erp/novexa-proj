@@ -1377,29 +1377,58 @@ function DashboardContent() {
             <div className="overflow-y-auto flex-1 p-5 flex flex-col gap-4" style={{ overscrollBehavior: "contain" }}>
 
               {/* Price */}
-              {planDetails?.monthlyPrice && (
-                <div
-                  className="flex items-center gap-3 px-4 py-3 rounded-2xl"
-                  style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
-                >
-                  <span className="text-xl flex-shrink-0">💰</span>
-                  <div className="flex-1 min-w-0">
-                    <p className="text-gray-300 text-[10px] uppercase tracking-widest mb-0.5">Monthly Price</p>
-                    <p className="text-white font-black text-lg leading-tight">
-                      Rs. {Number(planDetails.monthlyPrice).toLocaleString()}
-                      <span className="text-gray-300 text-xs font-normal">/mo</span>
-                    </p>
-                  </div>
-                  {planDetails?.yearlyPrice && (
-                    <div className="text-right flex-shrink-0">
-                      <p className="text-gray-300 text-[10px] uppercase tracking-widest mb-0.5">Yearly</p>
-                      <p className="font-bold text-sm" style={{ color: "#34d399" }}>
-                        Rs. {Number(planDetails.yearlyPrice).toLocaleString()}/yr
-                      </p>
+              {planDetails?.monthlyPrice && (() => {
+                // Show discounted price if available, otherwise original price
+                const displayMonthly = planDetails.afterMonthlyPrice || planDetails.monthlyPrice;
+                const displayYearly  = planDetails.afterYearlyPrice || planDetails.yearlyPrice;
+                const hasMonthlyDiscount = planDetails.afterMonthlyPrice && planDetails.afterMonthlyPrice < planDetails.monthlyPrice;
+                const hasYearlyDiscount = planDetails.afterYearlyPrice && planDetails.afterYearlyPrice < planDetails.yearlyPrice;
+                
+                return (
+                  <div
+                    className="flex items-start gap-3 px-4 py-3 rounded-2xl"
+                    style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}
+                  >
+                    <span className="text-xl flex-shrink-0 mt-0.5">💰</span>
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-2 mb-1">
+                        <p className="text-gray-300 text-[10px] uppercase tracking-widest">Monthly Price</p>
+                        {hasMonthlyDiscount && (
+                          <span className="px-1.5 py-0.5 rounded text-[9px] font-bold" style={{ background: "rgba(34,197,94,0.15)", color: "#22c55e" }}>
+                            Discount!
+                          </span>
+                        )}
+                      </div>
+                      <div className="flex items-baseline gap-2">
+                        {hasMonthlyDiscount && (
+                          <p className="text-gray-500 text-xs font-medium line-through">
+                            Rs. {Number(planDetails.monthlyPrice).toLocaleString()}
+                          </p>
+                        )}
+                        <p className="text-white font-black text-lg leading-tight">
+                          Rs. {Number(displayMonthly).toLocaleString()}
+                          <span className="text-gray-300 text-xs font-normal">/mo</span>
+                        </p>
+                      </div>
                     </div>
-                  )}
-                </div>
-              )}
+                    {planDetails?.yearlyPrice && (
+                      <div className="text-right flex-shrink-0">
+                        <p className="text-gray-300 text-[10px] uppercase tracking-widest mb-1">Yearly</p>
+                        <div className="flex flex-col items-end gap-0.5">
+                          {hasYearlyDiscount && (
+                            <p className="text-gray-500 text-[10px] font-medium line-through">
+                              Rs. {Number(planDetails.yearlyPrice).toLocaleString()}
+                            </p>
+                          )}
+                          <p className="font-bold text-sm" style={{ color: "#34d399" }}>
+                            Rs. {Number(displayYearly).toLocaleString()}/yr
+                          </p>
+                        </div>
+                      </div>
+                    )}
+                  </div>
+                );
+              })()}
 
               {/* Subscription dates */}
               <div className="grid grid-cols-2 gap-2">

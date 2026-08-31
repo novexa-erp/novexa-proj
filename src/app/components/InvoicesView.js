@@ -1093,7 +1093,7 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
       </div>
 
       {/* ── Invoice list ── */}
-      <div className="rounded-xl overflow-hidden" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)" }}>
+      <div className="rounded-xl" style={{ background: "linear-gradient(135deg, rgba(255,255,255,0.05) 0%, rgba(255,255,255,0.02) 100%)", border: "1px solid rgba(255,255,255,0.1)", backdropFilter: "blur(12px)", overflow: "visible" }}>
 
         {/* list header — lg+ full columns */}
         <div className="hidden lg:flex px-5 py-3 text-[10px] font-bold uppercase tracking-widest text-white border-b border-white/[0.05]">
@@ -1346,7 +1346,7 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
                       </button>
 
                       {openMenuId === inv.id && (
-                        <div className="absolute right-0 top-full mt-1 z-30 rounded-xl overflow-hidden"
+                        <div className="absolute right-0 top-full mt-1 z-50 rounded-xl overflow-hidden"
                           style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 8px 32px rgba(0,0,0,0.6)", minWidth: 160 }}>
 
                           {/* ★ Edit - Only if permission granted */}

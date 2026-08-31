@@ -214,7 +214,29 @@ function RegInvoiceDialog({ data, getToken, onToast, onClose }) {
   const [emailSending, setEmailSending] = useState(false);
   const [emailDone,    setEmailDone]    = useState(false);
 
-  function planLabel(p) { return p ? p.charAt(0).toUpperCase() + p.slice(1) : "Starter"; }
+  // Load dynamic plan name from Firestore
+  const [planDisplayName, setPlanDisplayName] = useState("");
+
+  useEffect(() => {
+    const planId = data.plan || "starter";
+    import("firebase/firestore").then(({ doc: fsDoc, getDoc }) => {
+      import("@/lib/firebase").then(({ db: fdb }) => {
+        getDoc(fsDoc(fdb, "adminConfig", "plans")).then(snap => {
+          if (snap.exists()) {
+            const plans = snap.data().list || [];
+            const foundPlan = plans.find(p => p.id === planId);
+            setPlanDisplayName(foundPlan?.name || planId.charAt(0).toUpperCase() + planId.slice(1));
+          } else {
+            setPlanDisplayName(planId.charAt(0).toUpperCase() + planId.slice(1));
+          }
+        }).catch(() => {
+          setPlanDisplayName(planId.charAt(0).toUpperCase() + planId.slice(1));
+        });
+      });
+    });
+  }, [data.plan]);
+
+  function planLabel(p) { return planDisplayName || (p ? p.charAt(0).toUpperCase() + p.slice(1) : "Starter"); }
   function fmtPayment(m) {
     if (m === "online") return "Online Transfer";
     if (m === "cheque") return "Cheque";
@@ -377,7 +399,29 @@ function UserInvoiceDialog({ data, getToken, onToast, onClose }) {
   const [waLoading,    setWaLoading]    = useState(false);
   const [error,        setError]        = useState(null);
 
-  function planLabel(p) { return p ? p.charAt(0).toUpperCase() + p.slice(1) : "Starter"; }
+  // Load dynamic plan name from Firestore
+  const [planDisplayName, setPlanDisplayName] = useState("");
+
+  useEffect(() => {
+    const planId = data.plan || "starter";
+    import("firebase/firestore").then(({ doc: fsDoc, getDoc }) => {
+      import("@/lib/firebase").then(({ db: fdb }) => {
+        getDoc(fsDoc(fdb, "adminConfig", "plans")).then(snap => {
+          if (snap.exists()) {
+            const plans = snap.data().list || [];
+            const foundPlan = plans.find(p => p.id === planId);
+            setPlanDisplayName(foundPlan?.name || planId.charAt(0).toUpperCase() + planId.slice(1));
+          } else {
+            setPlanDisplayName(planId.charAt(0).toUpperCase() + planId.slice(1));
+          }
+        }).catch(() => {
+          setPlanDisplayName(planId.charAt(0).toUpperCase() + planId.slice(1));
+        });
+      });
+    });
+  }, [data.plan]);
+
+  function planLabel(p) { return planDisplayName || (p ? p.charAt(0).toUpperCase() + p.slice(1) : "Starter"); }
   function fmtPayment(m) {
     if (m === "online") return "Online Transfer";
     if (m === "cheque") return "Cheque";
@@ -648,6 +692,1136 @@ function UserInvoiceDialog({ data, getToken, onToast, onClose }) {
   );
 }
 
+/* ══════════════════════════════════════════════════════════════════════
+   RENEW MODAL (separate from edit)
+══════════════════════════════════════════════════════════════════════ */
+function RenewModal({ user, onClose, getToken, onToast, onSuccess }) {
+  const [renewPayMethod, setRenewPayMethod] = useState(user.paymentMethod || "cash");
+  const [renewSaving, setRenewSaving] = useState(false);
+  const [renewDone, setRenewDone] = useState(false);
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  
+  // Custom discount state
+  const [customDiscount, setCustomDiscount] = useState(0); // Amount in Rs.
+  const [discountType, setDiscountType] = useState("amount"); // "amount" or "percentage"
+
+  // Load dynamic plan name and pricing from Firestore adminConfig/plans
+  const [planData, setPlanData] = useState(null);
+  const [loadingPlan, setLoadingPlan] = useState(true);
+
+  useEffect(() => {
+    const planId = user.plan || "starter";
+    import("firebase/firestore").then(({ doc: fsDoc, getDoc }) => {
+      import("@/lib/firebase").then(({ db: fdb }) => {
+        getDoc(fsDoc(fdb, "adminConfig", "plans")).then(snap => {
+          if (snap.exists()) {
+            const data = snap.data();
+            const plans = data.list || [];
+            const foundPlan = plans.find(p => p.id === planId);
+            setPlanData(foundPlan || { name: planId.charAt(0).toUpperCase() + planId.slice(1) });
+          } else {
+            setPlanData({ name: planId.charAt(0).toUpperCase() + planId.slice(1) });
+          }
+          setLoadingPlan(false);
+        }).catch(() => {
+          setPlanData({ name: planId.charAt(0).toUpperCase() + planId.slice(1) });
+          setLoadingPlan(false);
+        });
+      });
+    });
+  }, [user.plan]);
+
+  const planDisplayName = planData?.name || (user.plan ? user.plan.charAt(0).toUpperCase() + user.plan.slice(1) : "Plan");
+
+  // Detect if trial
+  const isTrial = (() => {
+    if (user.subscriptionType === "trial") return true;
+    if (user.plan === "trial") return true;
+    // Infer trial: if activeTo is ~7 days after activeFrom
+    if (user.activeFrom && user.activeTo) {
+      const from = new Date(user.activeFrom + "T00:00:00");
+      const to   = new Date(user.activeTo + "T00:00:00");
+      const diff = Math.round((to - from) / 86400000);
+      if (diff >= 6 && diff <= 8) return true;
+    }
+    return false;
+  })();
+
+  const period = isTrial ? "trial" : (user.billingPeriod || "monthly");
+  const currentEnd = user.activeTo;
+  const currentFrom = user.activeFrom;
+
+  // Calculate new end date
+  const newEnd = currentEnd ? (isTrial ? calcTrialRenewalEndDate(currentEnd) : calcRenewalEndDate(currentEnd, period)) : "";
+  const displayNewStart = calcRenewalDisplayStart(currentEnd);
+
+  // Days remaining
+  const daysRemaining = currentEnd
+    ? Math.ceil((new Date(currentEnd + "T23:59:59") - new Date()) / 86400000)
+    : null;
+
+  async function handleRenew() {
+    if (!newEnd) return;
+    setConfirmOpen(false);
+    setRenewSaving(true);
+    try {
+      const token = await getToken();
+      const headers = { "Content-Type": "application/json", authorization: `Bearer ${token}` };
+      const renewedAt = new Date().toISOString();
+      const body = {
+        uid: user.uid,
+        activeTo: newEnd,
+        ...(isTrial ? {} : { paymentMethod: renewPayMethod }),
+        lastRenewedAt: renewedAt,
+        lastRenewedBy: "admin",
+      };
+      const res = await fetch("/api/admin/update-user", { method: "POST", headers, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      setRenewDone(true);
+
+      // Send renewal email (skip for trial)
+      if (user.email && !isTrial) {
+        try {
+          await fetch("/api/admin/send-renewal-email", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              uid: user.uid,
+              userName: user.name || user.email,
+              userEmail: user.email,
+              plan: user.plan,
+              billingPeriod: user.billingPeriod,
+              paymentMethod: renewPayMethod,
+              activeFrom: currentFrom,
+              activeTo: newEnd,
+              periodStart: displayNewStart,
+              renewedAt,
+              isTrial: false,
+            }),
+          });
+        } catch (emailErr) {
+          onToast?.(`Renewed but email failed: ${emailErr.message}`, "error");
+        }
+      }
+
+      // Send trial extension email
+      if (user.email && isTrial) {
+        try {
+          await fetch("/api/admin/send-renewal-email", {
+            method: "POST",
+            headers,
+            body: JSON.stringify({
+              uid: user.uid,
+              userName: user.name || user.email,
+              userEmail: user.email,
+              plan: user.plan,
+              billingPeriod: "trial",
+              paymentMethod: null,
+              activeFrom: currentFrom,
+              activeTo: newEnd,
+              periodStart: displayNewStart,
+              renewedAt,
+              isTrial: true,
+              originalStart: currentFrom,
+            }),
+          });
+        } catch (emailErr) {
+          onToast?.(`Extended but email failed: ${emailErr.message}`, "error");
+        }
+      }
+
+      onToast?.(`${user.name}'s subscription ${isTrial ? "extended" : "renewed"} successfully ✓`, "success");
+      onSuccess?.();
+    } catch (err) {
+      onToast?.(err.message || "Renewal failed", "error");
+    } finally {
+      setRenewSaving(false);
+    }
+  }
+
+  function fmtDate(val) {
+    if (!val) return "—";
+    return new Date(val + "T00:00:00").toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" });
+  }
+
+  return (
+    <>
+      {/* Main Renew Modal */}
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+        style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(10px)" }}>
+        <div className="w-full max-w-md rounded-2xl overflow-hidden"
+          style={{ background: "#0d1117", border: "1.5px solid rgba(52,211,153,0.4)", boxShadow: "0 32px 80px rgba(0,0,0,0.7)" }}>
+
+          {/* Header */}
+          <div className="px-6 pt-6 pb-4 text-center"
+            style={{ background: isTrial ? "linear-gradient(135deg,rgba(245,158,11,0.1),rgba(217,119,6,0.05))" : "linear-gradient(135deg,rgba(16,185,129,0.1),rgba(5,150,105,0.05))" }}>
+            <button onClick={onClose} className="absolute top-4 right-4 text-gray-300 hover:text-white text-xl">✕</button>
+            <div className="text-4xl mb-3">{isTrial ? "⏳" : "🔄"}</div>
+            <h3 className="text-white font-black text-lg">
+              {isTrial ? "Extend Trial" : "Renew Subscription"}
+            </h3>
+            <p className="text-gray-300 text-sm mt-1">
+              {user.name} — {loadingPlan ? "Loading..." : planDisplayName}
+            </p>
+          </div>
+
+          {/* Body */}
+          <div className="px-6 py-5 flex flex-col gap-4">
+            {/* Current status */}
+            <div className="flex items-center justify-between px-4 py-3 rounded-xl"
+              style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+              <div>
+                <p className="text-[10px] uppercase tracking-widest font-bold text-gray-300 mb-0.5">Current End Date</p>
+                <p className="text-white text-sm font-semibold">{fmtDate(currentEnd)}</p>
+              </div>
+              {daysRemaining !== null && (
+                <div className="px-3 py-1.5 rounded-lg text-center"
+                  style={{
+                    background: daysRemaining <= 0 ? "rgba(248,113,113,0.15)" : daysRemaining <= 7 ? "rgba(251,191,36,0.15)" : "rgba(52,211,153,0.12)",
+                    border: `1px solid ${daysRemaining <= 0 ? "rgba(248,113,113,0.3)" : daysRemaining <= 7 ? "rgba(251,191,36,0.3)" : "rgba(52,211,153,0.25)"}`,
+                  }}>
+                  <p className="text-[9px] uppercase tracking-widest font-bold"
+                    style={{ color: daysRemaining <= 0 ? "#f87171" : daysRemaining <= 7 ? "#fbbf24" : "#34d399" }}>
+                    {daysRemaining <= 0 ? "Expired" : "Remaining"}
+                  </p>
+                  <p className="text-sm font-black"
+                    style={{ color: daysRemaining <= 0 ? "#f87171" : daysRemaining <= 7 ? "#fbbf24" : "#34d399" }}>
+                    {Math.abs(daysRemaining)}d
+                  </p>
+                </div>
+              )}
+            </div>
+
+            {/* New end date preview */}
+            {newEnd && !renewDone && (
+              <div className="px-4 py-3 rounded-xl"
+                style={{ background: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.2)" }}>
+                <p className="text-gray-300 text-[10px] uppercase tracking-widest font-bold mb-2">📅 New End Date</p>
+                <div className="flex items-center gap-2 text-xs mb-1">
+                  <span className="text-gray-300">Starts:</span>
+                  <span className="font-semibold text-blue-300">{fmtDate(displayNewStart)}</span>
+                </div>
+                <div className="flex items-center gap-2 text-xs">
+                  <span className="text-gray-300">Ends:</span>
+                  <span className="font-bold text-blue-400">{fmtDate(newEnd)}</span>
+                </div>
+                <p className="text-gray-300 text-[10px] mt-2">
+                  +{isTrial ? "7 days" : period === "yearly" ? "1 year" : "1 month"} extension
+                </p>
+                {/* Pricing info */}
+                {!isTrial && planData && (planData.monthlyPrice || planData.yearlyPrice) && (
+                  <div className="mt-3 pt-3 border-t border-white/10">
+                    {(() => {
+                      // Get base price (discounted or regular)
+                      const basePrice = period === "yearly" 
+                        ? (planData.afterYearlyPrice || planData.yearlyPrice)
+                        : (planData.afterMonthlyPrice || planData.monthlyPrice);
+                      
+                      // Calculate custom discount
+                      let discountAmount = 0;
+                      if (customDiscount > 0) {
+                        if (discountType === "percentage") {
+                          discountAmount = (basePrice * customDiscount) / 100;
+                        } else {
+                          discountAmount = customDiscount;
+                        }
+                      }
+                      
+                      const finalPrice = Math.max(0, basePrice - discountAmount);
+                      const hasDiscount = discountAmount > 0;
+
+                      return (
+                        <>
+                          {/* Base Price (crossed if discount applied) */}
+                          {hasDiscount && (
+                            <div className="flex items-center justify-between mb-1">
+                              <span className="text-gray-400 text-xs">Original Amount:</span>
+                              <span className="text-gray-400 text-sm line-through">
+                                Rs. {Number(basePrice).toLocaleString("en-PK")}
+                              </span>
+                            </div>
+                          )}
+                          
+                          {/* Discount Amount */}
+                          {hasDiscount && (
+                            <div className="flex items-center justify-between mb-2">
+                              <span className="text-amber-400 text-xs">
+                                🎁 Discount ({discountType === "percentage" ? `${customDiscount}%` : `Rs. ${customDiscount.toLocaleString("en-PK")}`}):
+                              </span>
+                              <span className="text-amber-400 text-sm font-semibold">
+                                - Rs. {Number(discountAmount).toLocaleString("en-PK")}
+                              </span>
+                            </div>
+                          )}
+                          
+                          {/* Final Price */}
+                          <div className="flex items-center justify-between">
+                            <span className="text-gray-300 text-xs font-bold">
+                              {hasDiscount ? "Final Amount:" : "Renewal Amount:"}
+                            </span>
+                            <span className="text-emerald-400 text-base font-black">
+                              Rs. {Number(finalPrice).toLocaleString("en-PK")}
+                            </span>
+                          </div>
+                        </>
+                      );
+                    })()}
+                  </div>
+                )}
+              </div>
+            )}
+
+            {/* Payment method (not for trial) */}
+            {!renewDone && !isTrial && (
+              <>
+                <div>
+                  <p className="text-gray-300 text-[10px] uppercase tracking-widest font-bold mb-2">💳 Payment Method</p>
+                  <div className="grid grid-cols-3 gap-2">
+                    {[
+                      { id: "online", label: "🌐 Online", desc: "Card / Bank" },
+                      { id: "cash", label: "💵 Cash", desc: "Naqad" },
+                      { id: "cheque", label: "🧾 Cheque", desc: "Cheque" },
+                    ].map(opt => (
+                      <button key={opt.id} type="button"
+                        onClick={() => setRenewPayMethod(opt.id)}
+                        className="flex flex-col items-start px-3 py-2 rounded-xl text-left transition-all"
+                        style={{
+                          background: renewPayMethod === opt.id ? "rgba(52,211,153,0.18)" : "rgba(255,255,255,0.03)",
+                          border: `1.5px solid ${renewPayMethod === opt.id ? "#10B981" : "rgba(255,255,255,0.08)"}`,
+                        }}>
+                        <span className="text-xs font-bold" style={{ color: renewPayMethod === opt.id ? "#34d399" : "#9ca3af" }}>{opt.label}</span>
+                        <span className="text-[10px]" style={{ color: renewPayMethod === opt.id ? "#d1d5db" : "#4b5563" }}>{opt.desc}</span>
+                      </button>
+                    ))}
+                  </div>
+                </div>
+
+                {/* Custom Discount Section */}
+                <div>
+                  <p className="text-amber-400 text-[10px] uppercase tracking-widest font-bold mb-2">🎁 Custom Discount (Optional)</p>
+                  <div className="flex gap-2">
+                    {/* Discount Type Toggle */}
+                    <div className="flex gap-1 p-1 rounded-lg" style={{ background: "rgba(255,255,255,0.05)" }}>
+                      <button type="button"
+                        onClick={() => setDiscountType("amount")}
+                        className="px-3 py-1.5 rounded text-[10px] font-bold transition-all"
+                        style={{
+                          background: discountType === "amount" ? "rgba(245,158,11,0.2)" : "transparent",
+                          color: discountType === "amount" ? "#fbbf24" : "#6b7280",
+                        }}>
+                        Rs.
+                      </button>
+                      <button type="button"
+                        onClick={() => setDiscountType("percentage")}
+                        className="px-3 py-1.5 rounded text-[10px] font-bold transition-all"
+                        style={{
+                          background: discountType === "percentage" ? "rgba(245,158,11,0.2)" : "transparent",
+                          color: discountType === "percentage" ? "#fbbf24" : "#6b7280",
+                        }}>
+                        %
+                      </button>
+                    </div>
+                    {/* Discount Input */}
+                    <input
+                      type="number"
+                      min="0"
+                      max={discountType === "percentage" ? "100" : undefined}
+                      value={customDiscount || ""}
+                      onChange={e => setCustomDiscount(Number(e.target.value) || 0)}
+                      placeholder={discountType === "amount" ? "0" : "0-100"}
+                      className="flex-1 px-3 py-2 rounded-lg text-sm font-semibold outline-none"
+                      style={{
+                        background: "rgba(245,158,11,0.1)",
+                        border: "1px solid rgba(245,158,11,0.3)",
+                        color: "#fbbf24",
+                      }}
+                    />
+                  </div>
+                  <p className="text-gray-400 text-[9px] mt-1">0 = no discount, leave blank for package default</p>
+                </div>
+              </>
+            )}
+
+            {/* Trial info */}
+            {!renewDone && isTrial && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }}>
+                <span className="text-amber-400">ℹ️</span>
+                <p className="text-amber-400 text-[11px] font-medium">
+                  Trial extension — no payment required. Account will remain frozen until upgraded.
+                </p>
+              </div>
+            )}
+
+            {/* Success message */}
+            {renewDone && (
+              <div className="flex items-center justify-center gap-2 py-3 rounded-xl"
+                style={{ background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.3)" }}>
+                <span className="text-2xl">✅</span>
+                <p className="text-emerald-400 text-sm font-bold">
+                  {isTrial ? "Trial Extended!" : "Subscription Renewed!"}
+                </p>
+              </div>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="px-6 pb-6 flex gap-3">
+            <button onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/10"
+              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+              {renewDone ? "Close" : "Cancel"}
+            </button>
+            {!renewDone && (
+              <button onClick={() => setConfirmOpen(true)} disabled={renewSaving || !newEnd}
+                className="flex-1 py-2.5 rounded-xl text-sm font-black transition-all hover:scale-[1.02]"
+                style={{
+                  background: isTrial ? "linear-gradient(135deg,#F59E0B,#D97706)" : "linear-gradient(135deg,#10B981,#059669)",
+                  color: "#fff",
+                  opacity: renewSaving || !newEnd ? 0.5 : 1,
+                  cursor: renewSaving || !newEnd ? "not-allowed" : "pointer",
+                }}>
+                {renewSaving ? "Processing..." : isTrial ? "Extend +7 Days" : `Renew +${period === "yearly" ? "1 Year" : "1 Month"}`}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Confirm Dialog */}
+      {confirmOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(10px)" }}>
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+            style={{ background: "#0d1117", border: "1.5px solid rgba(16,185,129,0.4)", boxShadow: "0 32px 80px rgba(0,0,0,0.7)" }}>
+            <div className="px-6 pt-6 pb-4 text-center"
+              style={{ background: "linear-gradient(135deg,rgba(16,185,129,0.1),rgba(5,150,105,0.05))" }}>
+              <div className="text-4xl mb-3">🔄</div>
+              <h3 className="text-white font-black text-lg">Confirm {isTrial ? "Extension" : "Renewal"}</h3>
+              <p className="text-gray-300 text-sm mt-1">
+                Are you sure you want to {isTrial ? "extend" : "renew"} <span className="text-white font-semibold">{user.name}</span>&apos;s subscription?
+              </p>
+            </div>
+            <div className="px-6 py-4 flex flex-col gap-2">
+              {[
+                { label: "New Period Start", value: fmtDate(displayNewStart) },
+                { label: "New End Date", value: fmtDate(newEnd) },
+                { label: "Duration Extended", value: isTrial ? "+7 Days" : period === "yearly" ? "+1 Year" : "+1 Month" },
+                ...(!isTrial && planData && (planData.monthlyPrice || planData.yearlyPrice) ? [{
+                  label: "Amount",
+                  value: (() => {
+                    const price = period === "yearly" ? planData.yearlyPrice : planData.monthlyPrice;
+                    return price ? `Rs. ${Number(price).toLocaleString("en-PK")}` : "—";
+                  })()
+                }] : []),
+                ...(!isTrial ? [{ label: "Payment Method", value: renewPayMethod === "online" ? "Online" : renewPayMethod === "cheque" ? "Cheque" : "Cash" }] : []),
+                { label: "Confirmation Email", value: `Will be sent to ${user.email}` },
+              ].map(r => (
+                <div key={r.label} className="flex items-center justify-between py-2"
+                  style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                  <span className="text-gray-300 text-xs uppercase tracking-widest font-bold">{r.label}</span>
+                  <span className="text-white text-xs font-semibold text-right max-w-[55%]">{r.value}</span>
+                </div>
+              ))}
+            </div>
+            <div className="px-6 pb-6 flex gap-3">
+              <button onClick={() => setConfirmOpen(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/10"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+                Cancel
+              </button>
+              <button onClick={handleRenew}
+                className="flex-1 py-2.5 rounded-xl text-sm font-black transition-all hover:scale-[1.02]"
+                style={{
+                  background: "linear-gradient(135deg,#10B981,#059669)",
+                  color: "#fff",
+                }}>
+                Yes, {isTrial ? "Extend" : "Renew"} Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
+   UPGRADE MODAL (plan upgrade with time extension)
+══════════════════════════════════════════════════════════════════════ */
+function UpgradeModal({ user, onClose, getToken, onToast, onSuccess }) {
+  // Load dynamic plans from Firestore adminConfig/plans
+  const [dynamicPlans, setDynamicPlans] = useState(null);
+  const [loadingPlans, setLoadingPlans] = useState(true);
+
+  useEffect(() => {
+    import("firebase/firestore").then(({ doc: fsDoc, getDoc }) => {
+      import("@/lib/firebase").then(({ db: fdb }) => {
+        getDoc(fsDoc(fdb, "adminConfig", "plans")).then(snap => {
+          if (snap.exists()) {
+            const data = snap.data();
+            const plansList = data.list || [];
+            // Convert array to object with plan.id as key
+            const plansObj = {};
+            plansList.forEach(p => { plansObj[p.id] = p; });
+            setDynamicPlans(plansObj);
+          } else {
+            setDynamicPlans(null);
+          }
+          setLoadingPlans(false);
+        }).catch(() => {
+          setDynamicPlans(null);
+          setLoadingPlans(false);
+        });
+      });
+    });
+  }, []);
+
+  const PLAN_DEFAULT_DEVICES = { starter: 1, growth: 2, scale: 3, enterprise: 5 };
+
+  const currentPlan = user.plan || "starter";
+  const currentBilling = user.billingPeriod || "monthly";
+  const currentPayment = user.paymentMethod || "cash";
+
+  const [selectedPlan, setSelectedPlan] = useState(currentPlan);
+  const [selectedBilling, setSelectedBilling] = useState(currentBilling);
+  const [selectedPayment, setSelectedPayment] = useState(currentPayment);
+  const [upgradeMonths, setUpgradeMonths] = useState(1); // How many months/years to add
+  const [upgradeSaving, setUpgradeSaving] = useState(false);
+  const [upgradeDone, setUpgradeDone] = useState(false);
+  const [upgradeSuccess, setUpgradeSuccess] = useState(null); // success popup data: { oldPlan, newPlan, newEnd, payMethod, amount }
+  const [confirmOpen, setConfirmOpen] = useState(false);
+  
+  // Custom discount state
+  const [customDiscount, setCustomDiscount] = useState(0); // Amount in Rs.
+  const [discountType, setDiscountType] = useState("amount"); // "amount" or "percentage"
+
+  // Calculate new end date based on current activeTo + selected period
+  const calculateNewEndDate = () => {
+    const currentEnd = user.activeTo;
+    if (!currentEnd) return "";
+    
+    const d = new Date(currentEnd + "T00:00:00");
+    if (selectedBilling === "yearly") {
+      d.setFullYear(d.getFullYear() + upgradeMonths);
+    } else {
+      d.setMonth(d.getMonth() + upgradeMonths);
+    }
+    return d.toISOString().slice(0, 10);
+  };
+
+  const newEndDate = calculateNewEndDate();
+  const displayNewStart = (() => {
+    if (!user.activeTo) return "";
+    const d = new Date(user.activeTo + "T00:00:00");
+    d.setDate(d.getDate() + 1);
+    return d.toISOString().slice(0, 10);
+  })();
+
+  // Get max devices for selected plan
+  const maxDevices = dynamicPlans?.[selectedPlan]?.maxDevices ?? PLAN_DEFAULT_DEVICES[selectedPlan] ?? 1;
+
+  // Plan options - dynamically load from Firestore packages
+  const PLAN_OPTIONS = (() => {
+    if (!dynamicPlans) {
+      // Fallback to defaults while loading
+      return [
+        { id: "starter", label: "Starter", icon: "🚀", desc: "Basic features" },
+        { id: "growth", label: "Growth", icon: "📈", desc: "Growing business" },
+        { id: "scale", label: "Scale", icon: "⚡", desc: "Scaling up" },
+        { id: "enterprise", label: "Enterprise", icon: "🏢", desc: "Full power" },
+      ];
+    }
+    // Use dynamic plan names from Firestore
+    return Object.entries(dynamicPlans).map(([id, data]) => ({
+      id,
+      label: data.name || id.charAt(0).toUpperCase() + id.slice(1),
+      icon: data.icon || "📦",
+      desc: data.description || data.tagline || "Plan",
+    }));
+  })();
+
+  async function handleUpgrade() {
+    if (!newEndDate) return;
+    setConfirmOpen(false);
+    setUpgradeSaving(true);
+    try {
+      const token = await getToken();
+      const headers = { "Content-Type": "application/json", authorization: `Bearer ${token}` };
+      const upgradedAt = new Date().toISOString();
+
+      const body = {
+        uid: user.uid,
+        plan: selectedPlan,
+        billingPeriod: selectedBilling,
+        paymentMethod: selectedPayment,
+        activeTo: newEndDate,
+        maxDevices: String(maxDevices),
+        subscriptionType: "active", // Always set to active after upgrade
+        lastRenewedAt: upgradedAt,
+        lastRenewedBy: "admin",
+      };
+
+      const res = await fetch("/api/admin/update-user", { method: "POST", headers, body: JSON.stringify(body) });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+
+      setUpgradeDone(true);
+      
+      // Set upgrade success data for popup
+      setUpgradeSuccess({
+        oldPlan: currentPlan,
+        newPlan: selectedPlan,
+        newEnd: newEndDate,
+        payMethod: selectedPayment,
+        billing: selectedBilling,
+        timeAdded: upgradeMonths,
+      });
+
+      // Email will be sent from success popup (optional)
+      onToast?.(`${user.name} upgraded to ${selectedPlan} successfully ✓`, "success");
+      onSuccess?.();
+    } catch (err) {
+      onToast?.(err.message || "Upgrade failed", "error");
+    } finally {
+      setUpgradeSaving(false);
+    }
+  }
+
+  function fmtDate(val) {
+    if (!val) return "—";
+    return new Date(val + "T00:00:00").toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" });
+  }
+
+  function planLabel(p) {
+    return PLAN_OPTIONS.find(x => x.id === p)?.label || p.charAt(0).toUpperCase() + p.slice(1);
+  }
+
+  return (
+    <>
+      {/* Main Upgrade Modal */}
+      <div className="fixed inset-0 z-[60] flex items-center justify-center p-4"
+        style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(10px)" }}>
+        <div className="w-full max-w-2xl rounded-2xl overflow-hidden max-h-[90vh] overflow-y-auto"
+          style={{ background: "#0d1117", border: "1.5px solid rgba(139,92,246,0.4)", boxShadow: "0 32px 80px rgba(0,0,0,0.7)" }}>
+
+          {/* Header */}
+          <div className="px-6 pt-6 pb-4 sticky top-0 z-10"
+            style={{ background: "linear-gradient(135deg,rgba(139,92,246,0.1),rgba(168,85,247,0.05))", backdropFilter: "blur(20px)" }}>
+            <button onClick={onClose} className="absolute top-4 right-4 text-gray-300 hover:text-white text-xl">✕</button>
+            <div className="text-4xl mb-3">⬆️</div>
+            <h3 className="text-white font-black text-lg">Upgrade Subscription</h3>
+            <p className="text-gray-300 text-sm mt-1">
+              {user.name} — Current: {planLabel(currentPlan)}
+              {/* Show (Trial) badge if user is on trial */}
+              {(() => {
+                if (user.subscriptionType === "trial") return " (Trial)";
+                if (user.plan === "trial") return " (Trial)";
+                if (user.activeFrom && user.activeTo) {
+                  const from = new Date(user.activeFrom + "T00:00:00");
+                  const to = new Date(user.activeTo + "T00:00:00");
+                  const diff = Math.round((to - from) / 86400000);
+                  if (diff >= 6 && diff <= 8) return " (Trial)";
+                }
+                return "";
+              })()}
+            </p>
+          </div>
+
+          {/* Body */}
+          <div className="px-6 py-5 flex flex-col gap-5">
+            {loadingPlans ? (
+              <div className="flex items-center justify-center py-8">
+                <div className="w-8 h-8 rounded-full border-2 border-t-purple-500 border-transparent animate-spin" />
+              </div>
+            ) : (
+              <>
+                {/* Current Status */}
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="px-4 py-3 rounded-xl"
+                    style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                    <p className="text-[10px] uppercase tracking-widest font-bold text-gray-300 mb-0.5">Current Plan</p>
+                    <p className="text-white text-sm font-semibold">{planLabel(currentPlan)}</p>
+                  </div>
+                  <div className="px-4 py-3 rounded-xl"
+                    style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                    <p className="text-[10px] uppercase tracking-widest font-bold text-gray-300 mb-0.5">Current End Date</p>
+                    <p className="text-white text-sm font-semibold">{fmtDate(user.activeTo)}</p>
+                  </div>
+                </div>
+
+                {/* Select New Plan */}
+                {!upgradeDone && (
+                  <div>
+                    <p className="text-purple-400 text-xs font-bold uppercase tracking-widest mb-3">📦 Select New Plan</p>
+                    <div className="grid grid-cols-2 md:grid-cols-4 gap-2">
+                      {PLAN_OPTIONS.map(opt => (
+                        <button key={opt.id} type="button"
+                          onClick={() => setSelectedPlan(opt.id)}
+                          className="flex flex-col items-start px-3 py-2.5 rounded-xl text-left transition-all"
+                          style={{
+                            background: selectedPlan === opt.id ? "rgba(139,92,246,0.18)" : "rgba(255,255,255,0.03)",
+                            border: `1.5px solid ${selectedPlan === opt.id ? "#8B5CF6" : "rgba(255,255,255,0.08)"}`,
+                            boxShadow: selectedPlan === opt.id ? "0 0 12px rgba(139,92,246,0.2)" : "none",
+                          }}>
+                          <span className="text-base mb-0.5">{opt.icon}</span>
+                          <span className="text-xs font-bold" style={{ color: selectedPlan === opt.id ? "#a78bfa" : "#9ca3af" }}>
+                            {opt.label}
+                          </span>
+                          <span className="text-[10px] leading-tight" style={{ color: selectedPlan === opt.id ? "#d1d5db" : "#4b5563" }}>
+                            {opt.desc}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Billing Period */}
+                {!upgradeDone && (
+                  <div>
+                    <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3">🗓️ Billing Period</p>
+                    <div className="grid grid-cols-2 gap-2">
+                      {[
+                        { id: "monthly", label: "📅 Monthly", desc: "Pay monthly" },
+                        { id: "yearly", label: "📆 Yearly", desc: "Save more" },
+                      ].map(opt => (
+                        <button key={opt.id} type="button"
+                          onClick={() => setSelectedBilling(opt.id)}
+                          className="flex flex-col items-start px-4 py-3 rounded-xl text-left transition-all"
+                          style={{
+                            background: selectedBilling === opt.id ? "rgba(16,185,129,0.18)" : "rgba(255,255,255,0.03)",
+                            border: `1.5px solid ${selectedBilling === opt.id ? "#10B981" : "rgba(255,255,255,0.08)"}`,
+                            boxShadow: selectedBilling === opt.id ? "0 0 12px rgba(16,185,129,0.2)" : "none",
+                          }}>
+                          <span className="text-xs font-bold mb-0.5" style={{ color: selectedBilling === opt.id ? "#34d399" : "#9ca3af" }}>
+                            {opt.label}
+                          </span>
+                          <span className="text-[10px] leading-tight" style={{ color: selectedBilling === opt.id ? "#d1d5db" : "#4b5563" }}>
+                            {opt.desc}
+                          </span>
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* Time to Add */}
+                {!upgradeDone && (
+                  <div>
+                    <p className="text-blue-400 text-xs font-bold uppercase tracking-widest mb-3">⏱️ Add Time Period</p>
+                    <div className="flex items-center gap-3">
+                      <button type="button"
+                        onClick={() => setUpgradeMonths(Math.max(1, upgradeMonths - 1))}
+                        className="w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:bg-white/10"
+                        style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                        <span className="text-white text-lg font-bold">−</span>
+                      </button>
+                      <div className="flex-1 px-4 py-3 rounded-xl text-center"
+                        style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.3)" }}>
+                        <p className="text-blue-300 text-2xl font-black">{upgradeMonths}</p>
+                        <p className="text-gray-300 text-[10px] uppercase tracking-widest mt-0.5">
+                          {selectedBilling === "yearly" ? (upgradeMonths > 1 ? "Years" : "Year") : (upgradeMonths > 1 ? "Months" : "Month")}
+                        </p>
+                      </div>
+                      <button type="button"
+                        onClick={() => setUpgradeMonths(upgradeMonths + 1)}
+                        className="w-10 h-10 rounded-xl flex items-center justify-center transition-all hover:bg-white/10"
+                        style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)" }}>
+                        <span className="text-white text-lg font-bold">+</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Payment Method */}
+                {!upgradeDone && (
+                  <>
+                    <div>
+                      <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-3">💳 Payment Method</p>
+                      <div className="grid grid-cols-3 gap-2">
+                        {[
+                          { id: "online", label: "🌐 Online", desc: "Card / Bank" },
+                          { id: "cash", label: "💵 Cash", desc: "Naqad" },
+                          { id: "cheque", label: "🧾 Cheque", desc: "Cheque" },
+                        ].map(opt => (
+                          <button key={opt.id} type="button"
+                            onClick={() => setSelectedPayment(opt.id)}
+                            className="flex flex-col items-start px-3 py-2 rounded-xl text-left transition-all"
+                            style={{
+                              background: selectedPayment === opt.id ? "rgba(245,158,11,0.18)" : "rgba(255,255,255,0.03)",
+                              border: `1.5px solid ${selectedPayment === opt.id ? "#F59E0B" : "rgba(255,255,255,0.08)"}`,
+                            }}>
+                            <span className="text-xs font-bold" style={{ color: selectedPayment === opt.id ? "#fbbf24" : "#9ca3af" }}>{opt.label}</span>
+                            <span className="text-[10px]" style={{ color: selectedPayment === opt.id ? "#d1d5db" : "#4b5563" }}>{opt.desc}</span>
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+
+                    {/* Custom Discount Section */}
+                    <div>
+                      <p className="text-pink-400 text-xs font-bold uppercase tracking-widest mb-3">🎁 Custom Discount (Optional)</p>
+                      <div className="flex gap-2">
+                        {/* Discount Type Toggle */}
+                        <div className="flex gap-1 p-1 rounded-lg" style={{ background: "rgba(255,255,255,0.05)" }}>
+                          <button type="button"
+                            onClick={() => setDiscountType("amount")}
+                            className="px-3 py-1.5 rounded text-[10px] font-bold transition-all"
+                            style={{
+                              background: discountType === "amount" ? "rgba(236,72,153,0.2)" : "transparent",
+                              color: discountType === "amount" ? "#ec4899" : "#6b7280",
+                            }}>
+                            Rs.
+                          </button>
+                          <button type="button"
+                            onClick={() => setDiscountType("percentage")}
+                            className="px-3 py-1.5 rounded text-[10px] font-bold transition-all"
+                            style={{
+                              background: discountType === "percentage" ? "rgba(236,72,153,0.2)" : "transparent",
+                              color: discountType === "percentage" ? "#ec4899" : "#6b7280",
+                            }}>
+                            %
+                          </button>
+                        </div>
+                        {/* Discount Input */}
+                        <input
+                          type="number"
+                          min="0"
+                          max={discountType === "percentage" ? "100" : undefined}
+                          value={customDiscount || ""}
+                          onChange={e => setCustomDiscount(Number(e.target.value) || 0)}
+                          placeholder={discountType === "amount" ? "0" : "0-100"}
+                          className="flex-1 px-3 py-2 rounded-lg text-sm font-semibold outline-none"
+                          style={{
+                            background: "rgba(236,72,153,0.1)",
+                            border: "1px solid rgba(236,72,153,0.3)",
+                            color: "#ec4899",
+                          }}
+                        />
+                      </div>
+                      <p className="text-gray-400 text-[9px] mt-1">0 = no discount, leave blank for package default</p>
+                    </div>
+                  </>
+                )}
+
+                {/* New End Date Preview */}
+                {newEndDate && !upgradeDone && (
+                  <div className="px-4 py-3 rounded-xl"
+                    style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.3)" }}>
+                    <p className="text-purple-400 text-[10px] uppercase tracking-widest font-bold mb-2">📅 New Subscription Details</p>
+                    <div className="flex items-center gap-2 text-xs mb-1">
+                      <span className="text-gray-300">Plan:</span>
+                      <span className="font-bold text-purple-300">{planLabel(selectedPlan)}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs mb-1">
+                      <span className="text-gray-300">New period starts:</span>
+                      <span className="font-semibold text-purple-300">{fmtDate(displayNewStart)}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs mb-1">
+                      <span className="text-gray-300">New end date:</span>
+                      <span className="font-bold text-purple-400">{fmtDate(newEndDate)}</span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs">
+                      <span className="text-gray-300">Duration:</span>
+                      <span className="font-semibold text-purple-300">
+                        +{upgradeMonths} {selectedBilling === "yearly" ? (upgradeMonths > 1 ? "years" : "year") : (upgradeMonths > 1 ? "months" : "month")}
+                      </span>
+                    </div>
+                    <div className="flex items-center gap-2 text-xs mt-1">
+                      <span className="text-gray-300">Max Devices:</span>
+                      <span className="font-bold text-purple-400">{maxDevices}</span>
+                    </div>
+                    {/* Pricing info */}
+                    {dynamicPlans?.[selectedPlan] && (dynamicPlans[selectedPlan].monthlyPrice || dynamicPlans[selectedPlan].yearlyPrice) && (
+                      <div className="mt-3 pt-3 border-t border-white/10">
+                        {(() => {
+                          const plan = dynamicPlans[selectedPlan];
+                          // Get base price per period
+                          const basePricePerPeriod = selectedBilling === "yearly" 
+                            ? (plan.afterYearlyPrice || plan.yearlyPrice)
+                            : (plan.afterMonthlyPrice || plan.monthlyPrice);
+                          
+                          const baseTotalPrice = basePricePerPeriod * upgradeMonths;
+                          
+                          // Calculate custom discount
+                          let discountAmount = 0;
+                          if (customDiscount > 0) {
+                            if (discountType === "percentage") {
+                              discountAmount = (baseTotalPrice * customDiscount) / 100;
+                            } else {
+                              discountAmount = customDiscount;
+                            }
+                          }
+                          
+                          const finalTotalPrice = Math.max(0, baseTotalPrice - discountAmount);
+                          const hasDiscount = discountAmount > 0;
+
+                          return (
+                            <>
+                              {/* Base Total (crossed if discount) */}
+                              {hasDiscount && (
+                                <div className="flex items-center justify-between mb-1">
+                                  <span className="text-gray-400 text-xs">Original Total:</span>
+                                  <span className="text-gray-400 text-sm line-through">
+                                    Rs. {Number(baseTotalPrice).toLocaleString("en-PK")}
+                                  </span>
+                                </div>
+                              )}
+                              
+                              {/* Discount Amount */}
+                              {hasDiscount && (
+                                <div className="flex items-center justify-between mb-2">
+                                  <span className="text-pink-400 text-xs font-bold">
+                                    🎁 Discount ({discountType === "percentage" ? `${customDiscount}%` : `Rs. ${customDiscount.toLocaleString("en-PK")}`}):
+                                  </span>
+                                  <span className="text-pink-400 text-sm font-semibold">
+                                    - Rs. {Number(discountAmount).toLocaleString("en-PK")}
+                                  </span>
+                                </div>
+                              )}
+                              
+                              {/* Final Total */}
+                              <div className="flex items-center justify-between">
+                                <span className="text-gray-300 text-xs font-bold">
+                                  {hasDiscount ? "Final Amount:" : "Total Amount:"}
+                                </span>
+                                <span className="text-purple-400 text-base font-black">
+                                  Rs. {Number(finalTotalPrice).toLocaleString("en-PK")}
+                                </span>
+                              </div>
+                              
+                              {/* Breakdown */}
+                              {!hasDiscount && (
+                                <p className="text-gray-300 text-[9px] mt-1 text-right">
+                                  Rs. {Number(basePricePerPeriod).toLocaleString("en-PK")} × {upgradeMonths} {selectedBilling === "yearly" ? (upgradeMonths > 1 ? "years" : "year") : (upgradeMonths > 1 ? "months" : "month")}
+                                </p>
+                              )}
+                            </>
+                          );
+                        })()}
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                {/* Success message */}
+                {upgradeDone && (
+                  <div className="flex items-center justify-center gap-2 py-4 rounded-xl"
+                    style={{ background: "rgba(139,92,246,0.12)", border: "1px solid rgba(139,92,246,0.3)" }}>
+                    <span className="text-3xl">✅</span>
+                    <p className="text-purple-400 text-base font-bold">Upgrade Successful!</p>
+                  </div>
+                )}
+              </>
+            )}
+          </div>
+
+          {/* Footer */}
+          <div className="px-6 pb-6 flex gap-3">
+            <button onClick={onClose}
+              className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/10"
+              style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+              {upgradeDone ? "Close" : "Cancel"}
+            </button>
+            {!upgradeDone && !loadingPlans && (
+              <button onClick={() => setConfirmOpen(true)} disabled={upgradeSaving || !newEndDate}
+                className="flex-1 py-2.5 rounded-xl text-sm font-black transition-all hover:scale-[1.02]"
+                style={{
+                  background: "linear-gradient(135deg,#8B5CF6,#7C3AED)",
+                  color: "#fff",
+                  opacity: upgradeSaving || !newEndDate ? 0.5 : 1,
+                  cursor: upgradeSaving || !newEndDate ? "not-allowed" : "pointer",
+                }}>
+                {upgradeSaving ? "Processing..." : `Upgrade to ${planLabel(selectedPlan)}`}
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Confirm Dialog */}
+      {confirmOpen && (
+        <div className="fixed inset-0 z-[70] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(10px)" }}>
+          <div className="w-full max-w-sm rounded-2xl overflow-hidden"
+            style={{ background: "#0d1117", border: "1.5px solid rgba(139,92,246,0.4)", boxShadow: "0 32px 80px rgba(0,0,0,0.7)" }}>
+            <div className="px-6 pt-6 pb-4 text-center"
+              style={{ background: "linear-gradient(135deg,rgba(139,92,246,0.1),rgba(168,85,247,0.05))" }}>
+              <div className="text-4xl mb-3">⬆️</div>
+              <h3 className="text-white font-black text-lg">Confirm Upgrade</h3>
+              <p className="text-gray-300 text-sm mt-1">
+                Upgrade <span className="text-white font-semibold">{user.name}</span> to {planLabel(selectedPlan)}?
+              </p>
+            </div>
+            <div className="px-6 py-4 flex flex-col gap-2">
+              {[
+                { label: "Current Plan", value: planLabel(currentPlan) },
+                { label: "New Plan", value: planLabel(selectedPlan) },
+                { label: "Billing Period", value: selectedBilling === "yearly" ? "Yearly" : "Monthly" },
+                { label: "Time Added", value: `+${upgradeMonths} ${selectedBilling === "yearly" ? (upgradeMonths > 1 ? "years" : "year") : (upgradeMonths > 1 ? "months" : "month")}` },
+                { label: "New End Date", value: fmtDate(newEndDate) },
+                ...(dynamicPlans?.[selectedPlan] && (dynamicPlans[selectedPlan].monthlyPrice || dynamicPlans[selectedPlan].yearlyPrice) ? [{
+                  label: "Total Amount",
+                  value: (() => {
+                    const plan = dynamicPlans[selectedPlan];
+                    // Use discounted price if available
+                    const pricePerPeriod = selectedBilling === "yearly" 
+                      ? (plan.afterYearlyPrice || plan.yearlyPrice)
+                      : (plan.afterMonthlyPrice || plan.monthlyPrice);
+                    const totalPrice = pricePerPeriod * upgradeMonths;
+                    return totalPrice ? `Rs. ${Number(totalPrice).toLocaleString("en-PK")}` : "—";
+                  })()
+                }] : []),
+                { label: "Payment Method", value: selectedPayment === "online" ? "Online" : selectedPayment === "cheque" ? "Cheque" : "Cash" },
+                { label: "Max Devices", value: String(maxDevices) },
+              ].map(r => (
+                <div key={r.label} className="flex items-center justify-between py-2"
+                  style={{ borderBottom: "1px solid rgba(255,255,255,0.05)" }}>
+                  <span className="text-gray-300 text-xs uppercase tracking-widest font-bold">{r.label}</span>
+                  <span className="text-white text-xs font-semibold text-right max-w-[55%]">{r.value}</span>
+                </div>
+              ))}
+            </div>
+            <div className="px-6 pb-6 flex gap-3">
+              <button onClick={() => setConfirmOpen(false)}
+                className="flex-1 py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/10"
+                style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+                Cancel
+              </button>
+              <button onClick={handleUpgrade}
+                className="flex-1 py-2.5 rounded-xl text-sm font-black transition-all hover:scale-[1.02]"
+                style={{
+                  background: "linear-gradient(135deg,#8B5CF6,#7C3AED)",
+                  color: "#fff",
+                }}>
+                Yes, Upgrade Now
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Upgrade Success Popup with Email/WhatsApp options ── */}
+      {upgradeSuccess && (
+        <div className="fixed inset-0 z-[85] flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.88)", backdropFilter: "blur(12px)" }}>
+          <div className="w-full max-w-md rounded-2xl overflow-hidden"
+            style={{ background: "#0d1117", border: "1.5px solid rgba(139,92,246,0.5)", boxShadow: "0 32px 80px rgba(0,0,0,0.8)" }}>
+            <div style={{ height: 5, background: "linear-gradient(to right,#8B5CF6,#A78BFA,#C4B5FD)" }} />
+            <div className="px-6 pt-6 pb-3 text-center">
+              <div className="w-16 h-16 rounded-full flex items-center justify-center text-3xl mx-auto mb-4"
+                style={{ background: "rgba(139,92,246,0.15)", border: "2px solid rgba(139,92,246,0.4)" }}>
+                ⬆️
+              </div>
+              <h3 className="text-white font-black text-xl">Upgrade Successful!</h3>
+              <p className="text-gray-300 text-sm mt-1.5">
+                <span className="text-white font-semibold">{user.name}</span> ka plan successfully upgrade ho gaya hai.
+              </p>
+            </div>
+            <div className="px-6 py-3 mx-2 rounded-xl mb-4"
+              style={{ background: "rgba(139,92,246,0.07)", border: "1px solid rgba(139,92,246,0.2)" }}>
+              {[
+                { label: "Old Plan", value: planLabel(upgradeSuccess.oldPlan) },
+                { label: "New Plan", value: planLabel(upgradeSuccess.newPlan) },
+                { label: "Billing", value: upgradeSuccess.billing === "yearly" ? "📆 Yearly" : "📅 Monthly" },
+                { label: "Time Added", value: `+${upgradeSuccess.timeAdded} ${upgradeSuccess.billing === "yearly" ? (upgradeSuccess.timeAdded > 1 ? "years" : "year") : (upgradeSuccess.timeAdded > 1 ? "months" : "month")}` },
+                { label: "New End Date", value: fmtDate(upgradeSuccess.newEnd) },
+                { label: "Payment Method", value: upgradeSuccess.payMethod === "online" ? "🌐 Online" : upgradeSuccess.payMethod === "cheque" ? "🧾 Cheque" : "💵 Cash" },
+              ].map(r => (
+                <div key={r.label} className="flex items-start justify-between gap-3 py-1.5"
+                  style={{ borderBottom: "1px solid rgba(139,92,246,0.1)" }}>
+                  <span className="text-gray-300 text-[11px] uppercase tracking-widest font-bold flex-shrink-0">{r.label}</span>
+                  <span className="text-purple-300 text-xs font-semibold text-right">{r.value}</span>
+                </div>
+              ))}
+            </div>
+
+            {/* Invoice sharing options */}
+            <div className="px-6 pb-2">
+              <p className="text-gray-300 text-sm font-semibold mb-3 text-center">
+                Upgrade invoice kahan bhejna hay? 📤
+              </p>
+            </div>
+
+            <div className="px-6 pb-6 flex flex-col gap-2.5">
+              {/* Email */}
+              <button
+                onClick={async () => {
+                  try {
+                    onToast?.("Sending upgrade invoice email...", "info");
+                    const token = await getToken();
+                    const res = await fetch("/api/admin/send-upgrade-invoice", {
+                      method: "POST",
+                      headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+                      body: JSON.stringify({
+                        uid: user.uid,
+                        userName: user.name,
+                        userEmail: user.email,
+                        oldPlan: upgradeSuccess.oldPlan,
+                        newPlan: upgradeSuccess.newPlan,
+                        billingPeriod: upgradeSuccess.billing,
+                        paymentMethod: upgradeSuccess.payMethod,
+                        newEnd: upgradeSuccess.newEnd,
+                        timeAdded: upgradeSuccess.timeAdded,
+                      }),
+                    });
+                    const data = await res.json();
+                    if (!res.ok) throw new Error(data.error || "Failed to send email");
+                    onToast?.(`Upgrade invoice sent to ${user.email} ✓`, "success");
+                  } catch (err) {
+                    onToast?.(err.message || "Email send failed", "error");
+                  }
+                }}
+                className="flex items-center justify-center gap-3 w-full py-3 rounded-xl text-sm font-bold transition-all hover:scale-[1.02]"
+                style={{ background: "linear-gradient(135deg,rgba(37,99,235,0.2),rgba(37,99,235,0.1))", border: "1px solid rgba(37,99,235,0.4)", color: "#60a5fa" }}>
+                <span className="text-lg">📧</span>
+                Email par bhejo (PDF invoice)
+              </button>
+
+              {/* WhatsApp */}
+              <button
+                onClick={() => {
+                  const msg = [
+                    `Assalam-o-Alaikum ${user.name}! 👋`,
+                    ``,
+                    `Aapka Novexa ERP plan upgrade ho gaya hai! 🎉`,
+                    ``,
+                    `📋 *Upgrade Details:*`,
+                    `• Old Plan: ${planLabel(upgradeSuccess.oldPlan)}`,
+                    `• New Plan: ${planLabel(upgradeSuccess.newPlan)} (${upgradeSuccess.billing === "yearly" ? "Yearly" : "Monthly"})`,
+                    `• Time Added: +${upgradeSuccess.timeAdded} ${upgradeSuccess.billing === "yearly" ? (upgradeSuccess.timeAdded > 1 ? "years" : "year") : (upgradeSuccess.timeAdded > 1 ? "months" : "month")}`,
+                    `• New End Date: ${fmtDate(upgradeSuccess.newEnd)}`,
+                    `• Payment: ${upgradeSuccess.payMethod === "online" ? "Online" : upgradeSuccess.payMethod === "cheque" ? "Cheque" : "Cash"}`,
+                    ``,
+                    `🌐 Login: https://novexaerp.com`,
+                    ``,
+                    `Shukriya! 🙏`,
+                  ].join("\n");
+                  window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+                }}
+                className="flex items-center justify-center gap-3 w-full py-3 rounded-xl text-sm font-bold transition-all hover:scale-[1.02]"
+                style={{ background: "linear-gradient(135deg,#25d366,#128c7e)", color: "#fff", boxShadow: "0 4px 16px rgba(37,211,102,0.3)" }}>
+                <span className="text-xl">💬</span>
+                WhatsApp par bhejo
+              </button>
+
+              {/* Skip */}
+              <button type="button" onClick={() => { setUpgradeSuccess(null); onClose(); }}
+                className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/5"
+                style={{ color: "#6b7280", border: "1px solid rgba(255,255,255,0.07)" }}>
+                Skip — baad mein bhejna hai
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </>
+  );
+}
+
 function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, onRenewSuccess }) {
   const [form, setForm] = useState(initial ? {
     name: initial.name || "", email: initial.email || "",
@@ -657,12 +1831,39 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
     activeToTime: initial.activeToTime || "",
     maxDevices: String(initial.maxDevices || "1"),
     plan: initial.plan || "starter",
-    subscriptionType: initial.subscriptionType || "active",
+    // ✅ Detect trial: check subscriptionType field, or infer from plan="trial" or activeFrom==activeTo-7days
+    subscriptionType: (() => {
+      if (initial.subscriptionType) return initial.subscriptionType;
+      if (initial.plan === "trial") return "trial";
+      // Infer trial: if activeTo is ~7 days after activeFrom
+      if (initial.activeFrom && initial.activeTo) {
+        const from = new Date(initial.activeFrom + "T00:00:00");
+        const to   = new Date(initial.activeTo + "T00:00:00");
+        const diff = Math.round((to - from) / 86400000);
+        if (diff >= 6 && diff <= 8) return "trial"; // allow 6-8 days buffer
+      }
+      return "active";
+    })(),
     billingPeriod: initial.billingPeriod || "monthly",
     paymentMethod: initial.paymentMethod || "cash",
   } : { ...EMPTY_FORM });
   const set = k => e => setForm(p => ({ ...p, [k]: e.target.value }));
   const isEdit = !!initial;
+
+  // DEBUG: Log form state on mount and when subscriptionType changes
+  useEffect(() => {
+    console.log("🔍 UserFormModal Debug:", {
+      isEdit,
+      userName: form.name,
+      subscriptionType: form.subscriptionType,
+      plan: form.plan,
+      billingPeriod: form.billingPeriod,
+      paymentMethod: form.paymentMethod,
+      shouldHideBilling: form.subscriptionType === "trial",
+      shouldHidePayment: form.subscriptionType === "trial",
+      shouldShowDevice: form.plan === "enterprise",
+    });
+  }, [isEdit, form.name, form.subscriptionType, form.plan]);
 
   // ── Extra limits state (edit mode only) ──────────────────────────────────
   const EXTRA_FIELDS_LIST = [
@@ -998,7 +2199,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
           style={{ borderBottom: "1px solid rgba(255,255,255,0.07)", background: "linear-gradient(135deg,rgba(37,99,235,0.08),rgba(245,158,11,0.04))" }}>
           <div>
             <h2 className="text-white font-black text-xl">{isEdit ? "Edit User" : "Register New User"}</h2>
-            <p className="text-gray-300 text-xs mt-0.5">{isEdit ? "Update user details and subscription" : "Create a new Novexa ERP account"}</p>
+            <p className="text-gray-300 text-xs mt-0.5">{isEdit ? "Update basic user information" : "Create a new Novexa ERP account"}</p>
           </div>
           <button onClick={onClose}
             className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 transition-all">✕</button>
@@ -1014,6 +2215,41 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
             value={form.password} onChange={set("password")} placeholder="Min. 8 characters" required={!isEdit} />
           <SInput label="Address" value={form.address} onChange={set("address")} placeholder="City, Street..." />
 
+          {/* ── Show current subscription info (read-only) for EDIT mode ── */}
+          {isEdit && initial && (
+            <div className="rounded-xl p-4" style={{ background: "rgba(37,99,235,0.05)", border: "1px solid rgba(37,99,235,0.15)" }}>
+              <p className="text-blue-400 text-xs font-bold uppercase tracking-widest mb-3">📋 Current Subscription Info</p>
+              <div className="grid grid-cols-2 gap-3 text-xs">
+                <div>
+                  <span className="text-gray-400 block mb-1">Plan</span>
+                  <span className="text-white font-semibold">{initial.plan ? initial.plan.charAt(0).toUpperCase() + initial.plan.slice(1) : "—"}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400 block mb-1">Billing Period</span>
+                  <span className="text-white font-semibold">{initial.billingPeriod === "yearly" ? "📆 Yearly" : initial.billingPeriod === "monthly" ? "📅 Monthly" : "—"}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400 block mb-1">Active From</span>
+                  <span className="text-white font-semibold">{initial.activeFrom ? fmtDate(initial.activeFrom) : "—"}</span>
+                </div>
+                <div>
+                  <span className="text-gray-400 block mb-1">Active Until</span>
+                  <span className="text-white font-semibold">{initial.activeTo ? fmtDate(initial.activeTo) : "—"}</span>
+                </div>
+              </div>
+              <div className="mt-3 flex items-center gap-2 px-3 py-2 rounded-lg"
+                style={{ background: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.2)" }}>
+                <span className="text-blue-400 text-sm">ℹ️</span>
+                <p className="text-blue-300 text-[11px] font-medium">
+                  Subscription change karne ke liye <strong>Renew</strong> ya <strong>Upgrade</strong> button use karein
+                </p>
+              </div>
+            </div>
+          )}
+
+          {/* ── Show subscription fields ONLY for NEW user registration ── */}
+          {!isEdit && (
+            <>
           {/* ── Subscription Type ── */}
           <div className="rounded-xl p-4" style={{ background: "rgba(16,185,129,0.04)", border: "1px solid rgba(16,185,129,0.18)" }}>
             <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3">🎯 Subscription Type</p>
@@ -1187,7 +2423,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
           )}
 
           {/* ── Billing Period (hidden for trial) ── */}
-          {form.subscriptionType !== "trial" && (
+          {!isEdit && form.subscriptionType !== "trial" && (
             <div className="rounded-xl p-4" style={{ background: "rgba(16,185,129,0.04)", border: "1px solid rgba(16,185,129,0.18)" }}>
               <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3">🗓️ Billing Period</p>
               <div className="grid grid-cols-2 gap-3">
@@ -1216,7 +2452,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
           )}
 
           {/* ── Payment Method (hidden for trial) ── */}
-          {form.subscriptionType !== "trial" && (
+          {!isEdit && form.subscriptionType !== "trial" && (
             <div className="rounded-xl p-4" style={{ background: "rgba(245,158,11,0.04)", border: "1px solid rgba(245,158,11,0.18)" }}>
               <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-3">💳 Payment Method</p>
               <div className="grid grid-cols-3 gap-3">
@@ -1244,273 +2480,8 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
               </div>
             </div>
           )}
-
-          {/* ── Renew Subscription (edit mode only) ── */}
-          {isEdit && (() => {
-            // Renewal logic:
-            // - activeFrom stays the SAME (original start date, never changes)
-            // - newEnd   = current activeTo + 1 month/year (or +7 days for trial)
-            const currentEnd  = form.activeTo;
-            const currentFrom = form.activeFrom;   // stays unchanged
-            const isTrial     = form.subscriptionType === "trial";
-            const period      = isTrial ? "trial" : (form.billingPeriod || "monthly");
-
-            // New end = extend current end by 7 days (trial) or 1 month/year (active)
-            const newEnd = currentEnd ? (isTrial ? calcTrialRenewalEndDate(currentEnd) : calcRenewalEndDate(currentEnd, period)) : "";
-            // Display start of next period (currentEnd + 1 day) — shown in UI only, not saved
-            const displayNewStart = calcRenewalDisplayStart(currentEnd);
-
-            // Days remaining on current plan
-            const daysRemaining = currentEnd
-              ? Math.ceil((new Date(currentEnd + "T23:59:59") - new Date()) / 86400000)
-              : null;
-
-            async function handleRenew() {
-              if (!newEnd) return;
-              setRenewConfirm(false);
-              setRenewSaving(true);
-              try {
-                const token   = await getToken();
-                const headers = { "Content-Type": "application/json", authorization: `Bearer ${token}` };
-                const renewedAt = new Date().toISOString();
-                const body    = {
-                  uid:           initial.uid,
-                  // activeFrom intentionally NOT sent — keep original
-                  activeTo:      newEnd,
-                  // Only send paymentMethod if not trial
-                  ...(isTrial ? {} : { paymentMethod: renewPayMethod }),
-                  lastRenewedAt: renewedAt,
-                  lastRenewedBy: "admin",
-                };
-                const res  = await fetch("/api/admin/update-user", { method: "POST", headers, body: JSON.stringify(body) });
-                const data = await res.json();
-                if (!res.ok) throw new Error(data.error);
-                // Only update activeTo in form, keep activeFrom as-is
-                setForm(p => ({ ...p, activeTo: newEnd, ...(isTrial ? {} : { paymentMethod: renewPayMethod }) }));
-                setRenewDone(true);
-
-                // ── Send renewal confirmation email (skip for trial) ──────────────────────
-                if (initial.email && !isTrial) {
-                  try {
-                    const emailRes  = await fetch("/api/admin/send-renewal-email", {
-                      method:  "POST",
-                      headers,
-                      body: JSON.stringify({
-                        uid:           initial.uid,
-                        userName:      initial.name || initial.email,
-                        userEmail:     initial.email,
-                        plan:          form.plan,
-                        billingPeriod: form.billingPeriod,
-                        paymentMethod: renewPayMethod,
-                        activeFrom:    currentFrom,
-                        activeTo:      newEnd,
-                        periodStart:   displayNewStart,
-                        renewedAt,
-                        isTrial:       false,
-                      }),
-                    });
-                    const emailData = await emailRes.json();
-                    if (!emailRes.ok) {
-                      onToast?.(`Renewed but email failed: ${emailData.error || emailRes.status}`, "error");
-                    }
-                  } catch (emailErr) {
-                    onToast?.(`Renewed but email error: ${emailErr.message}`, "error");
-                  }
-                }
-
-                // ── Send trial extension email ──────────────────────────────────────────
-                if (initial.email && isTrial) {
-                  try {
-                    const emailRes  = await fetch("/api/admin/send-renewal-email", {
-                      method:  "POST",
-                      headers,
-                      body: JSON.stringify({
-                        uid:           initial.uid,
-                        userName:      initial.name || initial.email,
-                        userEmail:     initial.email,
-                        plan:          form.plan,
-                        billingPeriod: "trial",
-                        paymentMethod: null,
-                        activeFrom:    currentFrom,
-                        activeTo:      newEnd,
-                        periodStart:   displayNewStart,
-                        renewedAt,
-                        isTrial:       true,
-                        originalStart: currentFrom, // Original registration date
-                      }),
-                    });
-                    const emailData = await emailRes.json();
-                    if (!emailRes.ok) {
-                      onToast?.(`Extended but email failed: ${emailData.error || emailRes.status}`, "error");
-                    }
-                  } catch (emailErr) {
-                    onToast?.(`Extended but email error: ${emailErr.message}`, "error");
-                  }
-                }
-
-                setRenewSuccess({ newStart: displayNewStart, newEnd, payMethod: isTrial ? null : renewPayMethod });
-                onRenewSuccess?.();
-              } catch (err) {
-                onToast?.(err.message || "Renewal failed", "error");
-              } finally {
-                setRenewSaving(false);
-              }
-            }
-
-            return (
-              <div className="rounded-xl overflow-hidden"
-                style={{ border: `1.5px solid ${renewDone ? "rgba(52,211,153,0.5)" : "rgba(52,211,153,0.35)"}`, background: "rgba(52,211,153,0.04)" }}>
-                {/* Header */}
-                <div className="flex items-center gap-2 px-4 py-3"
-                  style={{ borderBottom: "1px solid rgba(52,211,153,0.15)", background: "rgba(52,211,153,0.08)" }}>
-                  <span className="text-base">🔄</span>
-                  <div className="flex-1">
-                    <p className="text-emerald-400 text-xs font-black uppercase tracking-widest">Subscription Renew Karein</p>
-                    <p className="text-gray-300 text-[10px] mt-0.5">
-                      Current end date ke baad se automatically next period shuru hoga
-                    </p>
-                  </div>
-                  {daysRemaining !== null && (
-                    <div className="flex-shrink-0 px-2 py-1 rounded-lg text-center"
-                      style={{
-                        background: daysRemaining <= 0 ? "rgba(248,113,113,0.15)" : daysRemaining <= 7 ? "rgba(251,191,36,0.15)" : "rgba(52,211,153,0.12)",
-                        border: `1px solid ${daysRemaining <= 0 ? "rgba(248,113,113,0.3)" : daysRemaining <= 7 ? "rgba(251,191,36,0.3)" : "rgba(52,211,153,0.25)"}`,
-                      }}>
-                      <p className="text-[9px] uppercase tracking-widest font-bold"
-                        style={{ color: daysRemaining <= 0 ? "#f87171" : daysRemaining <= 7 ? "#fbbf24" : "#34d399" }}>
-                        {daysRemaining <= 0 ? "Expired" : "Baaki"}
-                      </p>
-                      <p className="text-sm font-black leading-tight"
-                        style={{ color: daysRemaining <= 0 ? "#f87171" : daysRemaining <= 7 ? "#fbbf24" : "#34d399" }}>
-                        {Math.abs(daysRemaining)}d
-                      </p>
-                    </div>
-                  )}
-                </div>
-
-                <div className="p-4 flex flex-col gap-3">
-                  {/* New period preview */}
-                  {newEnd && (
-                    <div className="flex flex-col gap-1.5 px-3 py-2.5 rounded-xl"
-                      style={{ background: renewDone ? "rgba(52,211,153,0.1)" : "rgba(37,99,235,0.08)", border: `1px solid ${renewDone ? "rgba(52,211,153,0.3)" : "rgba(37,99,235,0.2)"}` }}>
-                      <span className="text-sm">{renewDone ? "✅" : "📅"}</span>
-                      <div className="flex-1">
-                        <p className="text-gray-300 text-[10px] uppercase tracking-widest font-bold mb-1">
-                          {renewDone ? "Renewed — Updated End Date" : "New End Date (Preview)"}
-                        </p>
-                        {/* Start of new period — display only */}
-                        <div className="flex items-center gap-2 text-xs">
-                          <span className="text-gray-300">New period starts:</span>
-                          <span className="font-semibold" style={{ color: "#93c5fd" }}>
-                            {displayNewStart ? new Date(displayNewStart + "T00:00:00").toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" }) : "—"}
-                          </span>
-                        </div>
-                        {/* End date extended */}
-                        <div className="flex items-center gap-2 text-xs mt-1">
-                          <span className="text-gray-300">End:</span>
-                          <span className="text-gray-300 line-through text-[11px]">
-                            {new Date(currentEnd + "T00:00:00").toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}
-                          </span>
-                          <span className="text-xs">→</span>
-                          <span className="font-bold" style={{ color: renewDone ? "#34d399" : "#93c5fd" }}>
-                            {new Date(newEnd + "T00:00:00").toLocaleDateString("en-PK", { day: "2-digit", month: "short", year: "numeric" })}
-                          </span>
-                        </div>
-                        <p className="text-gray-300 text-[10px] mt-1.5">
-                          +{isTrial ? "7 days" : period === "yearly" ? "1 year" : "1 month"} from current end date
-                        </p>
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Payment method for renewal (hidden for trial) */}
-                  {!renewDone && !isTrial && (
-                    <div>
-                      <p className="text-gray-300 text-[10px] uppercase tracking-widest font-bold mb-2">💳 Renewal Payment Method</p>
-                      <div className="grid grid-cols-3 gap-2">
-                        {[
-                          { id: "online", label: "🌐 Online", desc: "Card / Bank" },
-                          { id: "cash",   label: "💵 Cash",   desc: "Naqad" },
-                          { id: "cheque", label: "🧾 Cheque", desc: "Cheque" },
-                        ].map(opt => (
-                          <button key={opt.id} type="button"
-                            onClick={() => setRenewPayMethod(opt.id)}
-                            className="flex flex-col items-start px-3 py-2 rounded-xl text-left transition-all"
-                            style={{
-                              background: renewPayMethod === opt.id ? "rgba(52,211,153,0.18)" : "rgba(255,255,255,0.03)",
-                              border: `1.5px solid ${renewPayMethod === opt.id ? "#10B981" : "rgba(255,255,255,0.08)"}`,
-                            }}>
-                            <span className="text-xs font-bold" style={{ color: renewPayMethod === opt.id ? "#34d399" : "#9ca3af" }}>{opt.label}</span>
-                            <span className="text-[10px]" style={{ color: renewPayMethod === opt.id ? "#d1d5db" : "#4b5563" }}>{opt.desc}</span>
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-
-                  {/* Trial info message */}
-                  {!renewDone && isTrial && (
-                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
-                      style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }}>
-                      <span className="text-amber-400 text-sm">ℹ️</span>
-                      <p className="text-amber-400 text-[11px] font-medium">
-                        Trial extension — no payment required. Account will remain frozen after extension until upgraded.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Renew / Renewed button */}
-                  {renewDone ? (
-                    <div className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold"
-                      style={{ background: "rgba(52,211,153,0.12)", border: "1px solid rgba(52,211,153,0.3)", color: "#34d399" }}>
-                      ✅ Subscription Successfully Renewed!
-                    </div>
-                  ) : (
-                    <button type="button" disabled={!newEnd}
-                      onClick={() => setRenewConfirm(true)}
-                      className="w-full py-2.5 rounded-xl text-sm font-black transition-all hover:scale-[1.01] active:scale-[0.99]"
-                      style={{
-                        background: isTrial ? "linear-gradient(135deg,#F59E0B,#D97706)" : "linear-gradient(135deg,#10B981,#059669)",
-                        color: "#fff",
-                        opacity: !newEnd ? 0.5 : 1,
-                        boxShadow: isTrial ? "0 4px 16px rgba(245,158,11,0.3)" : "0 4px 16px rgba(16,185,129,0.3)",
-                      }}>
-                      {isTrial ? "⏳ Extend Trial (+7 Days)" : `🔄 Renew Subscription (+${period === "yearly" ? "1 Year" : "1 Month"})`}
-                    </button>
-                  )}
-                </div>
-              </div>
-            );
-          })()}
-
-          {/* ── Extra Monthly Limits — moved to User Detail → Add-ons tab ── */}
-          {isEdit && (() => {
-            const hasAnyExtra = EXTRA_FIELDS_LIST.some(f => (existingLimits[f.key] || 0) > 0);
-            const exp   = initial?.extraLimitsExpiresAt ? new Date(initial.extraLimitsExpiresAt) : null;
-            const dLeft = exp ? Math.ceil((exp - new Date()) / 86400000) : null;
-            return (
-              <div className="flex items-center gap-3 px-4 py-3 rounded-xl"
-                style={{ background: "rgba(245,158,11,0.05)", border: "1px solid rgba(245,158,11,0.2)" }}>
-                <span className="text-xl flex-shrink-0">⚡</span>
-                <div className="flex-1 min-w-0">
-                  <p className="text-amber-400 text-xs font-bold">Extra Add-on Quota</p>
-                  <p className="text-gray-300 text-[10px] mt-0.5">
-                    {hasAnyExtra
-                      ? `Active — ${dLeft !== null && dLeft > 0 ? `${dLeft}d left` : dLeft !== null && dLeft <= 0 ? "Expired" : "Set"}`
-                      : "No active add-ons"}
-                    {" · "}
-                    <span className="text-amber-500">User Detail → Add-ons tab</span> mein manage karein
-                  </p>
-                </div>
-                {hasAnyExtra && (
-                  <span className="px-2 py-0.5 rounded-full text-[9px] font-bold flex-shrink-0"
-                    style={{ background: dLeft !== null && dLeft <= 0 ? "rgba(248,113,113,0.15)" : "rgba(245,158,11,0.15)", border: `1px solid ${dLeft !== null && dLeft <= 0 ? "rgba(248,113,113,0.35)" : "rgba(245,158,11,0.35)"}`, color: dLeft !== null && dLeft <= 0 ? "#f87171" : "#fbbf24" }}>
-                    {dLeft !== null && dLeft <= 0 ? "Expired" : `${dLeft}d`}
-                  </span>
-                )}
-              </div>
-            );
-          })()}
+            </>
+          )}
 
           <button type="submit" disabled={saving}
             className="w-full py-3 rounded-xl text-white font-bold text-sm mt-1 transition-all hover:scale-[1.01]"
@@ -1652,7 +2623,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
             </div>
             <h3 className="text-white font-black text-xl">Renewed Successfully!</h3>
             <p className="text-gray-300 text-sm mt-1.5">
-              <span className="text-white font-semibold">{initial?.name}</span>&apos;s subscription has been renewed and a confirmation email has been sent.
+              <span className="text-white font-semibold">{initial?.name}</span>&apos;s subscription has been renewed.
             </p>
           </div>
           <div className="px-6 py-3 mx-2 rounded-xl mb-4"
@@ -1661,7 +2632,6 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
               { label: "New Period Starts", value: new Date(renewSuccess.newStart+"T00:00:00").toLocaleDateString("en-PK",{day:"2-digit",month:"long",year:"numeric"}) },
               { label: "New Period Ends",   value: new Date(renewSuccess.newEnd+"T00:00:00").toLocaleDateString("en-PK",{day:"2-digit",month:"long",year:"numeric"}) },
               { label: "Payment Method",   value: renewSuccess.payMethod === "online" ? "🌐 Online" : renewSuccess.payMethod === "cheque" ? "🧾 Cheque" : "💵 Cash" },
-              { label: "Email Sent",       value: `✉️ ${initial?.email}` },
             ].map(r => (
               <div key={r.label} className="flex items-start justify-between gap-3 py-1.5"
                 style={{ borderBottom: "1px solid rgba(16,185,129,0.1)" }}>
@@ -1670,11 +2640,77 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
               </div>
             ))}
           </div>
-          <div className="px-6 pb-6">
+
+          {/* Invoice sharing options */}
+          <div className="px-6 pb-2">
+            <p className="text-gray-300 text-sm font-semibold mb-3 text-center">
+              Invoice kahan bhejna hay? 📤
+            </p>
+          </div>
+
+          <div className="px-6 pb-6 flex flex-col gap-2.5">
+            {/* Email */}
+            <button
+              onClick={async () => {
+                try {
+                  onToast?.("Sending renewal invoice email...", "info");
+                  const token = await getToken();
+                  const res = await fetch("/api/admin/send-renewal-invoice", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json", authorization: `Bearer ${token}` },
+                    body: JSON.stringify({
+                      uid: initial.uid,
+                      userName: initial.name,
+                      userEmail: initial.email,
+                      plan: initial.plan,
+                      billingPeriod: initial.billingPeriod,
+                      paymentMethod: renewSuccess.payMethod,
+                      oldEnd: form.activeTo,
+                      newEnd: renewSuccess.newEnd,
+                    }),
+                  });
+                  const data = await res.json();
+                  if (!res.ok) throw new Error(data.error || "Failed to send email");
+                  onToast?.(`Renewal invoice sent to ${initial.email} ✓`, "success");
+                } catch (err) {
+                  onToast?.(err.message || "Email send failed", "error");
+                }
+              }}
+              className="flex items-center justify-center gap-3 w-full py-3 rounded-xl text-sm font-bold transition-all hover:scale-[1.02]"
+              style={{ background: "linear-gradient(135deg,rgba(37,99,235,0.2),rgba(37,99,235,0.1))", border: "1px solid rgba(37,99,235,0.4)", color: "#60a5fa" }}>
+              <span className="text-lg">📧</span>
+              Email par bhejo (PDF invoice)
+            </button>
+
+            {/* WhatsApp */}
+            <button
+              onClick={() => {
+                const msg = [
+                  `Assalam-o-Alaikum ${initial.name}! 👋`,
+                  ``,
+                  `Aapka Novexa ERP subscription renew ho gaya hai. 🎉`,
+                  ``,
+                  `📋 *Renewal Details:*`,
+                  `• New Period: ${new Date(renewSuccess.newStart+"T00:00:00").toLocaleDateString("en-PK",{day:"2-digit",month:"short",year:"numeric"})} to ${new Date(renewSuccess.newEnd+"T00:00:00").toLocaleDateString("en-PK",{day:"2-digit",month:"short",year:"numeric"})}`,
+                  `• Payment: ${renewSuccess.payMethod === "online" ? "Online" : renewSuccess.payMethod === "cheque" ? "Cheque" : "Cash"}`,
+                  ``,
+                  `🌐 Login: https://novexaerp.com`,
+                  ``,
+                  `Shukriya! 🙏`,
+                ].join("\n");
+                window.open(`https://wa.me/?text=${encodeURIComponent(msg)}`, "_blank");
+              }}
+              className="flex items-center justify-center gap-3 w-full py-3 rounded-xl text-sm font-bold transition-all hover:scale-[1.02]"
+              style={{ background: "linear-gradient(135deg,#25d366,#128c7e)", color: "#fff", boxShadow: "0 4px 16px rgba(37,211,102,0.3)" }}>
+              <span className="text-xl">💬</span>
+              WhatsApp par bhejo
+            </button>
+
+            {/* Skip */}
             <button type="button" onClick={() => setRenewSuccess(null)}
-              className="w-full py-3 rounded-xl text-sm font-black transition-all hover:scale-[1.01]"
-              style={{ background: "linear-gradient(135deg,#10B981,#059669)", color: "#fff", boxShadow: "0 4px 16px rgba(16,185,129,0.3)" }}>
-              Done ✓
+              className="w-full py-2.5 rounded-xl text-sm font-semibold transition-all hover:bg-white/5"
+              style={{ color: "#6b7280", border: "1px solid rgba(255,255,255,0.07)" }}>
+              Skip — baad mein bhejna hai
             </button>
           </div>
         </div>
@@ -3409,6 +4445,8 @@ export default function AdminPanel() {
   const [saving,        setSaving]        = useState(false);
   const [showForm,      setShowForm]      = useState(false);
   const [editUser,      setEditUser]      = useState(null);
+  const [renewUser,     setRenewUser]     = useState(null); // User to renew (separate from edit)
+  const [upgradeUser,   setUpgradeUser]   = useState(null); // User to upgrade (separate modal)
   const [confirm,       setConfirm]       = useState(null);
   const [search,        setSearch]        = useState("");
   const [toasts,        setToasts]        = useState([]);
@@ -3678,6 +4716,29 @@ export default function AdminPanel() {
           onToast={toast}
           onRenewSuccess={fetchUsers} />
       )}
+
+      {/* Renew Modal - separate from edit */}
+      {renewUser && (
+        <RenewModal
+          user={renewUser}
+          onClose={() => setRenewUser(null)}
+          getToken={getToken}
+          onToast={toast}
+          onSuccess={fetchUsers}
+        />
+      )}
+
+      {/* Upgrade Modal - separate modal for plan upgrades */}
+      {upgradeUser && (
+        <UpgradeModal
+          user={upgradeUser}
+          onClose={() => setUpgradeUser(null)}
+          getToken={getToken}
+          onToast={toast}
+          onSuccess={fetchUsers}
+        />
+      )}
+
       <UserDetailModal
         detailUser={detailUser} detailLoading={detailLoading}
         onClose={() => setDetailUser(null)} fmtDate={fmtDate} daysLeft={daysLeft} />
@@ -4090,6 +5151,14 @@ export default function AdminPanel() {
                             <button onClick={() => setEditUser(u)} title="Edit"
                               className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-white/10 hover:scale-110">
                               <span className="text-sm">✏️</span>
+                            </button>
+                            <button onClick={() => setUpgradeUser(u)} title="Upgrade Plan"
+                              className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-purple-500/20 hover:scale-110">
+                              <span className="text-sm">⬆️</span>
+                            </button>
+                            <button onClick={() => setRenewUser(u)} title="Renew Subscription"
+                              className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-emerald-500/20 hover:scale-110">
+                              <span className="text-sm">🔄</span>
                             </button>
                             <button
                               onClick={() => setConfirm({ type:"freeze", uid:u.uid, name:u.name, currentStatus:u.status })}
