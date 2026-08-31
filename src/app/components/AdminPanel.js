@@ -5054,8 +5054,7 @@ export default function AdminPanel() {
               </div>
 
               {/* Table */}
-              <div className="rounded-2xl overflow-hidden"
-                style={{ background:"linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))", border:"1px solid rgba(255,255,255,0.08)" }}>
+              <div className="rounded-2xl" style={{ background:"linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))", border:"1px solid rgba(255,255,255,0.08)", overflow: "visible" }}>
 
                 <div className="hidden md:grid gap-4 px-5 py-3 text-[10px] font-bold uppercase tracking-widest"
                   style={{ color:"#fff", borderBottom:"1px solid rgba(255,255,255,0.06)", gridTemplateColumns:"2fr 2fr 1.2fr 1.8fr 1fr 0.8fr 1fr" }}>
