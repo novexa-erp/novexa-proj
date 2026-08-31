@@ -138,7 +138,49 @@ function buildAdminEmailHTML({ name, email, category, subject, message }) {
 </html>`;
 }
 
-// ── Confirmation email to USER ────────────────────────────────────────────────
+// ── Confirmation email to USER (plain text version) ───────────────────────────
+function buildUserConfirmationText({ name, category, subject, message }) {
+  const ticketId = "TKT-" + Date.now().toString().slice(-6).toUpperCase();
+  const now = new Date().toLocaleString("en-PK", {
+    day: "2-digit", month: "short", year: "numeric",
+    hour: "2-digit", minute: "2-digit", hour12: true,
+  });
+
+  return `MESSAGE RECEIVED - Novexa Support
+
+Hi ${name},
+
+Thank you for reaching out to Novexa Support. We have received your message and our team will review it shortly. You can expect a response within 24 hours during business days.
+
+TICKET DETAILS
+--------------
+Ticket ID: ${ticketId}
+Submitted: ${now}
+Category: ${category || "General"}
+Subject: ${subject}
+
+YOUR MESSAGE
+------------
+${message}
+
+WHAT HAPPENS NEXT?
+------------------
+1. Our team reviews your message (Usually within a few hours)
+2. We respond via email or WhatsApp (Within 24 hours on business days)
+3. Issue resolved & ticket closed (We follow up to confirm resolution)
+
+NEED FASTER HELP?
+-----------------
+WhatsApp: https://wa.me/923251507557 (Fastest response)
+Call: +92 332 0262457 (Mon-Sat, 9AM-8PM)
+
+---
+Novexa - Smart Business Management Platform
+Please do not reply to this email. Contact us on WhatsApp for immediate assistance.
+`;
+}
+
+// ── Confirmation email to USER (HTML version) ─────────────────────────────────
 function buildUserConfirmationHTML({ name, category, subject, message }) {
   const ticketId = "TKT-" + Date.now().toString().slice(-6).toUpperCase();
   const now = new Date().toLocaleString("en-PK", {
@@ -276,7 +318,7 @@ function buildUserConfirmationHTML({ name, category, subject, message }) {
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr>
         <td width="48%" style="padding-right:8px;">
-          <a href="https://wa.me/923320262457" style="display:block;padding:14px 10px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;text-decoration:none;text-align:center;">
+          <a href="https://wa.me/923251507557" style="display:block;padding:14px 10px;background:#f0fdf4;border:1.5px solid #86efac;border-radius:12px;text-decoration:none;text-align:center;">
             <div style="font-size:22px;margin-bottom:5px;">💬</div>
             <div style="font-size:13px;font-weight:800;color:#15803d;">WhatsApp Us</div>
             <div style="font-size:11px;color:#16a34a;margin-top:2px;font-weight:600;">Fastest response</div>
@@ -302,7 +344,7 @@ function buildUserConfirmationHTML({ name, category, subject, message }) {
     <div style="font-size:16px;font-weight:900;color:#1d4ed8;margin-bottom:4px;">Novexa</div>
     <div style="font-size:12px;color:#64748b;font-weight:500;">Smart Business Management Platform</div>
     <div style="margin-top:10px;font-size:11px;color:#94a3b8;">
-      Please do not reply to this email &nbsp;·&nbsp;
+      This is an automated confirmation email &nbsp;·&nbsp;
       <a href="https://wa.me/923251507557" style="color:#2563eb;text-decoration:none;font-weight:600;">Contact us on WhatsApp</a>
     </div>
   </td></tr>
@@ -344,15 +386,21 @@ export async function POST(request) {
         },
       }),
 
-      // 2. Confirmation to user
+      // 2. Confirmation to user — anti-spam headers
       transporter.sendMail({
         from:    `"Novexa Support" <${process.env.NOVEXA_GMAIL}>`,
         to:      email,
-        subject: `✅ We received your message — Novexa Support`,
+        replyTo: process.env.NOVEXA_GMAIL,
+        subject: `We received your message — Novexa Support`,
+        text:    buildUserConfirmationText({ name, category, subject, message }),
         html:    buildUserConfirmationHTML({ name, category, subject, message }),
         headers: {
           "X-Priority": "3",
           "Importance": "normal",
+          "X-Mailer": "Novexa Support System",
+          "List-Unsubscribe": `<mailto:${process.env.NOVEXA_GMAIL}?subject=Unsubscribe>`,
+          "Return-Path": process.env.NOVEXA_GMAIL,
+          "Message-ID": `<${Date.now()}.${email.replace('@', '-at-')}@novexa-support>`,
         },
       }),
     ]);
