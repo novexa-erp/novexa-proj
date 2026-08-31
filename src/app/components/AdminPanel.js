@@ -5057,8 +5057,8 @@ export default function AdminPanel() {
               <div className="rounded-2xl" style={{ background:"linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))", border:"1px solid rgba(255,255,255,0.08)", overflow: "visible" }}>
 
                 <div className="hidden md:grid gap-4 px-5 py-3 text-[10px] font-bold uppercase tracking-widest"
-                  style={{ color:"#fff", borderBottom:"1px solid rgba(255,255,255,0.06)", gridTemplateColumns:"2fr 2fr 1.2fr 1.8fr 1fr 0.8fr 1fr" }}>
-                  <span>User</span><span>Email</span><span>Phone</span><span>Subscription</span><span>Status</span><span className="text-center">📧 Email</span><span>Actions</span>
+                  style={{ color:"#fff", borderBottom:"1px solid rgba(255,255,255,0.06)", gridTemplateColumns:"2fr 2fr 1.2fr 1fr 1.8fr 1fr 0.8fr 1fr" }}>
+                  <span>User</span><span>Email</span><span>Phone</span><span>Package</span><span>Subscription</span><span>Status</span><span className="text-center">📧 Email</span><span>Actions</span>
                 </div>
 
                 {loading ? (
@@ -5080,7 +5080,7 @@ export default function AdminPanel() {
                       return (
                         <div key={u.uid}
                           className="flex flex-col md:grid gap-4 px-5 py-4 transition-all duration-150 hover:bg-white/[0.025] group"
-                          style={{ gridTemplateColumns:"2fr 2fr 1.2fr 1.8fr 1fr 0.8fr 1fr", borderBottom: idx<filteredUsers.length-1?"1px solid rgba(255,255,255,0.04)":"none" }}>
+                          style={{ gridTemplateColumns:"2fr 2fr 1.2fr 1fr 1.8fr 1fr 0.8fr 1fr", borderBottom: idx<filteredUsers.length-1?"1px solid rgba(255,255,255,0.04)":"none" }}>
 
                           <div className="flex items-center gap-2.5 min-w-0">
                             <div className="w-9 h-9 rounded-xl flex items-center justify-center text-sm font-bold flex-shrink-0 transition-transform group-hover:scale-105"
@@ -5095,6 +5095,42 @@ export default function AdminPanel() {
 
                           <p className="text-gray-300 text-xs hidden md:flex items-center truncate">{u.email}</p>
                           <p className="text-gray-300 text-xs flex items-center">{u.phone||"—"}</p>
+
+                          {/* Package/Plan Column */}
+                          <div className="hidden md:flex items-center">
+                            {u.adminUid || u.role ? (
+                              // Staff user - show owner info
+                              <div className="flex flex-col gap-0.5">
+                                <span className="text-[10px] font-bold px-2 py-0.5 rounded-lg"
+                                  style={{ background: "rgba(168,85,247,0.12)", color: "#a855f7", border: "1px solid rgba(168,85,247,0.3)" }}>
+                                  👨‍💼 Staff {u.role ? `(${u.role.charAt(0).toUpperCase() + u.role.slice(1)})` : ""}
+                                </span>
+                                {u.adminEmail && (
+                                  <span className="text-[9px] text-gray-400 truncate" title={`Owner: ${u.adminEmail}`}>
+                                    of {u.adminName || u.adminEmail}
+                                  </span>
+                                )}
+                              </div>
+                            ) : (
+                              // Regular user - show package
+                              <span className="text-xs font-bold px-2.5 py-1 rounded-lg truncate"
+                                style={{
+                                  background: u.plan === "enterprise" ? "rgba(168,85,247,0.12)" :
+                                             u.plan === "professional" ? "rgba(245,158,11,0.12)" :
+                                             u.plan === "business" ? "rgba(37,99,235,0.12)" : "rgba(16,185,129,0.12)",
+                                  color: u.plan === "enterprise" ? "#a855f7" :
+                                         u.plan === "professional" ? "#f59e0b" :
+                                         u.plan === "business" ? "#2563eb" : "#10b981",
+                                  border: u.plan === "enterprise" ? "1px solid rgba(168,85,247,0.3)" :
+                                          u.plan === "professional" ? "1px solid rgba(245,158,11,0.3)" :
+                                          u.plan === "business" ? "1px solid rgba(37,99,235,0.3)" : "1px solid rgba(16,185,129,0.3)",
+                                }}>
+                                {u.plan === "enterprise" ? "🏢 Enterprise" :
+                                 u.plan === "professional" ? "👑 Professional" :
+                                 u.plan === "business" ? "🚀 Business" : "💎 Starter"}
+                              </span>
+                            )}
+                          </div>
 
                           <div className="flex flex-col justify-center gap-0.5">
                             <p className="text-gray-300 text-[11px]">{fmtDate(u.activeFrom)} → {fmtDate(u.activeTo)}</p>

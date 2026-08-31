@@ -133,6 +133,12 @@ export async function GET(request) {
       });
     }
 
+    // ── staff scope ───────────────────────────────────────────────────────────
+    if (scope === "staff") {
+      const staff = await getSubcollection(adminDb, uid, "staff");
+      return NextResponse.json({ user: userData, authRecord, staff: serialize(staff) });
+    }
+
     // ── trash scope — needs invoices, customers, products, payments, suppliers+orders ──
     if (scope === "trash") {
       const [customers, invoices, products, payments, suppliers] = await Promise.all([

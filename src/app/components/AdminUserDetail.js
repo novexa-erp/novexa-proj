@@ -968,6 +968,56 @@ function SuppliersTab({ suppliers, orders, receipts, supplierReturns }) {
 }
 
 /* ══════════════════════════════════════════════════════════════════════
+   STAFF TAB  — shows staff members (from users/{uid}/staff subcollection)
+══════════════════════════════════════════════════════════════════════ */
+function StaffTab({ staff }) {
+  const active = staff.filter(s => !s.deleted);
+  
+  return (
+    <div>
+      <SectionHead icon="👨‍💼" label="Staff Members" count={active.length} />
+      {active.length === 0 ? <Empty icon="👨‍💼" label="No staff members yet" /> : (
+        <div className="flex flex-col gap-2">
+          {active.map(s => {
+            const modules = s.modules || [];
+            const locations = s.locations || [];
+            return (
+              <div key={s.id}
+                className="flex items-center gap-3 px-4 py-3.5 rounded-xl"
+                style={{ background:"rgba(255,255,255,0.02)", border:"1px solid rgba(255,255,255,0.07)" }}>
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-sm font-black flex-shrink-0"
+                  style={{ background: avatarGrad(s.id), color:"#fff" }}>
+                  {initials(s.name)}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-sm font-semibold truncate">{s.name}</p>
+                  <p className="text-gray-300 text-xs truncate">{s.email || "—"}</p>
+                  {modules.length > 0 && (
+                    <p className="text-blue-400 text-[10px] mt-1">
+                      {modules.length} module{modules.length !== 1 ? "s" : ""}
+                      {locations.length > 0 && ` · ${locations.length} location${locations.length !== 1 ? "s" : ""}`}
+                    </p>
+                  )}
+                </div>
+                <div className="flex flex-col items-end gap-0.5 flex-shrink-0">
+                  <span className="px-2 py-0.5 rounded-lg text-[10px] font-bold"
+                    style={{ background:"rgba(139,92,246,0.1)", color:"#c4b5fd", border:"1px solid rgba(139,92,246,0.2)" }}>
+                    {s.role === "staff" ? "Staff" : s.role || "Staff"}
+                  </span>
+                  {s.createdAt && (
+                    <p className="text-[10px] text-gray-300">Added {fmtDate(s.createdAt)}</p>
+                  )}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/* ══════════════════════════════════════════════════════════════════════
    INVOICES TAB  — only direct invoices (no customerId)
 ══════════════════════════════════════════════════════════════════════ */
 function InvoicesTab({ invoices }) {
@@ -3903,6 +3953,7 @@ const TABS = [
   { id:"products",  icon:"📦", label:"Products"   },
   { id:"payments",  icon:"💳", label:"Payments"   },
   { id:"suppliers", icon:"🏭", label:"Suppliers"  },
+  { id:"staff",     icon:"👨‍💼", label:"Staff"      },
   { id:"addons",    icon:"⚡", label:"Add-ons"    },
   { id:"tickets",   icon:"🎫", label:"Tickets"    },
   { id:"devices",   icon:"🖥️", label:"Devices"    },
@@ -3922,6 +3973,7 @@ const TAB_SCOPE = {
   products:  "products",
   payments:  "payments",
   suppliers: "suppliers",
+  staff:     "staff",
   activity:  "activity",
   trash:     "trash",
   // addons / tickets / devices / backup fetch their own data independently
@@ -4189,6 +4241,11 @@ export default function AdminUserDetail({ uid, getToken, onClose, onToast }) {
               {activeTab==="suppliers" && (
                 <TabWrapper scope="suppliers">{d =>
                   <SuppliersTab suppliers={d.suppliers} orders={d.orders} receipts={d.receipts||[]} supplierReturns={d.supplierReturns||[]} />
+                }</TabWrapper>
+              )}
+              {activeTab==="staff" && (
+                <TabWrapper scope="staff">{d =>
+                  <StaffTab staff={d.staff} />
                 }</TabWrapper>
               )}
               {activeTab==="addons" && (
