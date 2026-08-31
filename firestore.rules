@@ -216,7 +216,9 @@ service cloud.firestore {
 
     // ── Admin Config (Package Manager / Plan Settings / Counters) ─────────────
     match /adminConfig/{docId} {
-      allow read:  if isSignedIn();
+      // Allow public read access to 'plans' document (for pricing page)
+      // All other adminConfig docs require authentication
+      allow read:  if docId == "plans" || isSignedIn();
       allow write: if isAdmin();
       match /{subcol}/{subId} {
         allow read:  if isSignedIn();

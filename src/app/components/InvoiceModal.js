@@ -138,7 +138,7 @@ function getLocIcon(type) {
 // ── Product picker modal ──────────────────────────────────────────────────────
 function ProductPickerModal({ products, locations = [], onSelect, onClose }) {
   const [search, setSearch] = useState("");
-  const filtered = products.filter(p =>
+  const filtered = filteredProducts.filter(p =>
     (p.name || "").toLowerCase().includes(search.toLowerCase())
   );
 
@@ -778,9 +778,44 @@ function ItemRow({ item, idx, products, locations = [], onChange, onRemove, canR
 }
 
 // ── Main Modal ────────────────────────────────────────────────────────────────
-export default function InvoiceModal({ onClose, onSave, saving, initial, defaultValues, products = [], locations = [], settingsLogo = "", customerTotalBalance = null }) {
+export default function InvoiceModal({ onClose, onSave, saving, initial, defaultValues, products = [], locations = [], settingsLogo = "", customerTotalBalance = null, staffContext = null }) {
+  // Debug: Check staffContext
+  if (process.env.NODE_ENV === 'development') {
+    console.log('[InvoiceModal] staffContext:', staffContext);
+  }
+  
   // filter out deleted products — they should not show in suggestions or picker
   const activeProducts = products.filter(p => !p.deleted);
+  
+  // Filter products by staff's assigned location
+  // Empty string or "default" both mean shop/default location
+  const filteredProducts = staffContext?.staffDoc
+    ? activeProducts.filter(p => {
+        const productLocation = p.locationId || "default";
+        const assignedLocation = staffContext.staffDoc.assignedLocationId || "default";
+        const shouldInclude = productLocation === assignedLocation;
+        
+        // Debug log
+        if (process.env.NODE_ENV === 'development') {
+          console.log('[InvoiceModal Filter]', {
+            productName: p.name,
+            productLocation,
+            assignedLocation,
+            shouldInclude
+          });
+        }
+        
+        return shouldInclude;
+      })
+    : activeProducts;
+  
+  // Debug: Log final filtered count
+  if (process.env.NODE_ENV === 'development' && staffContext?.staffDoc) {
+    const loc = staffContext.staffDoc.assignedLocationId || 'default';
+    console.log('[InvoiceModal] Staff assigned to:', loc);
+    console.log('[InvoiceModal] Total products:', activeProducts.length);
+    console.log('[InvoiceModal] Filtered products:', filteredProducts.length);
+  }
 
   // if no initial logo provided, use settingsLogo as default
   const defaultForm = settingsLogo
@@ -1144,7 +1179,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
               ) : (
                 <>
                   {form.items.map((item, idx) => (
-                    <ItemRow key={idx} item={item} idx={idx} products={activeProducts}
+                    <ItemRow key={idx} item={item} idx={idx} products={filteredProducts}
                       locations={locations}
                       onChange={setItem} onRemove={removeItem}
                       canRemove={form.items.length > 1}
@@ -1650,7 +1685,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
     {/* product picker modal — for existing items */}
     {pickerIdx !== null && (
       <ProductPickerModal
-        products={activeProducts}
+        products={filteredProducts}
         locations={locations}
         onSelect={handlePickerSelect}
         onClose={() => setPickerIdx(null)}
@@ -1659,7 +1694,7 @@ export default function InvoiceModal({ onClose, onSave, saving, initial, default
     {/* product picker modal — for additional items */}
     {addPickerIdx !== null && (
       <ProductPickerModal
-        products={activeProducts}
+        products={filteredProducts}
         locations={locations}
         onSelect={handleAddPickerSelect}
         onClose={() => setAddPickerIdx(null)}

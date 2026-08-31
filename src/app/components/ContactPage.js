@@ -15,10 +15,10 @@ function useInView(t = 0.08) {
 }
 
 const contactInfo = [
-  { icon: "📧", label: "Email Us",     value: "support@novexa.com",  sub: "We reply within 24 hours",   color: "#2563EB", bg: "rgba(37,99,235,0.08)",   border: "rgba(37,99,235,0.35)",   glow: "rgba(37,99,235,0.25)",   href: "mailto:support@novexa.com" },
-  { icon: "💬", label: "WhatsApp",     value: "+92 300 1234567",      sub: "Chat with us directly",      color: "#F59E0B", bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.35)",  glow: "rgba(245,158,11,0.25)",  href: "https://wa.me/923001234567" },
-  { icon: "📍", label: "Location",     value: "Lahore, Pakistan",     sub: "Serving clients worldwide",  color: "#2563EB", bg: "rgba(37,99,235,0.08)",   border: "rgba(37,99,235,0.35)",   glow: "rgba(37,99,235,0.25)",   href: "#" },
-  { icon: "🕐", label: "Working Hours", value: "Mon–Sat, 9am–7pm",   sub: "PKT (UTC+5)",                color: "#F59E0B", bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.35)",  glow: "rgba(245,158,11,0.25)",  href: "#" },
+  { icon: "📧", label: "Email Us",     value: "novexaerp@gmail.com",  sub: "We reply within 24 hours",   color: "#2563EB", bg: "rgba(37,99,235,0.08)",   border: "rgba(37,99,235,0.35)",   glow: "rgba(37,99,235,0.25)",   href: "mailto:novexaerp@gmail.com" },
+  { icon: "💬", label: "WhatsApp",     value: "+92 3251507557",      sub: "Chat with us directly",      color: "#F59E0B", bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.35)",  glow: "rgba(245,158,11,0.25)",  href: "https://wa.me/923251507557" },
+  { icon: "📍", label: "Location",     value: "Karachi, Pakistan",     sub: "Serving clients worldwide",  color: "#2563EB", bg: "rgba(37,99,235,0.08)",   border: "rgba(37,99,235,0.35)",   glow: "rgba(37,99,235,0.25)",   href: "#" },
+  { icon: "🕐", label: "Working Hours", value: "Mon–Sat, 10am–10pm",   sub: "PKT (UTC+5)",                color: "#F59E0B", bg: "rgba(245,158,11,0.08)",  border: "rgba(245,158,11,0.35)",  glow: "rgba(245,158,11,0.25)",  href: "#" },
 ];
 
 const faqs = [
@@ -52,12 +52,39 @@ export default function ContactPage() {
   const [focused, setFocused]   = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading]   = useState(false);
+  const [error, setError]       = useState(null);
   const [openFaq, setOpenFaq]   = useState(null);
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => { setLoading(false); setSubmitted(true); }, 1500);
+    setError(null);
+    
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          category: form.subject,
+          subject: form.subject,
+          message: form.message,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to send message");
+      }
+
+      setSubmitted(true);
+    } catch (err) {
+      console.error("Contact form error:", err);
+      setError(err.message || "Something went wrong. Please try again.");
+    } finally {
+      setLoading(false);
+    }
   }
 
   return (
@@ -141,7 +168,7 @@ export default function ContactPage() {
               {/* quick options */}
               {[
                 { icon: "🎯", title: "Book a Demo",    desc: "See Novexa live in 20 minutes.", action: "Schedule via WhatsApp", href: "https://wa.me/923001234567", color: "#F59E0B", bg: "rgba(245,158,11,0.07)", border: "rgba(245,158,11,0.25)" },
-                { icon: "🛠️", title: "Technical Help", desc: "Issue with the platform? We fix fast.", action: "Email support", href: "mailto:support@novexa.com", color: "#2563EB", bg: "rgba(37,99,235,0.07)", border: "rgba(37,99,235,0.25)" },
+                { icon: "🛠️", title: "Technical Help", desc: "Issue with the platform? We fix fast.", action: "Email support", href: "mailto:novexaerp@gmail.com", color: "#2563EB", bg: "rgba(37,99,235,0.07)", border: "rgba(37,99,235,0.25)" },
                 { icon: "💼", title: "Sales Enquiry",  desc: "Pricing, plans, custom deals.", action: "Start conversation", href: "mailto:sales@novexa.com", color: "#F59E0B", bg: "rgba(245,158,11,0.07)", border: "rgba(245,158,11,0.25)" },
               ].map((opt) => (
                 <a key={opt.title} href={opt.href} target="_blank" rel="noopener noreferrer"
@@ -213,6 +240,12 @@ export default function ContactPage() {
                         onFocus={() => setFocused("message")} onBlur={() => setFocused(null)}
                         style={{ ...inputStyle(focused, "message"), resize: "none" }} />
                     </div>
+
+                    {error && (
+                      <div className="rounded-xl p-4" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)" }}>
+                        <p className="text-red-400 text-sm font-medium">❌ {error}</p>
+                      </div>
+                    )}
 
                     <button type="submit" disabled={loading} className="btn-primary w-full justify-center"
                       style={{ opacity: loading ? 0.7 : 1, cursor: loading ? "not-allowed" : "pointer" }}>

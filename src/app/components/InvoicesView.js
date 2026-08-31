@@ -75,6 +75,17 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
   const isStaff = !!staffContext;
   const staffPerms = isStaff ? (staffContext?.staffDoc?.permissions?.invoices || {}) : null;
   
+  // ★ FILTER PRODUCTS BY STAFF LOCATION ACCESS ★
+  // If staff has allowedLocations, only show products from those locations
+  const allowedLocations = isStaff ? (staffContext?.staffDoc?.allowedLocations || []) : [];
+  const filteredProducts = isStaff && allowedLocations.length > 0
+    ? products.filter(p => {
+        const included = allowedLocations.includes(p.locationId || "");
+        console.log(`🔍 Product Filter: ${p.name} (${p.locationId || "no-location"}) - ${included ? "✅ INCLUDED" : "❌ EXCLUDED"}`);
+        return included;
+      })
+    : products;
+  
   // Debug: Log permission state ALWAYS when component mounts
   useEffect(() => {
     console.log("🔍 InvoicesView Mount Debug:", {
@@ -84,8 +95,14 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
         staffName: staffContext.staffDoc?.name,
         staffUid: staffContext.staffDoc?.uid,
         role: staffContext.staffDoc?.role,
+        allowedLocations: staffContext.staffDoc?.allowedLocations,
       } : null,
       staffPerms,
+      allowedLocationsArray: allowedLocations,
+      allowedLocationsLength: allowedLocations.length,
+      totalProducts: products.length,
+      filteredProducts: filteredProducts.length,
+      sampleProducts: products.slice(0, 3).map(p => ({ name: p.name, locationId: p.locationId })),
       permissionsObject: staffContext?.staffDoc?.permissions,
       invoicePermissions: staffContext?.staffDoc?.permissions?.invoices,
     });
@@ -1416,9 +1433,10 @@ export default function InvoicesView({ uid, invoices, loading, products = [], lo
           onSave={handleSave}
           saving={saving}
           initial={editTarget?.form || null}
-          products={products}
+          products={filteredProducts}
           locations={locations}
           settingsLogo={userDoc?.logoDataUrl || ""}
+          staffContext={staffContext}
         />
       )}
 

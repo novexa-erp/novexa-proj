@@ -284,7 +284,7 @@ function buildUserConfirmationHTML({ name, category, subject, message }) {
         </td>
         <td width="4%"></td>
         <td width="48%">
-          <a href="tel:+923320262457" style="display:block;padding:14px 10px;background:#eff6ff;border:1.5px solid #93c5fd;border-radius:12px;text-decoration:none;text-align:center;">
+          <a href="tel:+923251507557" style="display:block;padding:14px 10px;background:#eff6ff;border:1.5px solid #93c5fd;border-radius:12px;text-decoration:none;text-align:center;">
             <div style="font-size:22px;margin-bottom:5px;">📞</div>
             <div style="font-size:13px;font-weight:800;color:#1d4ed8;">Call Us</div>
             <div style="font-size:11px;color:#2563eb;margin-top:2px;font-weight:600;">Mon–Sat, 9AM–8PM</div>
@@ -303,7 +303,7 @@ function buildUserConfirmationHTML({ name, category, subject, message }) {
     <div style="font-size:12px;color:#64748b;font-weight:500;">Smart Business Management Platform</div>
     <div style="margin-top:10px;font-size:11px;color:#94a3b8;">
       Please do not reply to this email &nbsp;·&nbsp;
-      <a href="https://wa.me/923320262457" style="color:#2563eb;text-decoration:none;font-weight:600;">Contact us on WhatsApp</a>
+      <a href="https://wa.me/923251507557" style="color:#2563eb;text-decoration:none;font-weight:600;">Contact us on WhatsApp</a>
     </div>
   </td></tr>
 

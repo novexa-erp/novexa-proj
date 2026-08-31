@@ -56,7 +56,7 @@ const PLAN_PRICES = {
 
 // ── Build PDF using pdf-lib ───────────────────────────────────────────────────
 async function buildInvoicePDF({ invoiceNumber, userName, userEmail, plan,
-                                  billingPeriod, paymentMethod, periodStart, activeTo, renewedAt }) {
+                                  billingPeriod, paymentMethod, periodStart, activeTo, renewedAt, isTrial, originalStart }) {
   const doc  = await PDFDocument.create();
   const page = doc.addPage([595, 842]);
   const W    = 595;
@@ -65,9 +65,9 @@ async function buildInvoicePDF({ invoiceNumber, userName, userEmail, plan,
   const bold = await doc.embedFont(StandardFonts.HelveticaBold);
   const reg  = await doc.embedFont(StandardFonts.Helvetica);
 
-  const prices    = PLAN_PRICES[plan] || PLAN_PRICES.starter;
-  const amount    = billingPeriod === "yearly" ? prices.yearly : prices.monthly;
-  const amtStr    = "Rs. " + amount.toLocaleString("en-PK");
+  const prices    = isTrial ? { monthly: 0, yearly: 0 } : (PLAN_PRICES[plan] || PLAN_PRICES.starter);
+  const amount    = isTrial ? 0 : (billingPeriod === "yearly" ? prices.yearly : prices.monthly);
+  const amtStr    = isTrial ? "FREE" : ("Rs. " + amount.toLocaleString("en-PK"));
   const label     = planLabel(plan);
   const totalDays = daysBetween(periodStart, activeTo);
   const issuedOn  = renewedAt
@@ -98,11 +98,13 @@ async function buildInvoicePDF({ invoiceNumber, userName, userEmail, plan,
 
   const invRight = W - bold.widthOfTextAtSize(invoiceNumber, 12) - 40;
   page.drawText(invoiceNumber, { x: invRight, y: H - 42, size: 12, font: bold, color: C.white });
-  page.drawText("SUBSCRIPTION INVOICE", { x: W - 40 - reg.widthOfTextAtSize("SUBSCRIPTION INVOICE", 8), y: H - 58, size: 8, font: reg, color: rgb(0.58, 0.76, 0.99) });
+  page.drawText(isTrial ? "TRIAL EXTENSION" : "SUBSCRIPTION INVOICE", { x: W - 40 - reg.widthOfTextAtSize(isTrial ? "TRIAL EXTENSION" : "SUBSCRIPTION INVOICE", 8), y: H - 58, size: 8, font: reg, color: rgb(0.58, 0.76, 0.99) });
 
-  // PAID badge
-  page.drawRectangle({ x: W - 100, y: H - 88, width: 62, height: 20, color: C.green });
-  page.drawText("PAID", { x: W - 95, y: H - 82, size: 9, font: bold, color: C.white });
+  // PAID / FREE badge
+  const badgeText = isTrial ? "FREE" : "PAID";
+  const badgeColor = isTrial ? C.amber : C.green;
+  page.drawRectangle({ x: W - 100, y: H - 88, width: 62, height: 20, color: badgeColor });
+  page.drawText(badgeText, { x: W - (isTrial ? 92 : 95), y: H - 82, size: 9, font: bold, color: C.white });
 
   // ── Bill To ──
   let y = H - 130;
@@ -117,10 +119,17 @@ async function buildInvoicePDF({ invoiceNumber, userName, userEmail, plan,
 
   // Right side — dates
   const rightX = 380;
-  page.drawText("Invoice Date:",   { x: rightX, y: H - 130, size: 8, font: reg,  color: C.gray });
-  page.drawText(issuedOn,          { x: rightX + 80, y: H - 130, size: 8, font: bold, color: C.dark });
-  page.drawText("Billing Period:", { x: rightX, y: H - 146, size: 8, font: reg,  color: C.gray });
-  page.drawText(fmtPeriod(billingPeriod), { x: rightX + 80, y: H - 146, size: 8, font: bold, color: C.dark });
+  let rightY = H - 130;
+  page.drawText("Invoice Date:",   { x: rightX, y: rightY, size: 8, font: reg,  color: C.gray });
+  page.drawText(issuedOn,          { x: rightX + 80, y: rightY, size: 8, font: bold, color: C.dark });
+  rightY -= 16;
+  if (isTrial && originalStart) {
+    page.drawText("First Registered:", { x: rightX, y: rightY, size: 8, font: reg,  color: C.gray });
+    page.drawText(fmtDateShort(originalStart), { x: rightX + 80, y: rightY, size: 8, font: bold, color: C.dark });
+    rightY -= 16;
+  }
+  page.drawText(isTrial ? "Extension Type:" : "Billing Period:", { x: rightX, y: rightY, size: 8, font: reg,  color: C.gray });
+  page.drawText(isTrial ? "Trial (+7 days)" : fmtPeriod(billingPeriod), { x: rightX + 80, y: rightY, size: 8, font: bold, color: C.dark });
 
   // ── Divider ──
   y = H - 190;
@@ -136,13 +145,17 @@ async function buildInvoicePDF({ invoiceNumber, userName, userEmail, plan,
   // ── Table row ──
   y -= 26;
   page.drawRectangle({ x: 40, y: y - 46, width: W - 80, height: 48, color: C.bg });
-  const descLine1 = `${label} Plan - ${fmtPeriod(billingPeriod)} Renewal`;
-  const descLine2 = `Subscription renewed for ${totalDays} days`;
+  const descLine1 = isTrial 
+    ? `${label} Plan - Trial Extension (+7 Days)`
+    : `${label} Plan - ${fmtPeriod(billingPeriod)} Renewal`;
+  const descLine2 = isTrial
+    ? `Trial period extended by 7 days`
+    : `Subscription renewed for ${totalDays} days`;
   page.drawText(descLine1, { x: 52, y: y - 12, size: 10, font: bold, color: C.dark });
   page.drawText(descLine2, { x: 52, y: y - 28, size: 8,  font: reg,  color: C.gray });
   page.drawText(`${fmtDateShort(periodStart)} to`, { x: 290, y: y - 12, size: 8, font: reg, color: C.dark });
   page.drawText(fmtDateShort(activeTo),            { x: 290, y: y - 24, size: 8, font: reg, color: C.dark });
-  page.drawText(amtStr, { x: W - 45 - bold.widthOfTextAtSize(amtStr, 10), y: y - 12, size: 10, font: bold, color: C.dark });
+  page.drawText(amtStr, { x: W - 45 - bold.widthOfTextAtSize(amtStr, isTrial ? 11 : 10), y: y - 12, size: isTrial ? 11 : 10, font: bold, color: isTrial ? C.amber : C.dark });
 
   // Row bottom line
   y -= 50;
@@ -169,12 +182,16 @@ async function buildInvoicePDF({ invoiceNumber, userName, userEmail, plan,
   // ── Payment details ──
   y -= 55;
   page.drawRectangle({ x: 40, y: y - 42, width: W - 80, height: 52, color: C.bg });
-  page.drawLine({ start: { x: 40, y: y + 8 }, end: { x: 40, y: y - 34 }, thickness: 3, color: C.blue });
-  page.drawText("PAYMENT DETAILS", { x: 52, y: y, size: 7, font: bold, color: C.gray });
-  page.drawText(`Payment received via ${fmtPayment(paymentMethod)} on ${issuedOn}.`,
-    { x: 52, y: y - 15, size: 9, font: reg, color: C.dark });
-  page.drawText(`Subscription: ${fmtDateShort(periodStart)} to ${fmtDateShort(activeTo)} (${totalDays} days)`,
-    { x: 52, y: y - 30, size: 9, font: reg, color: C.dark });
+  page.drawLine({ start: { x: 40, y: y + 8 }, end: { x: 40, y: y - 34 }, thickness: 3, color: isTrial ? C.amber : C.blue });
+  page.drawText(isTrial ? "TRIAL EXTENSION DETAILS" : "PAYMENT DETAILS", { x: 52, y: y, size: 7, font: bold, color: C.gray });
+  const paymentLine = isTrial
+    ? `Trial extension granted on ${issuedOn}. No payment required.`
+    : `Payment received via ${fmtPayment(paymentMethod)} on ${issuedOn}.`;
+  page.drawText(paymentLine, { x: 52, y: y - 15, size: 9, font: reg, color: C.dark });
+  const periodLine = isTrial
+    ? `Extended from ${fmtDateShort(periodStart)} to ${fmtDateShort(activeTo)} (+7 days)`
+    : `Subscription: ${fmtDateShort(periodStart)} to ${fmtDateShort(activeTo)} (${totalDays} days)`;
+  page.drawText(periodLine, { x: 52, y: y - 30, size: 9, font: reg, color: C.dark });
 
   // ── Footer ──
   page.drawLine({ start: { x: 40, y: 68 }, end: { x: W - 40, y: 68 }, thickness: 0.5, color: C.line });
@@ -295,7 +312,7 @@ export async function POST(request) {
     catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
     const { uid, userName, userEmail, plan, billingPeriod,
-            paymentMethod, activeFrom, activeTo, renewedAt, periodStart } = body;
+            paymentMethod, activeFrom, activeTo, renewedAt, periodStart, isTrial, originalStart } = body;
 
     if (!userEmail) return NextResponse.json({ error: "Missing userEmail" }, { status: 400 });
     if (!activeTo)  return NextResponse.json({ error: "Missing activeTo"  }, { status: 400 });
@@ -309,7 +326,7 @@ export async function POST(request) {
     const invoiceNumber = makeInvoiceNumber(uid, renewedAt);
     const label = planLabel(plan);
 
-    console.log(`[renewal-email] Generating PDF: ${invoiceNumber} for ${userEmail}`);
+    console.log(`[renewal-email] Generating ${isTrial ? "TRIAL" : "PAID"} PDF: ${invoiceNumber} for ${userEmail}`);
 
     // ── Generate PDF ──────────────────────────────────────────────────────
     let pdfBytes;
@@ -324,6 +341,8 @@ export async function POST(request) {
         periodStart: effectivePeriodStart,
         activeTo,
         renewedAt,
+        isTrial:     isTrial || false,
+        originalStart: originalStart || activeFrom,
       });
       console.log(`[renewal-email] PDF OK, ${pdfBytes.length} bytes`);
     } catch (pdfErr) {

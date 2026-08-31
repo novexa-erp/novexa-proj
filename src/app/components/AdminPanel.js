@@ -193,6 +193,14 @@ function calcRenewalEndDate(currentEndStr, period) {
   return d.toISOString().slice(0, 10);
 }
 
+// Trial renewal helper — extend by 7 days
+function calcTrialRenewalEndDate(currentEndStr) {
+  if (!currentEndStr) return "";
+  const d = new Date(currentEndStr + "T00:00:00");
+  d.setDate(d.getDate() + 7);
+  return d.toISOString().slice(0, 10);
+}
+
 // Get display start of next period (currentEnd + 1 day) — for UI display only
 function calcRenewalDisplayStart(currentEndStr) {
   if (!currentEndStr) return "";
@@ -282,37 +290,37 @@ function RegInvoiceDialog({ data, getToken, onToast, onClose }) {
               <span className="text-2xl">🎉</span>
               <h3 className="text-white font-black text-lg">User Registered!</h3>
             </div>
-            <p className="text-gray-400 text-xs">{data.name} ka account successfully bana diya</p>
+            <p className="text-gray-300 text-xs">{data.name} ka account successfully bana diya</p>
           </div>
           <button onClick={onClose}
-            className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-all">✕</button>
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 transition-all">✕</button>
         </div>
 
         {/* User Info */}
         <div className="px-6 py-4 flex flex-col gap-2"
           style={{ borderBottom: "1px solid rgba(255,255,255,0.07)" }}>
           <div className="flex items-center gap-2">
-            <span className="text-gray-500 text-xs w-20">Name</span>
+            <span className="text-gray-300 text-xs w-20">Name</span>
             <span className="text-white text-sm font-semibold">{data.name}</span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-gray-500 text-xs w-20">Email</span>
+            <span className="text-gray-300 text-xs w-20">Email</span>
             <span className="text-blue-300 text-sm font-mono">{data.email}</span>
           </div>
           {data.password && (
             <div className="flex items-center gap-2">
-              <span className="text-gray-500 text-xs w-20">Password</span>
+              <span className="text-gray-300 text-xs w-20">Password</span>
               <span className="text-amber-300 text-sm font-mono">{data.password}</span>
             </div>
           )}
           <div className="flex items-center gap-2">
-            <span className="text-gray-500 text-xs w-20">Plan</span>
+            <span className="text-gray-300 text-xs w-20">Plan</span>
             <span className="text-emerald-300 text-sm font-semibold">
               {planLabel(data.plan)}{data.subscriptionType === "trial" ? " (Trial)" : ""}
             </span>
           </div>
           <div className="flex items-center gap-2">
-            <span className="text-gray-500 text-xs w-20">Active</span>
+            <span className="text-gray-300 text-xs w-20">Active</span>
             <span className="text-gray-300 text-xs">{data.activeFrom} → {data.activeTo}</span>
           </div>
         </div>
@@ -538,10 +546,10 @@ function UserInvoiceDialog({ data, getToken, onToast, onClose }) {
               <span className="text-xl">📄</span>
               <h3 className="text-white font-black text-lg">Registration Invoice</h3>
             </div>
-            <p className="text-gray-400 text-xs">{data.name} · {data.email}</p>
+            <p className="text-gray-300 text-xs">{data.name} · {data.email}</p>
           </div>
           <button onClick={onClose}
-            className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-400 hover:text-white hover:bg-white/10 transition-all">✕</button>
+            className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-300 hover:text-white hover:bg-white/10 transition-all">✕</button>
         </div>
 
         {/* Invoice Preview */}
@@ -549,7 +557,7 @@ function UserInvoiceDialog({ data, getToken, onToast, onClose }) {
           {loading ? (
             <div className="flex items-center justify-center gap-3 py-6">
               <div className="w-5 h-5 rounded-full border-2 border-t-amber-400 border-transparent animate-spin" />
-              <span className="text-gray-400 text-sm">Invoice generate ho rahi hai...</span>
+              <span className="text-gray-300 text-sm">Invoice generate ho rahi hai...</span>
             </div>
           ) : error ? (
             <div className="text-center py-4">
@@ -561,20 +569,20 @@ function UserInvoiceDialog({ data, getToken, onToast, onClose }) {
               <div className="rounded-xl p-4 flex flex-col gap-2"
                 style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)" }}>
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-500 text-xs uppercase tracking-widest font-bold">Invoice #</span>
+                  <span className="text-gray-300 text-xs uppercase tracking-widest font-bold">Invoice #</span>
                   <span className="text-amber-300 text-sm font-mono font-bold">{invoiceNum}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-500 text-xs uppercase tracking-widest font-bold">Plan</span>
+                  <span className="text-gray-300 text-xs uppercase tracking-widest font-bold">Plan</span>
                   <span className="text-white text-sm font-semibold">{planLabel(data.plan)}{isTrial ? " (Trial)" : ""}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-gray-500 text-xs uppercase tracking-widest font-bold">Period</span>
+                  <span className="text-gray-300 text-xs uppercase tracking-widest font-bold">Period</span>
                   <span className="text-gray-300 text-xs">{data.activeFrom} → {data.activeTo}</span>
                 </div>
                 {!isTrial && amount !== null && (
                   <div className="flex items-center justify-between">
-                    <span className="text-gray-500 text-xs uppercase tracking-widest font-bold">Amount</span>
+                    <span className="text-gray-300 text-xs uppercase tracking-widest font-bold">Amount</span>
                     <span className="text-emerald-400 text-sm font-bold">Rs. {(amount || 0).toLocaleString("en-PK")}</span>
                   </div>
                 )}
@@ -1109,139 +1117,146 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
             </div>
           </div>
 
-          {/* ── Device / Session Limit ── */}
-          <div className="rounded-xl p-4" style={{ background: "rgba(139,92,246,0.05)", border: "1px solid rgba(139,92,246,0.15)" }}>
-            <p className="text-purple-400 text-xs font-bold uppercase tracking-widest mb-3">📱 Device / Session Limit</p>
-            <div className="flex items-center gap-3">
-              {/* Decrement */}
-              <button type="button"
-                onClick={() => setForm(p => ({ ...p, maxDevices: String(Math.max(1, Number(p.maxDevices) - 1)) }))}
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold transition-all hover:scale-110 flex-shrink-0"
-                style={{ background: "rgba(139,92,246,0.15)", border: "1.5px solid rgba(139,92,246,0.35)", color: "#c4b5fd" }}>
-                −
-              </button>
+          {/* ── Device / Session Limit (only for Enterprise plan) ── */}
+          {form.plan === "enterprise" && (
+            <div className="rounded-xl p-4" style={{ background: "rgba(139,92,246,0.05)", border: "1px solid rgba(139,92,246,0.15)" }}>
+              <p className="text-purple-400 text-xs font-bold uppercase tracking-widest mb-3">📱 Device / Session Limit</p>
+              <div className="flex items-center gap-3">
+                {/* Decrement */}
+                <button type="button"
+                  onClick={() => setForm(p => ({ ...p, maxDevices: String(Math.max(1, Number(p.maxDevices) - 1)) }))}
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold transition-all hover:scale-110 flex-shrink-0"
+                  style={{ background: "rgba(139,92,246,0.15)", border: "1.5px solid rgba(139,92,246,0.35)", color: "#c4b5fd" }}>
+                  −
+                </button>
 
-              {/* Number input */}
-              <div className="flex-1 relative">
-                <input
-                  type="number"
-                  min="1"
-                  max="100"
-                  value={form.maxDevices}
-                  onChange={e => {
-                    const val = e.target.value.replace(/[^0-9]/g, "");
-                    const num = Math.max(1, Math.min(100, Number(val) || 1));
-                    setForm(p => ({ ...p, maxDevices: String(num) }));
-                  }}
-                  className="w-full text-center font-black text-lg outline-none"
-                  style={{
-                    background: "rgba(139,92,246,0.1)",
-                    border: "1.5px solid rgba(139,92,246,0.4)",
-                    borderRadius: 10,
-                    padding: "8px 12px",
-                    color: "#c4b5fd",
-                    MozAppearance: "textfield",
-                  }}
-                />
+                {/* Number input */}
+                <div className="flex-1 relative">
+                  <input
+                    type="number"
+                    min="1"
+                    max="100"
+                    value={form.maxDevices}
+                    onChange={e => {
+                      const val = e.target.value.replace(/[^0-9]/g, "");
+                      const num = Math.max(1, Math.min(100, Number(val) || 1));
+                      setForm(p => ({ ...p, maxDevices: String(num) }));
+                    }}
+                    className="w-full text-center font-black text-lg outline-none"
+                    style={{
+                      background: "rgba(139,92,246,0.1)",
+                      border: "1.5px solid rgba(139,92,246,0.4)",
+                      borderRadius: 10,
+                      padding: "8px 12px",
+                      color: "#c4b5fd",
+                      MozAppearance: "textfield",
+                    }}
+                  />
+                </div>
+
+                {/* Increment */}
+                <button type="button"
+                  onClick={() => setForm(p => ({ ...p, maxDevices: String(Math.min(100, Number(p.maxDevices) + 1)) }))}
+                  className="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold transition-all hover:scale-110 flex-shrink-0"
+                  style={{ background: "rgba(139,92,246,0.15)", border: "1.5px solid rgba(139,92,246,0.35)", color: "#c4b5fd" }}>
+                  +
+                </button>
+
+                <span className="text-gray-300 text-sm font-medium flex-shrink-0">
+                  {Number(form.maxDevices) === 1 ? "Device" : "Devices"}
+                </span>
               </div>
 
-              {/* Increment */}
-              <button type="button"
-                onClick={() => setForm(p => ({ ...p, maxDevices: String(Math.min(100, Number(p.maxDevices) + 1)) }))}
-                className="w-10 h-10 rounded-xl flex items-center justify-center text-lg font-bold transition-all hover:scale-110 flex-shrink-0"
-                style={{ background: "rgba(139,92,246,0.15)", border: "1.5px solid rgba(139,92,246,0.35)", color: "#c4b5fd" }}>
-                +
-              </button>
-
-              <span className="text-gray-300 text-sm font-medium flex-shrink-0">
-                {Number(form.maxDevices) === 1 ? "Device" : "Devices"}
-              </span>
+              {/* Quick presets */}
+              <div className="flex gap-2 mt-3">
+                {[1, 2, 3, 5, 10].map(n => (
+                  <button key={n} type="button"
+                    onClick={() => setForm(p => ({ ...p, maxDevices: String(n) }))}
+                    className="flex-1 py-1.5 rounded-lg text-xs font-bold transition-all"
+                    style={{
+                      background: Number(form.maxDevices) === n ? "rgba(139,92,246,0.25)" : "rgba(255,255,255,0.03)",
+                      border: `1px solid ${Number(form.maxDevices) === n ? "rgba(139,92,246,0.5)" : "rgba(255,255,255,0.06)"}`,
+                      color: Number(form.maxDevices) === n ? "#c4b5fd" : "#4b5563",
+                    }}>
+                    {n}
+                  </button>
+                ))}
+              </div>
+              <p className="text-gray-300 text-[10px] mt-2">Aap koi bhi number set kar sakte hain (1–100)</p>
             </div>
+          )}
 
-            {/* Quick presets */}
-            <div className="flex gap-2 mt-3">
-              {[1, 2, 3, 5, 10].map(n => (
-                <button key={n} type="button"
-                  onClick={() => setForm(p => ({ ...p, maxDevices: String(n) }))}
-                  className="flex-1 py-1.5 rounded-lg text-xs font-bold transition-all"
-                  style={{
-                    background: Number(form.maxDevices) === n ? "rgba(139,92,246,0.25)" : "rgba(255,255,255,0.03)",
-                    border: `1px solid ${Number(form.maxDevices) === n ? "rgba(139,92,246,0.5)" : "rgba(255,255,255,0.06)"}`,
-                    color: Number(form.maxDevices) === n ? "#c4b5fd" : "#4b5563",
-                  }}>
-                  {n}
-                </button>
-              ))}
+          {/* ── Billing Period (hidden for trial) ── */}
+          {form.subscriptionType !== "trial" && (
+            <div className="rounded-xl p-4" style={{ background: "rgba(16,185,129,0.04)", border: "1px solid rgba(16,185,129,0.18)" }}>
+              <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3">🗓️ Billing Period</p>
+              <div className="grid grid-cols-2 gap-3">
+                {[
+                  { id: "monthly",  label: "📅 Monthly",  desc: "Har mahina renewal" },
+                  { id: "yearly",   label: "📆 Yearly",   desc: "Saal bhar ki plan" },
+                ].map(opt => (
+                  <button key={opt.id} type="button"
+                    onClick={() => handleBillingPeriodChange(opt.id)}
+                    className="flex flex-col items-start px-4 py-3 rounded-xl text-left transition-all"
+                    style={{
+                      background: form.billingPeriod === opt.id ? "rgba(16,185,129,0.18)" : "rgba(255,255,255,0.03)",
+                      border: `1.5px solid ${form.billingPeriod === opt.id ? "#10B981" : "rgba(255,255,255,0.08)"}`,
+                      boxShadow: form.billingPeriod === opt.id ? "0 0 14px rgba(16,185,129,0.2)" : "none",
+                    }}>
+                    <span className="text-sm font-bold mb-0.5" style={{ color: form.billingPeriod === opt.id ? "#34d399" : "#9ca3af" }}>
+                      {opt.label}
+                    </span>
+                    <span className="text-[10px]" style={{ color: form.billingPeriod === opt.id ? "#d1d5db" : "#4b5563" }}>
+                      {opt.desc}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
-            <p className="text-gray-300 text-[10px] mt-2">Aap koi bhi number set kar sakte hain (1–100)</p>
-          </div>
+          )}
 
-          {/* ── Billing Period ── */}
-          <div className="rounded-xl p-4" style={{ background: "rgba(16,185,129,0.04)", border: "1px solid rgba(16,185,129,0.18)" }}>
-            <p className="text-emerald-400 text-xs font-bold uppercase tracking-widest mb-3">🗓️ Billing Period</p>
-            <div className="grid grid-cols-2 gap-3">
-              {[
-                { id: "monthly",  label: "📅 Monthly",  desc: "Har mahina renewal" },
-                { id: "yearly",   label: "📆 Yearly",   desc: "Saal bhar ki plan" },
-              ].map(opt => (
-                <button key={opt.id} type="button"
-                  onClick={() => handleBillingPeriodChange(opt.id)}
-                  className="flex flex-col items-start px-4 py-3 rounded-xl text-left transition-all"
-                  style={{
-                    background: form.billingPeriod === opt.id ? "rgba(16,185,129,0.18)" : "rgba(255,255,255,0.03)",
-                    border: `1.5px solid ${form.billingPeriod === opt.id ? "#10B981" : "rgba(255,255,255,0.08)"}`,
-                    boxShadow: form.billingPeriod === opt.id ? "0 0 14px rgba(16,185,129,0.2)" : "none",
-                  }}>
-                  <span className="text-sm font-bold mb-0.5" style={{ color: form.billingPeriod === opt.id ? "#34d399" : "#9ca3af" }}>
-                    {opt.label}
-                  </span>
-                  <span className="text-[10px]" style={{ color: form.billingPeriod === opt.id ? "#d1d5db" : "#4b5563" }}>
-                    {opt.desc}
-                  </span>
-                </button>
-              ))}
+          {/* ── Payment Method (hidden for trial) ── */}
+          {form.subscriptionType !== "trial" && (
+            <div className="rounded-xl p-4" style={{ background: "rgba(245,158,11,0.04)", border: "1px solid rgba(245,158,11,0.18)" }}>
+              <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-3">💳 Payment Method</p>
+              <div className="grid grid-cols-3 gap-3">
+                {[
+                  { id: "online",  label: "🌐 Online",  desc: "Card / Bank transfer" },
+                  { id: "cash",    label: "💵 Cash",     desc: "Naqad ada ki" },
+                  { id: "cheque",  label: "🧾 Cheque",  desc: "Cheque se payment" },
+                ].map(opt => (
+                  <button key={opt.id} type="button"
+                    onClick={() => setForm(p => ({ ...p, paymentMethod: opt.id }))}
+                    className="flex flex-col items-start px-3 py-2.5 rounded-xl text-left transition-all"
+                    style={{
+                      background: form.paymentMethod === opt.id ? "rgba(245,158,11,0.18)" : "rgba(255,255,255,0.03)",
+                      border: `1.5px solid ${form.paymentMethod === opt.id ? "#F59E0B" : "rgba(255,255,255,0.08)"}`,
+                      boxShadow: form.paymentMethod === opt.id ? "0 0 12px rgba(245,158,11,0.2)" : "none",
+                    }}>
+                    <span className="text-xs font-bold mb-0.5" style={{ color: form.paymentMethod === opt.id ? "#fbbf24" : "#9ca3af" }}>
+                      {opt.label}
+                    </span>
+                    <span className="text-[10px] leading-tight" style={{ color: form.paymentMethod === opt.id ? "#d1d5db" : "#4b5563" }}>
+                      {opt.desc}
+                    </span>
+                  </button>
+                ))}
+              </div>
             </div>
-          </div>
-
-          {/* ── Payment Method ── */}
-          <div className="rounded-xl p-4" style={{ background: "rgba(245,158,11,0.04)", border: "1px solid rgba(245,158,11,0.18)" }}>
-            <p className="text-amber-400 text-xs font-bold uppercase tracking-widest mb-3">💳 Payment Method</p>
-            <div className="grid grid-cols-3 gap-3">
-              {[
-                { id: "online",  label: "🌐 Online",  desc: "Card / Bank transfer" },
-                { id: "cash",    label: "💵 Cash",     desc: "Naqad ada ki" },
-                { id: "cheque",  label: "🧾 Cheque",  desc: "Cheque se payment" },
-              ].map(opt => (
-                <button key={opt.id} type="button"
-                  onClick={() => setForm(p => ({ ...p, paymentMethod: opt.id }))}
-                  className="flex flex-col items-start px-3 py-2.5 rounded-xl text-left transition-all"
-                  style={{
-                    background: form.paymentMethod === opt.id ? "rgba(245,158,11,0.18)" : "rgba(255,255,255,0.03)",
-                    border: `1.5px solid ${form.paymentMethod === opt.id ? "#F59E0B" : "rgba(255,255,255,0.08)"}`,
-                    boxShadow: form.paymentMethod === opt.id ? "0 0 12px rgba(245,158,11,0.2)" : "none",
-                  }}>
-                  <span className="text-xs font-bold mb-0.5" style={{ color: form.paymentMethod === opt.id ? "#fbbf24" : "#9ca3af" }}>
-                    {opt.label}
-                  </span>
-                  <span className="text-[10px] leading-tight" style={{ color: form.paymentMethod === opt.id ? "#d1d5db" : "#4b5563" }}>
-                    {opt.desc}
-                  </span>
-                </button>
-              ))}
-            </div>
-          </div>
+          )}
 
           {/* ── Renew Subscription (edit mode only) ── */}
           {isEdit && (() => {
             // Renewal logic:
             // - activeFrom stays the SAME (original start date, never changes)
-            // - newEnd   = current activeTo + 1 month/year
+            // - newEnd   = current activeTo + 1 month/year (or +7 days for trial)
             const currentEnd  = form.activeTo;
             const currentFrom = form.activeFrom;   // stays unchanged
-            const period      = form.billingPeriod || "monthly";
+            const isTrial     = form.subscriptionType === "trial";
+            const period      = isTrial ? "trial" : (form.billingPeriod || "monthly");
 
-            // New end = extend current end by 1 month or 1 year
-            const newEnd = currentEnd ? calcRenewalEndDate(currentEnd, period) : "";
+            // New end = extend current end by 7 days (trial) or 1 month/year (active)
+            const newEnd = currentEnd ? (isTrial ? calcTrialRenewalEndDate(currentEnd) : calcRenewalEndDate(currentEnd, period)) : "";
             // Display start of next period (currentEnd + 1 day) — shown in UI only, not saved
             const displayNewStart = calcRenewalDisplayStart(currentEnd);
 
@@ -1262,7 +1277,8 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                   uid:           initial.uid,
                   // activeFrom intentionally NOT sent — keep original
                   activeTo:      newEnd,
-                  paymentMethod: renewPayMethod,
+                  // Only send paymentMethod if not trial
+                  ...(isTrial ? {} : { paymentMethod: renewPayMethod }),
                   lastRenewedAt: renewedAt,
                   lastRenewedBy: "admin",
                 };
@@ -1270,11 +1286,11 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                 const data = await res.json();
                 if (!res.ok) throw new Error(data.error);
                 // Only update activeTo in form, keep activeFrom as-is
-                setForm(p => ({ ...p, activeTo: newEnd, paymentMethod: renewPayMethod }));
+                setForm(p => ({ ...p, activeTo: newEnd, ...(isTrial ? {} : { paymentMethod: renewPayMethod }) }));
                 setRenewDone(true);
 
-                // ── Send renewal confirmation email ──────────────────────
-                if (initial.email) {
+                // ── Send renewal confirmation email (skip for trial) ──────────────────────
+                if (initial.email && !isTrial) {
                   try {
                     const emailRes  = await fetch("/api/admin/send-renewal-email", {
                       method:  "POST",
@@ -1290,6 +1306,7 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                         activeTo:      newEnd,
                         periodStart:   displayNewStart,
                         renewedAt,
+                        isTrial:       false,
                       }),
                     });
                     const emailData = await emailRes.json();
@@ -1301,7 +1318,37 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                   }
                 }
 
-                setRenewSuccess({ newStart: displayNewStart, newEnd, payMethod: renewPayMethod });
+                // ── Send trial extension email ──────────────────────────────────────────
+                if (initial.email && isTrial) {
+                  try {
+                    const emailRes  = await fetch("/api/admin/send-renewal-email", {
+                      method:  "POST",
+                      headers,
+                      body: JSON.stringify({
+                        uid:           initial.uid,
+                        userName:      initial.name || initial.email,
+                        userEmail:     initial.email,
+                        plan:          form.plan,
+                        billingPeriod: "trial",
+                        paymentMethod: null,
+                        activeFrom:    currentFrom,
+                        activeTo:      newEnd,
+                        periodStart:   displayNewStart,
+                        renewedAt,
+                        isTrial:       true,
+                        originalStart: currentFrom, // Original registration date
+                      }),
+                    });
+                    const emailData = await emailRes.json();
+                    if (!emailRes.ok) {
+                      onToast?.(`Extended but email failed: ${emailData.error || emailRes.status}`, "error");
+                    }
+                  } catch (emailErr) {
+                    onToast?.(`Extended but email error: ${emailErr.message}`, "error");
+                  }
+                }
+
+                setRenewSuccess({ newStart: displayNewStart, newEnd, payMethod: isTrial ? null : renewPayMethod });
                 onRenewSuccess?.();
               } catch (err) {
                 onToast?.(err.message || "Renewal failed", "error");
@@ -1370,14 +1417,14 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                           </span>
                         </div>
                         <p className="text-gray-300 text-[10px] mt-1.5">
-                          +{period === "yearly" ? "1 year" : "1 month"} from current end date
+                          +{isTrial ? "7 days" : period === "yearly" ? "1 year" : "1 month"} from current end date
                         </p>
                       </div>
                     </div>
                   )}
 
-                  {/* Payment method for renewal */}
-                  {!renewDone && (
+                  {/* Payment method for renewal (hidden for trial) */}
+                  {!renewDone && !isTrial && (
                     <div>
                       <p className="text-gray-300 text-[10px] uppercase tracking-widest font-bold mb-2">💳 Renewal Payment Method</p>
                       <div className="grid grid-cols-3 gap-2">
@@ -1401,6 +1448,17 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                     </div>
                   )}
 
+                  {/* Trial info message */}
+                  {!renewDone && isTrial && (
+                    <div className="flex items-center gap-2 px-3 py-2 rounded-lg"
+                      style={{ background: "rgba(245,158,11,0.08)", border: "1px solid rgba(245,158,11,0.2)" }}>
+                      <span className="text-amber-400 text-sm">ℹ️</span>
+                      <p className="text-amber-400 text-[11px] font-medium">
+                        Trial extension — no payment required. Account will remain frozen after extension until upgraded.
+                      </p>
+                    </div>
+                  )}
+
                   {/* Renew / Renewed button */}
                   {renewDone ? (
                     <div className="flex items-center justify-center gap-2 py-2.5 rounded-xl text-sm font-bold"
@@ -1412,12 +1470,12 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                       onClick={() => setRenewConfirm(true)}
                       className="w-full py-2.5 rounded-xl text-sm font-black transition-all hover:scale-[1.01] active:scale-[0.99]"
                       style={{
-                        background: "linear-gradient(135deg,#10B981,#059669)",
+                        background: isTrial ? "linear-gradient(135deg,#F59E0B,#D97706)" : "linear-gradient(135deg,#10B981,#059669)",
                         color: "#fff",
                         opacity: !newEnd ? 0.5 : 1,
-                        boxShadow: "0 4px 16px rgba(16,185,129,0.3)",
+                        boxShadow: isTrial ? "0 4px 16px rgba(245,158,11,0.3)" : "0 4px 16px rgba(16,185,129,0.3)",
                       }}>
-                      🔄 Renew Subscription (+{period === "yearly" ? "1 Year" : "1 Month"})
+                      {isTrial ? "⏳ Extend Trial (+7 Days)" : `🔄 Renew Subscription (+${period === "yearly" ? "1 Year" : "1 Month"})`}
                     </button>
                   )}
                 </div>
@@ -3924,7 +3982,7 @@ export default function AdminPanel() {
                 style={{ background:"linear-gradient(135deg,rgba(255,255,255,0.04),rgba(255,255,255,0.02))", border:"1px solid rgba(255,255,255,0.08)" }}>
 
                 <div className="hidden md:grid gap-4 px-5 py-3 text-[10px] font-bold uppercase tracking-widest"
-                  style={{ color:"#4b5563", borderBottom:"1px solid rgba(255,255,255,0.06)", gridTemplateColumns:"2fr 2fr 1.2fr 1.8fr 1fr 0.8fr 1fr" }}>
+                  style={{ color:"#fff", borderBottom:"1px solid rgba(255,255,255,0.06)", gridTemplateColumns:"2fr 2fr 1.2fr 1.8fr 1fr 0.8fr 1fr" }}>
                   <span>User</span><span>Email</span><span>Phone</span><span>Subscription</span><span>Status</span><span className="text-center">📧 Email</span><span>Actions</span>
                 </div>
 
