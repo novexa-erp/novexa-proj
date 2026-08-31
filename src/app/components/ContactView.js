@@ -121,7 +121,7 @@ function SuccessPopup({ email, onClose }) {
         {/* Buttons */}
         <div style={{ display:"flex", gap:10 }}>
           <a
-            href="https://wa.me/923320262457"
+            href="https://wa.me/923251507557"
             target="_blank"
             rel="noopener noreferrer"
             style={{
@@ -506,7 +506,7 @@ function ContactForm({ userDoc, user }) {
   );
 }
 
-const WHATSAPP_NUMBER = "923320262457"; // Change to actual Novexa number
+const WHATSAPP_NUMBER = "923251507557"; // Change to actual Novexa number
 
 export default function ContactView({ userDoc, user }) {
   const [copied, setCopied] = useState(null);
@@ -561,7 +561,7 @@ export default function ContactView({ userDoc, user }) {
       border:   "rgba(139,92,246,0.25)",
       bg:       "rgba(139,92,246,0.06)",
       badge:    null,
-      action: () => window.open("tel:+923320262457"),
+      action: () => window.open("tel:+923251507557"),
       actionLabel: "Call Now →",
     },
   ];

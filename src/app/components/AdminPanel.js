@@ -4472,6 +4472,8 @@ export default function AdminPanel() {
     return null;
   });
   const [pendingAddonCount, setPendingAddonCount] = useState(0); // live badge for add-on requests
+  const [openActionsMenuId, setOpenActionsMenuId] = useState(null); // for actions dropdown
+  const actionsMenuRef = useRef(null);
 
   /* ── auth guard ── */
   useEffect(() => {
@@ -4490,6 +4492,19 @@ export default function AdminPanel() {
     const unsub = onSnapshot(q, snap => setPendingAddonCount(snap.size), () => {});
     return () => unsub();
   }, [user]);
+
+  /* ── click outside to close actions dropdown ── */
+  useEffect(() => {
+    function handleClickOutside(e) {
+      if (actionsMenuRef.current && !actionsMenuRef.current.contains(e.target)) {
+        setOpenActionsMenuId(null);
+      }
+    }
+    if (openActionsMenuId) {
+      document.addEventListener("mousedown", handleClickOutside);
+      return () => document.removeEventListener("mousedown", handleClickOutside);
+    }
+  }, [openActionsMenuId]);
 
   /* ── toast ── */
   const toast = useCallback((message, type = "success") => {
@@ -5126,50 +5141,74 @@ export default function AdminPanel() {
                             </button>
                           </div>
 
-                          <div className="flex items-center gap-1.5">
-                            <button onClick={() => {
-                              setSelectedUid(u.uid);
-                              if (typeof window !== "undefined") localStorage.setItem("adminSelectedUid", u.uid);
-                            }} title="View Details"
-                              className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-purple-500/20 hover:scale-110">
-                              <span className="text-sm">👁️</span>
-                            </button>
-                            <button onClick={() => setInvoiceUser({
-                              uid:              u.uid,
-                              name:             u.name,
-                              email:            u.email,
-                              plan:             u.plan,
-                              billingPeriod:    u.billingPeriod,
-                              paymentMethod:    u.paymentMethod,
-                              activeFrom:       u.activeFrom,
-                              activeTo:         u.activeTo,
-                              subscriptionType: u.subscriptionType,
-                            })} title="View Invoice"
-                              className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-amber-500/20 hover:scale-110">
-                              <span className="text-sm">📄</span>
-                            </button>
-                            <button onClick={() => setEditUser(u)} title="Edit"
-                              className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-white/10 hover:scale-110">
-                              <span className="text-sm">✏️</span>
-                            </button>
-                            <button onClick={() => setUpgradeUser(u)} title="Upgrade Plan"
-                              className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-purple-500/20 hover:scale-110">
-                              <span className="text-sm">⬆️</span>
-                            </button>
-                            <button onClick={() => setRenewUser(u)} title="Renew Subscription"
-                              className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-emerald-500/20 hover:scale-110">
-                              <span className="text-sm">🔄</span>
-                            </button>
+                          <div className="relative" ref={openActionsMenuId === u.uid ? actionsMenuRef : null}>
                             <button
-                              onClick={() => setConfirm({ type:"freeze", uid:u.uid, name:u.name, currentStatus:u.status })}
-                              title={u.status==="frozen"?"Unfreeze":"Freeze"}
-                              className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-blue-500/20 hover:scale-110">
-                              <span className="text-sm">{u.status==="frozen"?"🔓":"🔒"}</span>
+                              onClick={() => setOpenActionsMenuId(openActionsMenuId === u.uid ? null : u.uid)}
+                              title="Actions"
+                              className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all hover:scale-105 whitespace-nowrap"
+                              style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)" }}>
+                              ⚡ Actions ▾
                             </button>
-                            <button onClick={() => setConfirm({ type:"delete", uid:u.uid, name:u.name })} title="Remove"
-                              className="w-7 h-7 rounded-lg flex items-center justify-center transition-all hover:bg-red-500/20 hover:scale-110">
-                              <span className="text-sm">🗑️</span>
-                            </button>
+
+                            {openActionsMenuId === u.uid && (
+                              <div className="absolute right-0 top-full mt-1 z-50 rounded-xl overflow-hidden"
+                                style={{ background: "#0d1117", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 8px 32px rgba(0,0,0,0.6)", minWidth: 180 }}>
+                                
+                                {/* View Details */}
+                                <button onClick={() => { setOpenActionsMenuId(null); setSelectedUid(u.uid); if (typeof window !== "undefined") localStorage.setItem("adminSelectedUid", u.uid); }}
+                                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                                  style={{ color: "#60A5FA" }}>
+                                  👁️ View Details
+                                </button>
+
+                                {/* View Invoice */}
+                                <button onClick={() => { setOpenActionsMenuId(null); setInvoiceUser({
+                                  uid: u.uid, name: u.name, email: u.email, plan: u.plan,
+                                  billingPeriod: u.billingPeriod, paymentMethod: u.paymentMethod,
+                                  activeFrom: u.activeFrom, activeTo: u.activeTo,
+                                  subscriptionType: u.subscriptionType,
+                                }); }}
+                                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                                  style={{ color: "#FBBF24" }}>
+                                  📄 View Invoice
+                                </button>
+
+                                {/* Edit */}
+                                <button onClick={() => { setOpenActionsMenuId(null); setEditUser(u); }}
+                                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                                  style={{ color: "#A78BFA" }}>
+                                  ✏️ Edit
+                                </button>
+
+                                {/* Upgrade */}
+                                <button onClick={() => { setOpenActionsMenuId(null); setUpgradeUser(u); }}
+                                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                                  style={{ color: "#C084FC" }}>
+                                  ⬆️ Upgrade
+                                </button>
+
+                                {/* Renew */}
+                                <button onClick={() => { setOpenActionsMenuId(null); setRenewUser(u); }}
+                                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                                  style={{ color: "#34D399" }}>
+                                  🔄 Renew
+                                </button>
+
+                                {/* Freeze/Unfreeze */}
+                                <button onClick={() => { setOpenActionsMenuId(null); setConfirm({ type:"freeze", uid:u.uid, name:u.name, currentStatus:u.status }); }}
+                                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                                  style={{ color: "#60A5FA" }}>
+                                  {u.status === "frozen" ? "🔓" : "🔒"} {u.status === "frozen" ? "Unfreeze" : "Freeze"}
+                                </button>
+
+                                {/* Delete */}
+                                <button onClick={() => { setOpenActionsMenuId(null); setConfirm({ type:"delete", uid:u.uid, name:u.name }); }}
+                                  className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                                  style={{ color: "#F87171" }}>
+                                  🗑️ Delete
+                                </button>
+                              </div>
+                            )}
                           </div>
                         </div>
                       );

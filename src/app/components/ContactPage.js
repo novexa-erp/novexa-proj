@@ -167,7 +167,7 @@ export default function ContactPage() {
 
               {/* quick options */}
               {[
-                { icon: "🎯", title: "Book a Demo",    desc: "See Novexa live in 20 minutes.", action: "Schedule via WhatsApp", href: "https://wa.me/923001234567", color: "#F59E0B", bg: "rgba(245,158,11,0.07)", border: "rgba(245,158,11,0.25)" },
+                { icon: "🎯", title: "Book a Demo",    desc: "See Novexa live in 20 minutes.", action: "Schedule via WhatsApp", href: "https://wa.me/923251507557", color: "#F59E0B", bg: "rgba(245,158,11,0.07)", border: "rgba(245,158,11,0.25)" },
                 { icon: "🛠️", title: "Technical Help", desc: "Issue with the platform? We fix fast.", action: "Email support", href: "mailto:novexaerp@gmail.com", color: "#2563EB", bg: "rgba(37,99,235,0.07)", border: "rgba(37,99,235,0.25)" },
                 { icon: "💼", title: "Sales Enquiry",  desc: "Pricing, plans, custom deals.", action: "Start conversation", href: "mailto:sales@novexa.com", color: "#F59E0B", bg: "rgba(245,158,11,0.07)", border: "rgba(245,158,11,0.25)" },
               ].map((opt) => (

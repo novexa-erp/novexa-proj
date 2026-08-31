@@ -167,7 +167,7 @@ export default function ComingSoonView({
         <p className="text-gray-500 text-xs leading-relaxed">
           This feature will be available soon. Contact{" "}
           <a
-            href="https://wa.me/923001234567"
+            href="https://wa.me/923251507557"
             target="_blank"
             rel="noopener noreferrer"
             className="font-bold transition-colors hover:opacity-80"

@@ -37,7 +37,7 @@ const contactInfo = [
     bg: "rgba(16,185,129,0.08)",
     border: "rgba(16,185,129,0.25)",
     glow: "rgba(16,185,129,0.2)",
-    href: "https://wa.me/923001234567",
+    href: "https://wa.me/923251507557",
   },
   {
     icon: "🌐",

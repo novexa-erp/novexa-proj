@@ -1014,7 +1014,7 @@ function DashboardContent() {
               </p>
             </div>
             <div className="px-6 pb-6 flex flex-col gap-2">
-              <a href="https://wa.me/923001234567?text=Hello%20Novexa%2C%20I%20want%20to%20upgrade%20my%20plan."
+              <a href="https://wa.me/923251507557?text=Hello%20Novexa%2C%20I%20want%20to%20upgrade%20my%20plan."
                 target="_blank" rel="noopener noreferrer"
                 onClick={() => setLockedTabInfo(null)}
                 className="w-full py-2.5 rounded-xl text-sm font-black text-center transition-all hover:scale-[1.01]"
@@ -1072,7 +1072,7 @@ function DashboardContent() {
                   style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#6b7280" }}>
                   Remind Later
                 </button>
-                <a href="https://wa.me/923001234567?text=Hello%20Novexa%2C%20I%20need%20to%20renew%20my%20subscription."
+                <a href="https://wa.me/923251507557?text=Hello%20Novexa%2C%20I%20need%20to%20renew%20my%20subscription."
                   target="_blank" rel="noopener noreferrer"
                   onClick={() => setShowExpiryPopup(false)}
                   className="flex-1 py-3 rounded-xl text-sm font-black text-center transition-all hover:scale-[1.02]"
@@ -1717,7 +1717,7 @@ function DashboardContent() {
 
               {/* Upgrade CTA */}
               <a
-                href="https://wa.me/923001234567?text=Hello%20Novexa%2C%20I%20want%20to%20upgrade%20my%20plan."
+                href="https://wa.me/923251507557?text=Hello%20Novexa%2C%20I%20want%20to%20upgrade%20my%20plan."
                 target="_blank" rel="noopener noreferrer"
                 className="flex items-center justify-center gap-2 py-3 rounded-2xl text-sm font-bold transition-all active:scale-95"
                 style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", color: "#000", boxShadow: "0 4px 20px rgba(245,158,11,0.3)" }}
@@ -1820,7 +1820,7 @@ function DashboardContent() {
                   : `Your ${userDoc?.subscriptionType === "trial" ? "free trial" : "subscription"} expires in ${expiryDaysLeft} ${expiryDaysLeft === 1 ? "day" : "days"}. ${userDoc?.subscriptionType === "trial" ? "Upgrade now to continue using Novexa." : "Renew before it's too late."}`}
               </p>
             </div>
-            <a href="https://wa.me/923001234567?text=Hello%20Novexa%2C%20I%20need%20to%20renew%20my%20subscription."
+            <a href="https://wa.me/923251507557?text=Hello%20Novexa%2C%20I%20need%20to%20renew%20my%20subscription."
               target="_blank" rel="noopener noreferrer"
               className="flex-shrink-0 flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-bold transition-all hover:scale-105"
               style={{ background: "linear-gradient(135deg,#ef4444,#f97316)", color: "#fff" }}>
@@ -1851,7 +1851,7 @@ function DashboardContent() {
                     <span className="font-bold capitalize" style={{ color: "#60a5fa" }}>{userPlan}</span> plan.
                   </p>
                   <p className="text-gray-300 text-sm mb-8">Upgrade to <span className="font-bold text-amber-400">{planUpgrade}</span> or higher to unlock this feature.</p>
-                  <a href="https://wa.me/923001234567?text=Hello%20Novexa%2C%20I%20want%20to%20upgrade%20my%20plan."
+                  <a href="https://wa.me/923251507557?text=Hello%20Novexa%2C%20I%20want%20to%20upgrade%20my%20plan."
                     target="_blank" rel="noopener noreferrer"
                     className="inline-flex items-center gap-2 px-8 py-3.5 rounded-2xl font-bold text-white transition-all hover:scale-105"
                     style={{ background: "linear-gradient(135deg,#F59E0B,#D97706)", boxShadow: "0 6px 25px rgba(245,158,11,0.4)" }}>

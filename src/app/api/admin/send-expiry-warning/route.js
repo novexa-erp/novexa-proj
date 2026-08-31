@@ -117,7 +117,7 @@ function buildExpiryWarningHTML({ userName, plan, activeTo, daysLeft }) {
 
   <!-- CTA button -->
   <tr><td style="padding:0 40px 28px;text-align:center;">
-    <a href="https://wa.me/923001234567?text=Hello%20Novexa%2C%20I%20want%20to%20renew%20my%20${encodeURIComponent(planLabel)}%20subscription."
+    <a href="https://wa.me/923251507557?text=Hello%20Novexa%2C%20I%20want%20to%20renew%20my%20${encodeURIComponent(planLabel)}%20subscription."
       target="_blank"
       style="display:inline-block;padding:14px 36px;border-radius:10px;
         background:linear-gradient(135deg,#1d4ed8,#2563eb);

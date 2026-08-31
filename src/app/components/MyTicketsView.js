@@ -181,12 +181,12 @@ function TicketDetail({ ticket, onBack }) {
         style={{ background:"rgba(37,99,235,0.05)", border:"1px solid rgba(37,99,235,0.15)" }}>
         <span className="text-blue-400 text-sm">💡</span>
         <p className="text-gray-200 text-xs flex-1">Need faster help? Reach us directly.</p>
-        <a href="https://wa.me/923320262457" target="_blank" rel="noopener noreferrer"
+        <a href="https://wa.me/923251507557" target="_blank" rel="noopener noreferrer"
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all hover:scale-105"
           style={{ background:"rgba(22,163,74,0.15)", border:"1px solid rgba(22,163,74,0.3)", color:"#34d399" }}>
           💬 WhatsApp
         </a>
-        <a href="tel:+923320262457"
+        <a href="tel:+923251507557"
           className="flex items-center gap-2 px-4 py-2 rounded-xl text-xs font-bold transition-all hover:scale-105"
           style={{ background:"rgba(37,99,235,0.12)", border:"1px solid rgba(37,99,235,0.25)", color:"#60a5fa" }}>
           📞 Call Us

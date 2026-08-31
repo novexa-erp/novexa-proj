@@ -35,7 +35,7 @@ function footerHTML() {
       <td valign="top" width="45%" align="right">
         <div style="font-size:11px;color:#94a3b8;line-height:1.8;text-align:right;">
           This is an automated notification<br/>from the Novexa Support System.<br/>
-          <a href="https://wa.me/923320262457" style="color:#2563eb;text-decoration:none;font-weight:700;">
+          <a href="https://wa.me/923251507557" style="color:#2563eb;text-decoration:none;font-weight:700;">
             Need help? Contact us →
           </a>
         </div>
@@ -141,7 +141,7 @@ function buildStatusEmailHTML({ name, ticketId, subject, newStatus, adminMessage
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr>
         <td width="48%" style="padding-right:8px;">
-          <a href="https://wa.me/923320262457" style="display:block;padding:13px 10px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-size:13px;font-weight:800;border-radius:10px;text-decoration:none;text-align:center;">
+          <a href="https://wa.me/923251507557" style="display:block;padding:13px 10px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-size:13px;font-weight:800;border-radius:10px;text-decoration:none;text-align:center;">
             💬 Chat on WhatsApp
           </a>
         </td>
@@ -217,7 +217,7 @@ function buildReplyEmailHTML({ name, ticketId, subject, replyText }) {
     <table width="100%" cellpadding="0" cellspacing="0">
       <tr>
         <td width="48%" style="padding-right:8px;">
-          <a href="https://wa.me/923320262457" style="display:block;padding:13px 10px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-size:13px;font-weight:800;border-radius:10px;text-decoration:none;text-align:center;">
+          <a href="https://wa.me/923251507557" style="display:block;padding:13px 10px;background:linear-gradient(135deg,#16a34a,#15803d);color:#fff;font-size:13px;font-weight:800;border-radius:10px;text-decoration:none;text-align:center;">
             💬 Chat on WhatsApp
           </a>
         </td>

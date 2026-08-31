@@ -713,7 +713,7 @@ export default function PurchasesView({ uid, userDoc, onNavigate, staffContext =
                 </p>
               </div>
               <div className="px-6 pb-5 flex flex-col gap-2">
-                <a href="https://wa.me/923001234567?text=Hello%20Novexa%2C%20I%20want%20to%20upgrade%20my%20plan."
+                <a href="https://wa.me/923251507557?text=Hello%20Novexa%2C%20I%20want%20to%20upgrade%20my%20plan."
                   target="_blank" rel="noopener noreferrer"
                   className="w-full py-2.5 rounded-xl text-sm font-black text-center transition-all hover:scale-[1.01]"
                   style={{ background: "linear-gradient(135deg,#7c3aed,#a855f7)", color: "#fff", boxShadow: "0 4px 16px rgba(168,85,247,0.3)", display: "block" }}>

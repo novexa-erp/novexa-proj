@@ -153,13 +153,13 @@ function FrozenScreen({ reason }) {
 
             {/* CTA buttons */}
             <div className="flex flex-col gap-2.5 w-full">
-              <a href="https://wa.me/923001234567?text=Hello%20Novexa%2C%20my%20account%20is%20frozen.%20I%20want%20to%20renew%20my%20subscription."
+              <a href="https://wa.me/923251507557?text=Hello%20Novexa%2C%20my%20account%20is%20frozen.%20I%20want%20to%20renew%20my%20subscription."
                 target="_blank" rel="noopener noreferrer"
                 className="w-full py-3.5 rounded-xl text-white font-black text-sm text-center transition-all hover:scale-[1.02] hover:brightness-110"
                 style={{ background: "linear-gradient(135deg,#ef4444,#f97316)", boxShadow: "0 4px 20px rgba(239,68,68,0.25)" }}>
                 💬 Contact Support to Reactivate
               </a>
-              <a href="tel:+923001234567"
+              <a href="tel:+923251507557"
                 className="w-full py-3 rounded-xl text-sm font-semibold text-center transition-all hover:bg-white/10"
                 style={{ background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.08)", color: "#9ca3af" }}>
                 📞 Call Us Directly
