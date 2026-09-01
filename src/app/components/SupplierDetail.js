@@ -327,10 +327,15 @@ function calcPOTotals(form) {
 
 function SInput({ type = "text", placeholder, value, onChange, req, readOnly, inputMode }) {
   const [f, setF] = useState(false);
-  const focused = { background: "rgba(37,99,235,0.07)", border: "1.5px solid rgba(37,99,235,0.5)", boxShadow: "0 0 0 3px rgba(37,99,235,0.08)" };
+  const focused = { 
+    background: "rgba(37,99,235,0.07)", 
+    border: "1.5px solid rgba(37,99,235,0.5)", 
+    boxShadow: "0 0 0 3px rgba(37,99,235,0.08)",
+  };
   return (
     <input type={type} placeholder={placeholder} value={value} onChange={onChange}
       required={req} autoComplete="off" readOnly={readOnly} inputMode={inputMode}
+      className="invoice-input"
       onFocus={() => setF(true)} onBlur={() => setF(false)}
       style={{ ...base, ...(f && !readOnly ? focused : {}), ...(readOnly ? { opacity: 0.55, cursor: "not-allowed", background: "rgba(255,255,255,0.02)" } : {}) }} />
   );

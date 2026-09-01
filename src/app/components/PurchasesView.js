@@ -42,7 +42,11 @@ const base = {
   padding: "9px 13px", color: "#fff", fontSize: 13,
   transition: "border-color .2s, background .2s",
 };
-const focusStyle = { background: "rgba(37,99,235,0.07)", border: "1.5px solid rgba(37,99,235,0.5)", boxShadow: "0 0 0 3px rgba(37,99,235,0.08)" };
+const focusStyle = { 
+  background: "rgba(37,99,235,0.07)", 
+  border: "1.5px solid rgba(37,99,235,0.5)", 
+  boxShadow: "0 0 0 3px rgba(37,99,235,0.08)",
+};
 const lbl = { display: "block", color: "#9ca3af", fontSize: 11, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.07em", marginBottom: 5 };
 
 function SInput({ type = "text", placeholder, value, onChange, req, inputMode }) {
@@ -50,6 +54,7 @@ function SInput({ type = "text", placeholder, value, onChange, req, inputMode })
   return (
     <input type={type} placeholder={placeholder} value={value} onChange={onChange}
       required={req} autoComplete="off" inputMode={inputMode}
+      className="invoice-input"
       onFocus={() => setF(true)} onBlur={() => setF(false)}
       style={{ ...base, ...(f ? focusStyle : {}) }} />
   );
@@ -58,6 +63,7 @@ function STextarea({ placeholder, value, onChange, rows = 2 }) {
   const [f, setF] = useState(false);
   return (
     <textarea placeholder={placeholder} value={value} onChange={onChange} rows={rows}
+      className="invoice-input"
       onFocus={() => setF(true)} onBlur={() => setF(false)}
       style={{ ...base, ...(f ? focusStyle : {}), resize: "vertical" }} />
   );

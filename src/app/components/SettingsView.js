@@ -29,6 +29,7 @@ function SInput({ type = "text", placeholder, value, onChange, req, disabled, in
   return (
     <input type={type} placeholder={placeholder} value={value} onChange={onChange}
       required={req} disabled={disabled} autoComplete="off" inputMode={inputMode}
+      className="invoice-input"
       onFocus={() => setF(true)} onBlur={() => setF(false)}
       style={{ ...base, ...(f && !disabled ? focusStyle : {}), opacity: disabled ? 0.5 : 1, cursor: disabled ? "not-allowed" : "text" }} />
   );
@@ -38,6 +39,7 @@ function SSelect({ value, onChange, children }) {
   const [f, setF] = useState(false);
   return (
     <select value={value} onChange={onChange}
+      className="invoice-input"
       onFocus={() => setF(true)} onBlur={() => setF(false)}
       style={{ ...base, ...(f ? focusStyle : {}), cursor: "pointer" }}>
       {children}

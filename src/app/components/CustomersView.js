@@ -142,6 +142,7 @@ function SInput({ type = "text", placeholder, value, onChange, req, inputMode })
   return (
     <input type={type} placeholder={placeholder} value={value} onChange={onChange}
       required={req} autoComplete="off" inputMode={inputMode}
+      className="invoice-input"
       onFocus={() => setF(true)} onBlur={() => setF(false)}
       style={{ ...base, ...(f ? focusStyle : {}) }} />
   );
@@ -150,6 +151,7 @@ function STextarea({ placeholder, value, onChange, rows = 2 }) {
   const [f, setF] = useState(false);
   return (
     <textarea placeholder={placeholder} value={value} onChange={onChange} rows={rows}
+      className="invoice-input"
       onFocus={() => setF(true)} onBlur={() => setF(false)}
       style={{ ...base, ...(f ? focusStyle : {}), resize: "vertical" }} />
   );

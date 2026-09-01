@@ -392,6 +392,7 @@ function LoginContent() {
             <div>
               <label className="block text-xs font-semibold text-gray-400 mb-2 tracking-wide uppercase">Email Address</label>
               <input type="email" required placeholder="you@example.com"
+                className="invoice-input"
                 value={form.email} onChange={e=>setForm({...form,email:e.target.value})} {...field("email")}/>
             </div>
             <div>
@@ -401,6 +402,7 @@ function LoginContent() {
               </div>
               <div className="relative">
                 <input type={showPass?"text":"password"} required placeholder="••••••••"
+                  className="invoice-input"
                   value={form.password} onChange={e=>setForm({...form,password:e.target.value})}
                   {...field("password")} style={{ ...field("password").style, paddingRight:44 }}/>
                 <button type="button" onClick={()=>setShowPass(!showPass)}

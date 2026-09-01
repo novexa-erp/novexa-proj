@@ -98,6 +98,7 @@ function StyledInput({ type = "text", placeholder, value, onChange, req, min, st
       required={req} min={min} step={step} autoComplete={autoComplete || "off"}
       disabled={disabled}
       inputMode={inputMode}
+      className="invoice-input"
       onFocus={() => setF(true)} onBlur={() => setF(false)}
       style={{
         ...base,
@@ -112,6 +113,7 @@ function StyledSelect({ value, onChange, children }) {
   const [isFocused, setF] = useState(false);
   return (
     <select value={value} onChange={onChange}
+      className="invoice-input"
       onFocus={() => setF(true)} onBlur={() => setF(false)}
       style={{ ...base, ...(isFocused ? focused : {}), cursor: "pointer" }}>
       {children}
@@ -123,6 +125,7 @@ function StyledTextarea({ placeholder, value, onChange, rows = 2 }) {
   const [isFocused, setF] = useState(false);
   return (
     <textarea placeholder={placeholder} value={value} onChange={onChange} rows={rows}
+      className="invoice-input"
       onFocus={() => setF(true)} onBlur={() => setF(false)}
       style={{ ...base, ...(isFocused ? focused : {}), resize: "vertical" }} />
   );
@@ -259,6 +262,7 @@ function ItemRow({ item, idx, products, locations = [], onChange, onRemove, canR
   const [customVarPrice,   setCustomVarPrice]   = useState("");
   const [suggestions, setSuggestions] = useState([]);
   const [showSug, setShowSug] = useState(false);
+  const [isFocused, setIsFocused] = useState(false);
   const rowRef = useRef(null);
 
   // Find selected product
@@ -310,6 +314,7 @@ function ItemRow({ item, idx, products, locations = [], onChange, onRemove, canR
 
     setSuggestions([]);
     setShowSug(false);
+    setIsFocused(false);
   }
 
   // Handle variant selection
@@ -365,7 +370,10 @@ function ItemRow({ item, idx, products, locations = [], onChange, onRemove, canR
   // close on outside click
   useEffect(() => {
     function handler(e) {
-      if (rowRef.current && !rowRef.current.contains(e.target)) setShowSug(false);
+      if (rowRef.current && !rowRef.current.contains(e.target)) {
+        setShowSug(false);
+        setIsFocused(false);
+      }
     }
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
@@ -389,14 +397,30 @@ function ItemRow({ item, idx, products, locations = [], onChange, onRemove, canR
         <div className="relative">
           <input type="text" placeholder="Item / product name" value={item.description}
             onChange={e => isRowLocked ? undefined : handleDescChange(e.target.value)}
-            onFocus={() => { if (!isRowLocked && suggestions.length > 0) setShowSug(true); }}
+            onFocus={() => { 
+              if (!isRowLocked) {
+                setIsFocused(true);
+                if (suggestions.length > 0) setShowSug(true);
+              }
+            }}
+            onBlur={() => {
+              // Delay blur to allow suggestion click to register
+              setTimeout(() => {
+                if (!showSug) setIsFocused(false);
+              }, 150);
+            }}
             readOnly={isRowLocked}
             autoComplete="off"
+            className="invoice-input"
             style={{
               ...base, paddingRight: isRowLocked ? 12 : 32,
               opacity: isRowLocked ? 0.65 : 1,
               cursor: isRowLocked ? "default" : "text",
-              background: isRowLocked ? "rgba(255,255,255,0.02)" : base.background,
+              background: isRowLocked ? "rgba(255,255,255,0.02)" : (isFocused ? focused.background : base.background),
+              borderWidth: "1.5px",
+              borderStyle: "solid",
+              borderColor: isRowLocked ? "rgba(255,255,255,0.09)" : (isFocused ? focused.borderColor : base.borderColor),
+              boxShadow: isFocused && !isRowLocked ? focused.boxShadow : "none",
               color: isRowLocked ? "#9ca3af" : "#fff",
             }} />
           {/* browse all button — hidden for locked rows */}
@@ -457,6 +481,7 @@ function ItemRow({ item, idx, products, locations = [], onChange, onRemove, canR
           onChange={e => isRowLocked ? undefined : handleQtyChange(e.target.value)}
           readOnly={isRowLocked}
           max={item.stock || undefined}
+          className="invoice-input"
           style={{ 
             ...base, 
             textAlign: "center", 
@@ -476,6 +501,7 @@ function ItemRow({ item, idx, products, locations = [], onChange, onRemove, canR
           onChange={e => isRowLocked ? undefined : onChange(idx, "unitPrice", e.target.value)}
           readOnly={isRowLocked}
           disabled={!isRowLocked && (hasVariants && item.variantId)}
+          className="invoice-input"
           style={{ 
             ...base, 
             textAlign: "right", 
@@ -505,14 +531,30 @@ function ItemRow({ item, idx, products, locations = [], onChange, onRemove, canR
         <div className="relative">
           <input type="text" placeholder="Item / product name" value={item.description}
             onChange={e => isRowLocked ? undefined : handleDescChange(e.target.value)}
-            onFocus={() => { if (!isRowLocked && suggestions.length > 0) setShowSug(true); }}
+            onFocus={() => { 
+              if (!isRowLocked) {
+                setIsFocused(true);
+                if (suggestions.length > 0) setShowSug(true);
+              }
+            }}
+            onBlur={() => {
+              // Delay blur to allow suggestion click to register
+              setTimeout(() => {
+                if (!showSug) setIsFocused(false);
+              }, 150);
+            }}
             readOnly={isRowLocked}
             autoComplete="off"
+            className="invoice-input"
             style={{
               ...base, paddingRight: isRowLocked ? 12 : 32,
               opacity: isRowLocked ? 0.65 : 1,
               cursor: isRowLocked ? "default" : "text",
-              background: isRowLocked ? "rgba(255,255,255,0.02)" : base.background,
+              background: isRowLocked ? "rgba(255,255,255,0.02)" : (isFocused ? focused.background : base.background),
+              borderWidth: "1.5px",
+              borderStyle: "solid",
+              borderColor: isRowLocked ? "rgba(255,255,255,0.09)" : (isFocused ? focused.borderColor : base.borderColor),
+              boxShadow: isFocused && !isRowLocked ? focused.boxShadow : "none",
               color: isRowLocked ? "#9ca3af" : "#fff",
             }} />
           {!isRowLocked && (
@@ -563,6 +605,7 @@ function ItemRow({ item, idx, products, locations = [], onChange, onRemove, canR
             onChange={e => isRowLocked ? undefined : handleQtyChange(e.target.value)}
             readOnly={isRowLocked}
             max={item.stock || undefined}
+            className="invoice-input"
             style={{
               ...base, textAlign: "center", padding: "8px 4px", fontSize: 12,
               borderColor: (qty > stock && stock > 0) ? "#f87171" : "rgba(255,255,255,0.09)",
@@ -575,6 +618,7 @@ function ItemRow({ item, idx, products, locations = [], onChange, onRemove, canR
             onChange={e => isRowLocked ? undefined : onChange(idx, "unitPrice", e.target.value)}
             readOnly={isRowLocked}
             disabled={!isRowLocked && (hasVariants && item.variantId)}
+            className="invoice-input"
             style={{
               ...base, textAlign: "right", padding: "8px 8px", fontSize: 12,
               opacity: isRowLocked ? 0.65 : (hasVariants && item.variantId) ? 0.6 : 1,

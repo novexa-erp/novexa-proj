@@ -87,10 +87,15 @@ function SInput({ label, type = "text", value, onChange, placeholder, required, 
       <input
         type={type} value={value} onChange={onChange}
         placeholder={placeholder} required={required} min={min} max={max}
+        className="invoice-input"
         onFocus={() => setFocused(true)} onBlur={() => setFocused(false)}
         style={{
           ...inputStyle,
-          ...(focused ? { border: "1.5px solid rgba(37,99,235,0.6)", background: "rgba(37,99,235,0.07)", boxShadow: "0 0 0 3px rgba(37,99,235,0.1)" } : {}),
+          ...(focused ? { 
+            border: "1.5px solid rgba(37,99,235,0.6)", 
+            background: "rgba(37,99,235,0.07)", 
+            boxShadow: "0 0 0 3px rgba(37,99,235,0.1)",
+          } : {}),
         }}
       />
     </div>

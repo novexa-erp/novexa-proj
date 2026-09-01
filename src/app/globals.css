@@ -241,3 +241,51 @@ h6 {
   from { transform: rotate(0deg); }
   to   { transform: rotate(360deg); }
 }
+
+/* ── Invoice Input Autocomplete Override ── */
+.invoice-input,
+.invoice-input:-webkit-autofill,
+.invoice-input:-webkit-autofill:hover,
+.invoice-input:-webkit-autofill:focus,
+.invoice-input:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 1000px #0d1117 inset !important;
+  box-shadow: 0 0 0 1000px #0d1117 inset !important;
+  transition: background-color 5000s ease-in-out 0s;
+  caret-color: #fff !important;
+  border: 1.5px solid rgba(37,99,235,0.5) !important;
+}
+
+.invoice-input:focus:-webkit-autofill,
+.invoice-input:focus:-webkit-autofill:hover,
+.invoice-input:focus:-webkit-autofill:focus,
+.invoice-input:focus:-webkit-autofill:active {
+  -webkit-box-shadow: 0 0 0 3px rgba(37,99,235,0.08), 0 0 0 1000px #0d1117 inset !important;
+  box-shadow: 0 0 0 3px rgba(37,99,235,0.08), 0 0 0 1000px #0d1117 inset !important;
+  border: 1.5px solid rgba(37,99,235,0.5) !important;
+}
+
+/* Placeholder styling - must come after autofill rules */
+.invoice-input::placeholder,
+.invoice-input::-webkit-input-placeholder {
+  color: #9ca3af !important;
+  opacity: 1 !important;
+  -webkit-text-fill-color: #9ca3af !important;
+}
+
+.invoice-input::-moz-placeholder {
+  color: #9ca3af !important;
+  opacity: 1 !important;
+}
+
+.invoice-input:-ms-input-placeholder {
+  color: #9ca3af !important;
+  opacity: 1 !important;
+}
+
+/* Autofill text color - separate from placeholder */
+.invoice-input:-webkit-autofill,
+.invoice-input:-webkit-autofill:hover,
+.invoice-input:-webkit-autofill:focus,
+.invoice-input:-webkit-autofill:active {
+  -webkit-text-fill-color: #fff !important;
+}

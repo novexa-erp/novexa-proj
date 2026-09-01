@@ -951,8 +951,7 @@ function DashboardContent() {
   const quickActions = [
     { icon: "➕", label: "New Invoice",  color: "from-amber-500 to-orange-600", action: () => handleNavChange("invoices")   },
     { icon: "👤", label: "Add Customer", color: "from-pink-500 to-purple-600", action: () => handleNavChange("customers") },
-    { icon: "📦", label: "Add Product",  color: "from-orange-500 to-amber-600", action: () => setShowProductModal(true)  },
-    { icon: "📄", label: "Export PDF",   color: "from-blue-500 to-cyan-600",  action: () => window.print()             },
+    { icon: "📦", label: "Add Product",  color: "from-orange-500 to-amber-600", action: () => handleNavChange("inventory")  },
   ];
 
   return (
