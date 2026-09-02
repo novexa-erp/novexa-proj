@@ -107,7 +107,8 @@ async function generateInvoiceNumber(adminDb, uid) {
 
 // ── Build PDF ──────────────────────────────────────────────────────────────────
 async function buildPDF({ invoiceNumber, userName, userEmail, plan, billingPeriod,
-                           paymentMethod, activeFrom, activeTo, subscriptionType, amount }) {
+                           paymentMethod, activeFrom, activeTo, subscriptionType, amount,
+                           referralDiscountApplied, discountPercentage }) {
   const doc  = await PDFDocument.create();
   const page = doc.addPage([595, 842]);
   const W = 595, H = 842;
@@ -191,8 +192,26 @@ async function buildPDF({ invoiceNumber, userName, userEmail, plan, billingPerio
 
   const lx = 360, rx = W - 44;
   y -= 18;
+  
+  // Calculate amounts
+  const hasDiscount = referralDiscountApplied && discountPercentage > 0;
+  const originalAmount = hasDiscount ? Math.round(amount / (1 - discountPercentage / 100)) : amount;
+  const discountAmount = hasDiscount ? originalAmount - amount : 0;
+  
+  // Subtotal (show original price if discount applied)
+  const subtotalStr = isTrial ? "FREE TRIAL" : `Rs. ${originalAmount.toLocaleString("en-PK")}`;
   page.drawText("Subtotal:", { x: lx, y, size: 9, font: reg, color: C.gray });
-  page.drawText(amtStr, { x: rx - reg.widthOfTextAtSize(amtStr, 9), y, size: 9, font: reg, color: C.dark });
+  page.drawText(subtotalStr, { x: rx - reg.widthOfTextAtSize(subtotalStr, 9), y, size: 9, font: reg, color: C.dark });
+  
+  // Discount (if applied)
+  if (hasDiscount && !isTrial) {
+    y -= 16;
+    const discountLabel = `Referral Discount (${discountPercentage}%):`;
+    const discountStr = `- Rs. ${discountAmount.toLocaleString("en-PK")}`;
+    page.drawText(discountLabel, { x: lx, y, size: 9, font: reg, color: rgb(0.545, 0.361, 0.965) });
+    page.drawText(discountStr, { x: rx - reg.widthOfTextAtSize(discountStr, 9), y, size: 9, font: bold, color: rgb(0.545, 0.361, 0.965) });
+  }
+  
   y -= 4;
   page.drawLine({ start: { x: lx, y }, end: { x: W - 40, y }, thickness: 0.5, color: C.line });
   y -= 14;
@@ -235,15 +254,63 @@ export async function POST(request) {
     catch { return NextResponse.json({ error: "Invalid JSON" }, { status: 400 }); }
 
     const { userName, userEmail, plan, billingPeriod, paymentMethod,
-            activeFrom, activeTo, subscriptionType, uploadToCloudinary, uid } = body;
+            activeFrom, activeTo, subscriptionType, uploadToCloudinary, uid,
+            referralDiscountApplied, discountPercentage } = body;
+
+    console.log('[get-reg-invoice-pdf] Received params:', {
+      uid, referralDiscountApplied, discountPercentage, plan, billingPeriod
+    });
 
     if (!userEmail) return NextResponse.json({ error: "Missing userEmail" }, { status: 400 });
 
     const { adminDb } = await getAdminModules();
+    
+    // If discount info not provided but uid exists, check user document
+    let finalDiscountApplied = referralDiscountApplied;
+    let finalDiscountPercentage = discountPercentage;
+    
+    if (uid && (!referralDiscountApplied || !discountPercentage)) {
+      try {
+        const userDoc = await adminDb.collection("users").doc(uid).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          // Check if user was referred
+          if (userData.referredBy || userData.referralDiscountApplied) {
+            finalDiscountApplied = true;
+            finalDiscountPercentage = userData.discountPercentage || 10; // Default 10%
+            console.log('[get-reg-invoice-pdf] Fetched discount from user doc:', {
+              referredBy: userData.referredBy,
+              discountPercentage: finalDiscountPercentage
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[get-reg-invoice-pdf] Could not fetch user discount info:', err.message);
+      }
+    }
+
     const isTrial = subscriptionType === "trial";
-    const amount  = isTrial ? 0 : await fetchPlanPrice(adminDb, plan, billingPeriod);
+    
+    // Fetch base price and apply discount if applicable
+    let amount = 0;
+    if (!isTrial) {
+      const basePrice = await fetchPlanPrice(adminDb, plan, billingPeriod);
+      console.log('[get-reg-invoice-pdf] Base price:', basePrice);
+      if (finalDiscountApplied && finalDiscountPercentage > 0) {
+        // Apply discount to base price
+        amount = Math.round(basePrice * (1 - finalDiscountPercentage / 100));
+        console.log('[get-reg-invoice-pdf] Discount applied! Original:', basePrice, 'Discounted:', amount);
+      } else {
+        amount = basePrice;
+        console.log('[get-reg-invoice-pdf] No discount. Amount:', amount);
+      }
+    }
 
     const invoiceNumber = await generateInvoiceNumber(adminDb, uid);
+
+    console.log('[get-reg-invoice-pdf] Building PDF with:', {
+      invoiceNumber, amount, referralDiscountApplied: finalDiscountApplied, discountPercentage: finalDiscountPercentage
+    });
 
     const pdfBytes = await buildPDF({
       invoiceNumber,
@@ -256,6 +323,8 @@ export async function POST(request) {
       activeTo,
       subscriptionType,
       amount,
+      referralDiscountApplied: finalDiscountApplied || false,
+      discountPercentage: finalDiscountPercentage || 0,
     });
 
     const pdfBase64 = Buffer.from(pdfBytes).toString("base64");
