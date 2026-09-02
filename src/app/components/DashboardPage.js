@@ -28,6 +28,7 @@ import BackupView from "./BackupView";
 import DigitalRegisterView from "./DigitalRegisterView";
 import PWAInstallButton from "./PWAInstallButton";
 import StaffManagementView from "./StaffManagementView";
+import ReferralViewStable from "./ReferralViewStable";
 
 // ── Sidebar nav items ────────────────────────────────────────────────────────
 const navItems = [
@@ -42,6 +43,7 @@ const navItems = [
   { icon: "👔", label: "HR",          id: "hr"          },
   { icon: "🏢", label: "Branches",    id: "branches"    },
   { icon: "👨‍💼", label: "Staff",       id: "staff"       },
+  { icon: "🎁", label: "Referrals",   id: "referrals"   },
   { icon: "⚙️", label: "Settings",   id: "settings"    },
   { icon: "📞", label: "Contact Us",  id: "contact"     },
   { icon: "🎫", label: "My Tickets",  id: "my-tickets"  },
@@ -56,23 +58,23 @@ const navItems = [
 const PLAN_PERMISSIONS = {
   starter: new Set([
     "overview", "invoices", "customers", "inventory",
-    "payments", "purchases", "settings", "contact", "my-tickets", "trash", "addons", "backup", "bill-book",
+    "payments", "purchases", "referrals", "settings", "contact", "my-tickets", "trash", "addons", "backup", "bill-book",
   ]),
   business: new Set([
     "overview", "invoices", "customers", "inventory",
-    "payments", "purchases", "order-form", "analytics",
+    "payments", "purchases", "order-form", "analytics", "referrals",
     "settings", "contact", "my-tickets", "trash", "addons", "backup", "bill-book",
   ]),
   professional: new Set([
     "overview", "invoices", "customers", "inventory",
     "payments", "purchases", "order-form", "analytics",
-    "hr", "branches",
+    "hr", "branches", "referrals",
     "settings", "contact", "my-tickets", "trash", "addons", "backup", "bill-book",
   ]),
   enterprise: new Set([
     "overview", "invoices", "customers", "inventory",
     "payments", "purchases", "order-form", "analytics",
-    "hr", "branches",
+    "hr", "branches", "referrals",
     "settings", "contact", "my-tickets", "trash", "addons", "backup", "bill-book",
   ]),
 };
@@ -145,6 +147,15 @@ function DashboardContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
 
+  // ── Toast helper function ───────────────────────────────────────────────────
+  const showToast = (msg, type = 'error') => {
+    const toastDiv = document.createElement('div');
+    toastDiv.textContent = msg;
+    toastDiv.style.cssText = `position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:8px;color:#fff;background:${type==='success'?'#10b981':'#ef4444'};z-index:9999;font-size:14px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.3)`;
+    document.body.appendChild(toastDiv);
+    setTimeout(() => toastDiv.remove(), 3000);
+  };
+
   // ── Auth state ──────────────────────────────────────────────────────────────
   const [user, setUser]         = useState(null);
   const [userDoc, setUserDoc]   = useState(null);
@@ -198,6 +209,9 @@ function DashboardContent() {
   const [locations,        setLocations]        = useState([]);
   const [totalPurchasing,  setTotalPurchasing]  = useState(0);
   const [dataLoading,      setDataLoading]      = useState(true);
+
+  // ── Referral stats ──────────────────────────────────────────────────────────
+  const [referralStats, setReferralStats] = useState(null);
 
   // ── Modals (customer + product only — invoices handled by InvoicesView) ─────
   const [showCustomerModal, setShowCustomerModal] = useState(false);
@@ -431,7 +445,7 @@ function DashboardContent() {
             // Staff: strict intersection — only what admin explicitly assigned
             const staffModules = new Set(staffContext.allowedModules);
             const staffAllowed = new Set([...planAllowedSet].filter(t => staffModules.has(t)));
-            setAllowedTabsSet(staffAllowed);
+            setAllowedTabsSet(new Set([...staffAllowed, "referrals"]));
             // Auto-navigate to first allowed tab if current view is not in their list
             setActiveNav(prev => {
               if (!staffAllowed.has(prev)) {
@@ -441,14 +455,14 @@ function DashboardContent() {
               return prev;
             });
           } else {
-            setAllowedTabsSet(planAllowedSet);
+            setAllowedTabsSet(new Set([...planAllowedSet, "referrals"]));
           }
         }).catch(() => {
           const fallback = getPlanPermissions(planId);
           if (staffContext) {
             const staffModules = new Set(staffContext.allowedModules);
             const staffAllowed = new Set([...fallback].filter(t => staffModules.has(t)));
-            setAllowedTabsSet(staffAllowed);
+            setAllowedTabsSet(new Set([...staffAllowed, "referrals"]));
             setActiveNav(prev => {
               if (!staffAllowed.has(prev)) {
                 const first = navItems.find(n => staffAllowed.has(n.id));
@@ -457,7 +471,7 @@ function DashboardContent() {
               return prev;
             });
           } else {
-            setAllowedTabsSet(fallback);
+            setAllowedTabsSet(new Set([...fallback, "referrals"]));
           }
         });
       });
@@ -505,12 +519,28 @@ function DashboardContent() {
   useEffect(() => {
     const view = searchParams.get("view");
     if (view && navItems.some(item => item.id === view)) {
+      // STRICT: Block trial users from accessing Referrals via URL
+      if (view === "referrals" && userDoc?.subscriptionType === "trial") {
+        showToast("Referral system is not available in trial mode. Please upgrade to a paid plan.", "error");
+        setActiveNav("overview");
+        // Update URL to overview
+        const params = new URLSearchParams(window.location.search);
+        params.set("view", "overview");
+        window.history.replaceState(null, "", `${window.location.pathname}?${params.toString()}`);
+        return;
+      }
       setActiveNav(view);
     }
-  }, [searchParams]);
+  }, [searchParams, userDoc?.subscriptionType]);
 
   // ── Update URL when navigation changes ──────────────────────────────────────
   function handleNavChange(navId, highlightId = null) {
+    // STRICT: Block trial users from accessing Referrals
+    if (navId === "referrals" && userDoc?.subscriptionType === "trial") {
+      showToast("Referral system is not available in trial mode. Please upgrade to a paid plan.", "error");
+      navId = "overview"; // Redirect to overview instead
+    }
+    
     setViewLoading(true);
     setActiveNav(navId);
     // When navigating away from analytics, clear the saved tab
@@ -612,6 +642,31 @@ function DashboardContent() {
 
     return () => { unsubInv(); unsubCust(); unsubProd(); unsubPay(); unsubLoc(); };
   }, [user, staffContext]);
+
+  // ── Load referral stats ──────────────────────────────────────────────────────
+  useEffect(() => {
+    if (!user) return;
+    let cancelled = false;
+    
+    async function loadReferralStats() {
+      try {
+        const token = await user.getIdToken();
+        const res = await fetch("/api/referral/stats", {
+          headers: { authorization: `Bearer ${token}` }
+        });
+        
+        if (res.ok && !cancelled) {
+          const data = await res.json();
+          setReferralStats(data);
+        }
+      } catch (err) {
+        console.error("[DashboardPage] Failed to load referral stats:", err);
+      }
+    }
+    
+    loadReferralStats();
+    return () => { cancelled = true; };
+  }, [user]);
 
   // ── Fetch total purchasing from supplier orders ────────────────────────────
   // Same formula as PurchasesView: totalBusiness = paidAmount + balance per order
@@ -775,6 +830,10 @@ function DashboardContent() {
     { label: "Total Collected",   value: formatRs(totalCollected), change: `${allInvoices.filter(i => (Number(i.amountPaid)||0) >= getInvActualAmount(i) && getInvActualAmount(i) > 0).length} paid`, icon: "💵", color: "from-green-500 to-emerald-600" },
     { label: "Total Purchasing",  value: formatRs(totalPurchasing),change: "All orders",                                                                                                                                                              icon: "🛒", color: "from-purple-500 to-violet-600", onClick: () => handleNavChange("purchases") },
     { label: "Total Balance Due", value: formatRs(pendingAmount),  change: `${otherInvoices.length + customerInvoices.length} invoices`,                                                                                                              icon: "⏳", color: "from-rose-500 to-red-600" },
+    // Hide Referral Credits for trial users
+    ...(userDoc?.subscriptionType !== "trial" ? [
+      { label: "Referral Credits",  value: formatRs(referralStats?.availableCredits || 0), change: `${referralStats?.totalReferrals || 0} referrals`,                                                                                                   icon: "🎁", color: "from-indigo-500 to-purple-600", onClick: () => handleNavChange("referrals") }
+    ] : []),
   ];
 
   // ── Sign out ─────────────────────────────────────────────────────────────────
@@ -1120,6 +1179,9 @@ function DashboardContent() {
             // Staff tab: only visible to admins (not staff members)
             if (item.id === "staff" && staffContext) return null;
 
+            // Referrals tab: HIDE completely for trial users
+            if (item.id === "referrals" && userDoc?.subscriptionType === "trial") return null;
+
             // Staff: hide all tabs that are not in their allowed list — no locked/greyed state
             if (staffContext && !allowed) return null;
 
@@ -1446,6 +1508,58 @@ function DashboardContent() {
                 ))}
               </div>
 
+              {/* Referral Discount Info (First Month Only) */}
+              {(() => {
+                const hasReferralDiscount = userDoc?.referralDiscountApplied || userDoc?.referredBy;
+                const discountPercent = userDoc?.discountPercentage || 10;
+                
+                if (!hasReferralDiscount) return null;
+
+                // Use the CURRENT displayed price (which already has Early Bird discount applied)
+                // This is the price showing on the dashboard right now
+                const currentDisplayMonthly = planDetails?.afterMonthlyPrice || planDetails?.monthlyPrice || 0;
+                const currentDisplayYearly = planDetails?.afterYearlyPrice || planDetails?.yearlyPrice || 0;
+                const currentDisplayPrice = userDoc?.billingPeriod === "yearly" ? currentDisplayYearly : currentDisplayMonthly;
+                
+                // Calculate referral discount on the CURRENT displayed price
+                const referralDiscountAmount = Math.round((currentDisplayPrice * discountPercent) / 100);
+                const finalAmountPaid = currentDisplayPrice - referralDiscountAmount;
+
+                return (
+                  <div className="px-4 py-3 rounded-xl" style={{ 
+                    background: "linear-gradient(135deg, rgba(139,92,246,0.12), rgba(168,85,247,0.08))", 
+                    border: "1px solid rgba(168,85,247,0.3)" 
+                  }}>
+                    <div className="flex items-start gap-3">
+                      <span className="text-2xl flex-shrink-0">🎁</span>
+                      <div className="flex-1 min-w-0">
+                        <p className="text-white font-bold text-sm mb-1">First Month Referral Discount!</p>
+                        <p className="text-purple-200 text-xs mb-2">
+                          You saved <span className="font-bold" style={{ color: "#c4b5fd" }}>Rs. {referralDiscountAmount.toLocaleString()}</span> ({discountPercent}% off) with a referral code
+                        </p>
+                        <div className="flex flex-col gap-1 text-xs">
+                          <div className="flex items-center justify-between">
+                            <span className="text-purple-300">Original Price:</span>
+                            <span className="text-gray-400">Rs. {currentDisplayPrice.toLocaleString()}</span>
+                          </div>
+                          <div className="flex items-center justify-between">
+                            <span className="text-purple-300">Referral Discount ({discountPercent}%):</span>
+                            <span className="font-bold" style={{ color: "#a78bfa" }}>- Rs. {referralDiscountAmount.toLocaleString()}</span>
+                          </div>
+                          <div className="flex items-center justify-between pt-1 mt-1 border-t" style={{ borderColor: "rgba(168,85,247,0.2)" }}>
+                            <span className="text-white font-bold">You Paid:</span>
+                            <span className="text-lg font-black" style={{ color: "#34d399" }}>Rs. {finalAmountPaid.toLocaleString()}</span>
+                          </div>
+                        </div>
+                        <p className="text-purple-200 text-[10px] mt-2 opacity-70">
+                          ⚠️ This discount was applied to your first billing period only
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                );
+              })()}
+
               {/* Billing + Payment details */}
               {(() => {
                 const activeTo      = userDoc?.activeTo;
@@ -1694,9 +1808,15 @@ function DashboardContent() {
                       { id: "payments",   icon: "💳" }, { id: "purchases",  icon: "🛒" },
                       { id: "order-form", icon: "📋" }, { id: "analytics",  icon: "📈" },
                       { id: "hr",         icon: "👔" }, { id: "branches",   icon: "🏢" },
-                      { id: "settings",   icon: "⚙️" }, { id: "contact",    icon: "📞" },
-                      { id: "my-tickets", icon: "🎫" },
-                    ].map(tab => {
+                      { id: "referrals",  icon: "🎁" }, { id: "settings",   icon: "⚙️" },
+                      { id: "contact",    icon: "📞" }, { id: "my-tickets", icon: "🎫" },
+                    ].filter(tab => {
+                      // Hide Referrals tab for trial users
+                      if (tab.id === "referrals" && userDoc?.subscriptionType === "trial") {
+                        return false;
+                      }
+                      return true;
+                    }).map(tab => {
                       const has = planDetails.allowedTabs.includes(tab.id);
                       return (
                         <div key={tab.id}
@@ -1922,6 +2042,20 @@ function DashboardContent() {
               color="from-blue-500 to-cyan-600"
               accentColor="#3b82f6"
             />
+          ) : activeNav === "referrals" ? (
+            // STRICT: Block trial users from seeing Referrals screen (no flash)
+            userDoc?.subscriptionType === "trial" ? null : (
+              <ReferralViewStable 
+                getToken={async () => user?.getIdToken()} 
+                onToast={(msg, type) => {
+                  const toastDiv = document.createElement('div');
+                  toastDiv.textContent = msg;
+                  toastDiv.style.cssText = `position:fixed;top:20px;right:20px;padding:12px 20px;border-radius:8px;color:#fff;background:${type==='success'?'#10b981':'#ef4444'};z-index:9999;font-size:14px;font-weight:600;box-shadow:0 4px 12px rgba(0,0,0,0.3)`;
+                  document.body.appendChild(toastDiv);
+                  setTimeout(() => toastDiv.remove(), 3000);
+                }}
+              />
+            )
           ) : activeNav === "settings" ? (
             <SettingsView key={`settings-${refreshKey}`} uid={staffContext ? staffContext.adminUid : user?.uid} user={user} userDoc={userDoc} loading={viewLoading}
               onSettingsSaved={(updated) => setUserDoc(prev => ({ ...prev, ...updated }))} />

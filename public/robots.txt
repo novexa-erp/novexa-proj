@@ -1,0 +1,29 @@
+# robots.txt for Novexa
+User-agent: *
+Allow: /
+Disallow: /dashboard
+Disallow: /admin
+Disallow: /super-admin
+Disallow: /api/
+
+# Sitemap location
+Sitemap: https://novexa.app/sitemap.xml
+
+# Crawl-delay (optional)
+Crawl-delay: 1
+
+# Google
+User-agent: Googlebot
+Allow: /
+Disallow: /dashboard
+Disallow: /admin
+Disallow: /super-admin
+Disallow: /api/
+
+# Bing
+User-agent: Bingbot
+Allow: /
+Disallow: /dashboard
+Disallow: /admin
+Disallow: /super-admin
+Disallow: /api/

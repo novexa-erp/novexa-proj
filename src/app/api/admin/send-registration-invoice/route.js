@@ -110,6 +110,7 @@ async function buildRegistrationPDF({
   invoiceNumber, userName, userEmail, plan, billingPeriod,
   paymentMethod, activeFrom, activeTo, subscriptionType,
   amount, // actual amount fetched from Firestore
+  referralDiscountApplied, discountPercentage, // NEW: referral discount info
 }) {
   const doc  = await PDFDocument.create();
   const page = doc.addPage([595, 842]);
@@ -208,12 +209,29 @@ async function buildRegistrationPDF({
   y -= 50;
   page.drawLine({ start: { x: 40, y }, end: { x: W - 40, y }, thickness: 0.5, color: C.line });
 
-  // Totals
+  // Totals section
   const lx = 360;
   const rx = W - 44;
   y -= 18;
+  
+  // Calculate amounts
+  const hasDiscount = referralDiscountApplied && discountPercentage > 0;
+  const originalAmount = hasDiscount ? Math.round(amount / (1 - discountPercentage / 100)) : amount;
+  const discountAmount = hasDiscount ? originalAmount - amount : 0;
+
+  // Subtotal (show original price if discount applied, otherwise same as amount)
+  const subtotalStr = isTrial ? "FREE TRIAL" : `Rs. ${originalAmount.toLocaleString("en-PK")}`;
   page.drawText("Subtotal:", { x: lx, y, size: 9, font: reg, color: C.gray });
-  page.drawText(amtStr, { x: rx - reg.widthOfTextAtSize(amtStr, 9), y, size: 9, font: reg, color: C.dark });
+  page.drawText(subtotalStr, { x: rx - reg.widthOfTextAtSize(subtotalStr, 9), y, size: 9, font: reg, color: C.dark });
+
+  // Discount (if applied)
+  if (hasDiscount && !isTrial) {
+    y -= 16;
+    const discountLabel = `Referral Discount (${discountPercentage}%):`;
+    const discountStr = `- Rs. ${discountAmount.toLocaleString("en-PK")}`;
+    page.drawText(discountLabel, { x: lx, y, size: 9, font: reg, color: rgb(0.545, 0.361, 0.965) });
+    page.drawText(discountStr, { x: rx - reg.widthOfTextAtSize(discountStr, 9), y, size: 9, font: bold, color: rgb(0.545, 0.361, 0.965) });
+  }
 
   y -= 4;
   page.drawLine({ start: { x: lx, y }, end: { x: W - 40, y }, thickness: 0.5, color: C.line });
@@ -258,6 +276,7 @@ function buildRegistrationEmailHTML({
   userName, userEmail, plan, billingPeriod, paymentMethod,
   activeFrom, activeTo, subscriptionType, invoiceNumber, password,
   amount, // actual amount from Firestore
+  referralDiscountApplied, discountPercentage, // NEW: referral discount info
 }) {
   const isTrial   = subscriptionType === "trial";
   const label     = planLabel(plan);
@@ -271,6 +290,12 @@ function buildRegistrationEmailHTML({
   const badgeColor  = isTrial ? "#7c3aed" : "#10b981";
   const badgeText   = isTrial ? "Free Trial" : "Active";
   const planColor   = isTrial ? "#8b5cf6" : "#2563eb";
+  
+  // Calculate discount amounts
+  const hasDiscount = referralDiscountApplied && discountPercentage > 0;
+  const originalAmount = hasDiscount ? Math.round(amount / (1 - discountPercentage / 100)) : amount;
+  const discountAmount = hasDiscount ? originalAmount - amount : 0;
+  
   const amtStr      = isTrial ? "Free" : `Rs. ${(amount || 0).toLocaleString("en-PK")}`;
 
   return `<!DOCTYPE html>
@@ -332,11 +357,14 @@ function buildRegistrationEmailHTML({
 <tr><td style="padding:0 40px 20px;">
   <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8faff;border:1px solid #dbeafe;border-radius:10px;">
   <tr><td style="padding:16px 20px;font-size:13px;color:#374151;line-height:1.8;">
-    <strong>Login Details:</strong><br/>
+    <strong>Login Details & Payment Summary:</strong><br/>
     🌐 <strong>App URL:</strong> <a href="https://novexaerp.codeverza.com" style="color:#2563eb;">novexaerp.codeverza.com</a><br/>
     📧 <strong>Email:</strong> ${userEmail}<br/>
     ${password ? `🔑 <strong>Password:</strong> <code style="background:#f3f4f6;padding:2px 6px;border-radius:4px;font-family:monospace;">${password}</code><br/>` : ""}
-    💰 <strong>Amount:</strong> ${amtStr}
+    ${hasDiscount && !isTrial ? `<br/><span style="color:#8b5cf6;font-weight:700;">🎁 Referral Discount Applied: ${discountPercentage}% OFF</span><br/>` : ""}
+    ${hasDiscount && !isTrial ? `<span style="color:#6b7280;">Original Price: Rs. ${originalAmount.toLocaleString("en-PK")}</span><br/>` : ""}
+    ${hasDiscount && !isTrial ? `<span style="color:#8b5cf6;">Discount: - Rs. ${discountAmount.toLocaleString("en-PK")}</span><br/>` : ""}
+    💰 <strong>Final Amount Paid:</strong> <span style="font-size:16px;font-weight:800;color:#10b981;">${amtStr}</span>
   </td></tr>
   </table>
 </td></tr>
@@ -374,6 +402,7 @@ export async function POST(request) {
       uid, userName, userEmail, password,
       plan, billingPeriod, paymentMethod,
       activeFrom, activeTo, subscriptionType,
+      referralDiscountApplied, discountPercentage, // NEW: referral discount info
     } = body;
 
     if (!userEmail) return NextResponse.json({ error: "Missing userEmail" }, { status: 400 });
@@ -385,8 +414,44 @@ export async function POST(request) {
       return NextResponse.json({ error: "Gmail not configured." }, { status: 503 });
 
     const { adminDb } = await getAdminModules();
+    
+    // If discount info not provided but uid exists, check user document
+    let finalDiscountApplied = referralDiscountApplied;
+    let finalDiscountPercentage = discountPercentage;
+    
+    if (uid && (!referralDiscountApplied || !discountPercentage)) {
+      try {
+        const userDoc = await adminDb.collection("users").doc(uid).get();
+        if (userDoc.exists) {
+          const userData = userDoc.data();
+          // Check if user was referred
+          if (userData.referredBy || userData.referralDiscountApplied) {
+            finalDiscountApplied = true;
+            finalDiscountPercentage = userData.discountPercentage || 10; // Default 10%
+            console.log('[send-reg-invoice] Fetched discount from user doc:', {
+              referredBy: userData.referredBy,
+              discountPercentage: finalDiscountPercentage
+            });
+          }
+        }
+      } catch (err) {
+        console.warn('[send-reg-invoice] Could not fetch user discount info:', err.message);
+      }
+    }
+    
     const isTrial = subscriptionType === "trial";
-    const amount  = isTrial ? 0 : await fetchPlanPrice(adminDb, plan, billingPeriod);
+    
+    // Fetch base price and apply discount if applicable
+    let amount = 0;
+    if (!isTrial) {
+      const basePrice = await fetchPlanPrice(adminDb, plan, billingPeriod);
+      if (finalDiscountApplied && finalDiscountPercentage > 0) {
+        // Apply discount to base price
+        amount = Math.round(basePrice * (1 - finalDiscountPercentage / 100));
+      } else {
+        amount = basePrice;
+      }
+    }
 
     const invoiceNumber = await makeInvoiceNumber(adminDb, uid);
 
@@ -405,6 +470,8 @@ export async function POST(request) {
         activeTo,
         subscriptionType,
         amount,
+        referralDiscountApplied: finalDiscountApplied || false,
+        discountPercentage: finalDiscountPercentage || 0,
       });
       console.log(`[reg-invoice] PDF OK, ${pdfBytes.length} bytes`);
     } catch (pdfErr) {
@@ -424,6 +491,8 @@ export async function POST(request) {
       subscriptionType,
       invoiceNumber,
       amount,
+      referralDiscountApplied: finalDiscountApplied || false,
+      discountPercentage: finalDiscountPercentage || 0,
     });
 
     const transporter = nodemailer.createTransport({

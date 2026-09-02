@@ -102,6 +102,247 @@ function SInput({ label, type = "text", value, onChange, placeholder, required, 
   );
 }
 
+/* ── Referral Code Input Component ────────────────────────────────────────── */
+function ReferralCodeInput({ value, onChange, onReferrerFound, getToken }) {
+  const [inputValue, setInputValue] = useState("");
+  const [verifying, setVerifying] = useState(false);
+  const [verified, setVerified] = useState(false);
+  const [referrerInfo, setReferrerInfo] = useState(null);
+  const [error, setError] = useState("");
+
+  const PREFIX = "NOV-REF-";
+
+  const handleInputChange = (e) => {
+    let val = e.target.value.toUpperCase();
+    // Remove any existing prefix to avoid duplication
+    if (val.startsWith(PREFIX)) {
+      val = val.substring(PREFIX.length);
+    }
+    // Only allow digits for the code part
+    val = val.replace(/[^0-9]/g, "");
+    setInputValue(val);
+    setVerified(false);
+    setReferrerInfo(null);
+    setError("");
+    onChange(""); // Clear parent value until verified
+  };
+
+  const handleVerify = async () => {
+    const trimmed = inputValue.trim();
+    
+    if (!trimmed || trimmed.length === 0) {
+      setError("Please enter a referral code");
+      return;
+    }
+
+    // Validate minimum length (should be at least 8 digits: SSDMMYY)
+    if (trimmed.length < 8) {
+      setError("Referral code must be at least 8 digits");
+      return;
+    }
+
+    const fullCode = PREFIX + trimmed;
+    setVerifying(true);
+    setError("");
+
+    try {
+      const token = await getToken();
+      
+      if (!token) {
+        setError("Authentication required");
+        setVerifying(false);
+        return;
+      }
+
+      const res = await fetch("/api/referral/verify", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          authorization: `Bearer ${token}`
+        },
+        body: JSON.stringify({ code: fullCode })
+      });
+
+      const data = await res.json();
+
+      if (data.valid) {
+        setVerified(true);
+        setReferrerInfo(data);
+        onChange(fullCode); // Update parent with full code
+        if (onReferrerFound) {
+          onReferrerFound(data);
+        }
+      } else {
+        setError(data.error || "Invalid referral code");
+        setVerified(false);
+        setReferrerInfo(null);
+      }
+    } catch (err) {
+      console.error("[ReferralCodeInput] Verify error:", err);
+      setError("Failed to verify referral code");
+      setVerified(false);
+      setReferrerInfo(null);
+    } finally {
+      setVerifying(false);
+    }
+  };
+
+  const handleClear = () => {
+    setInputValue("");
+    setVerified(false);
+    setReferrerInfo(null);
+    setError("");
+    onChange("");
+  };
+
+  return (
+    <div className="rounded-xl p-4" 
+      style={{ 
+        background: "rgba(139,92,246,0.04)", 
+        border: "1px solid rgba(139,92,246,0.18)" 
+      }}>
+      <div className="flex items-center justify-between mb-3">
+        <p className="text-purple-400 text-xs font-bold uppercase tracking-widest">
+          🎁 Referral Code (Optional)
+        </p>
+        {verified && (
+          <button type="button" onClick={handleClear}
+            className="text-purple-400 hover:text-purple-300 text-xs font-semibold transition-colors">
+            ✕ Clear
+          </button>
+        )}
+      </div>
+
+      <p className="text-gray-300 text-[10px] mb-3 leading-relaxed">
+        Agar user ko kisi ne refer kiya hai toh referral code daalein — user ko 10% discount milega
+      </p>
+
+      <div className="flex gap-2">
+        <div className="flex-1 relative">
+          {/* Prefix badge */}
+          <div className="absolute left-3 top-1/2 -translate-y-1/2 px-2 py-0.5 rounded-md text-[10px] font-black pointer-events-none"
+            style={{ 
+              background: "rgba(139,92,246,0.15)", 
+              border: "1px solid rgba(139,92,246,0.3)",
+              color: "#c4b5fd" 
+            }}>
+            NOV-REF-
+          </div>
+
+          <input
+            type="text"
+            value={inputValue}
+            onChange={handleInputChange}
+            placeholder="01020926"
+            maxLength={8}
+            disabled={verified}
+            className="w-full pl-28 pr-4 py-2.5 rounded-xl font-mono font-bold text-sm outline-none transition-all"
+            style={{
+              background: verified ? "rgba(139,92,246,0.1)" : "rgba(255,255,255,0.04)",
+              border: `1.5px solid ${
+                verified ? "rgba(139,92,246,0.5)" : 
+                error ? "rgba(248,113,113,0.5)" : 
+                "rgba(255,255,255,0.09)"
+              }`,
+              color: verified ? "#c4b5fd" : "#fff",
+              cursor: verified ? "not-allowed" : "text",
+            }}
+          />
+        </div>
+
+        <button
+          type="button"
+          onClick={handleVerify}
+          disabled={verifying || verified || !inputValue.trim()}
+          className="px-4 py-2.5 rounded-xl text-sm font-bold transition-all whitespace-nowrap"
+          style={{
+            background: verified 
+              ? "rgba(52,211,153,0.2)" 
+              : verifying || !inputValue.trim()
+              ? "rgba(255,255,255,0.05)"
+              : "rgba(139,92,246,0.2)",
+            border: `1.5px solid ${
+              verified 
+                ? "rgba(52,211,153,0.5)" 
+                : "rgba(139,92,246,0.4)"
+            }`,
+            color: verified 
+              ? "#34d399" 
+              : verifying || !inputValue.trim()
+              ? "#4b5563"
+              : "#c4b5fd",
+            cursor: verifying || verified || !inputValue.trim() ? "not-allowed" : "pointer",
+          }}>
+          {verifying ? (
+            <span className="flex items-center gap-2">
+              <span className="w-3 h-3 rounded-full border-2 border-t-purple-400 border-transparent animate-spin" />
+              Verifying...
+            </span>
+          ) : verified ? (
+            "✓ Verified"
+          ) : (
+            "Verify"
+          )}
+        </button>
+      </div>
+
+      {/* Error message */}
+      {error && (
+        <div className="mt-3 flex items-start gap-2 px-3 py-2 rounded-lg"
+          style={{ 
+            background: "rgba(248,113,113,0.1)", 
+            border: "1px solid rgba(248,113,113,0.25)" 
+          }}>
+          <span className="text-red-400 text-sm flex-shrink-0">⚠️</span>
+          <p className="text-red-300 text-xs font-medium">{error}</p>
+        </div>
+      )}
+
+      {/* Success message with referrer info */}
+      {verified && referrerInfo && (
+        <div className="mt-3 rounded-lg overflow-hidden"
+          style={{ 
+            background: "rgba(52,211,153,0.08)", 
+            border: "1px solid rgba(52,211,153,0.25)" 
+          }}>
+          <div className="px-3 py-2 flex items-center gap-2"
+            style={{ borderBottom: "1px solid rgba(52,211,153,0.15)" }}>
+            <span className="text-emerald-400 text-sm">✓</span>
+            <p className="text-emerald-300 text-xs font-bold">Valid Referral Code</p>
+          </div>
+          <div className="px-3 py-2.5">
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-lg">👤</span>
+              <span className="text-white text-sm font-semibold">
+                {referrerInfo.referrerName}
+              </span>
+              <span className="ml-auto px-2 py-0.5 rounded-full text-[9px] font-bold"
+                style={{ 
+                  background: "rgba(139,92,246,0.15)", 
+                  color: "#c4b5fd",
+                  textTransform: "capitalize" 
+                }}>
+                {referrerInfo.referrerPlan || "starter"}
+              </span>
+            </div>
+            <p className="text-gray-300 text-[10px] mb-2">{referrerInfo.referrerEmail}</p>
+            <div className="flex items-center gap-1.5 text-[10px]">
+              <span className="text-emerald-400">•</span>
+              <span className="text-emerald-300 font-semibold">10% discount will be applied</span>
+            </div>
+            <div className="flex items-center gap-1.5 text-[10px] mt-0.5">
+              <span className="text-purple-400">•</span>
+              <span className="text-purple-300 font-semibold">
+                Referrer gets 10% credit on package price
+              </span>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
 /* ── Toast ────────────────────────────────────────────────────────────────── */
 function Toast({ toasts }) {
   return (
@@ -153,7 +394,7 @@ function ConfirmDialog({ title, message, confirmLabel, confirmColor, onConfirm, 
 }
 
 /* ── User Form Modal ──────────────────────────────────────────────────────── */
-const EMPTY_FORM = { name: "", email: "", password: "", phone: "", address: "", activeFrom: "", activeTo: "", activeToTime: "", maxDevices: "1", plan: "starter", subscriptionType: "active", billingPeriod: "monthly", paymentMethod: "cash" };
+const EMPTY_FORM = { name: "", email: "", password: "", phone: "", address: "", activeFrom: "", activeTo: "", activeToTime: "", maxDevices: "1", plan: "starter", subscriptionType: "active", billingPeriod: "monthly", paymentMethod: "cash", referralCode: "", referrerInfo: null };
 
 // Plan default maxDevices — jab plan select ho, yeh automatically set hota hai
 const PLAN_DEFAULT_DEVICES = {
@@ -290,6 +531,8 @@ function RegInvoiceDialog({ data, getToken, onToast, onClose }) {
           activeFrom:       data.activeFrom,
           activeTo:         data.activeTo,
           subscriptionType: data.subscriptionType,
+          referralDiscountApplied: data.referralDiscountApplied || false,
+          discountPercentage: data.discountPercentage || 0,
         }),
       });
       const result = await res.json();
@@ -454,6 +697,8 @@ function UserInvoiceDialog({ data, getToken, onToast, onClose }) {
             activeTo:         data.activeTo,
             subscriptionType: data.subscriptionType,
             uploadToCloudinary: false,
+            referralDiscountApplied: data.referralDiscountApplied || false,
+            discountPercentage: data.discountPercentage || 0,
           }),
         });
         const result = await res.json();
@@ -510,6 +755,8 @@ function UserInvoiceDialog({ data, getToken, onToast, onClose }) {
           activeFrom:       data.activeFrom,
           activeTo:         data.activeTo,
           subscriptionType: data.subscriptionType,
+          referralDiscountApplied: data.referralDiscountApplied || false,
+          discountPercentage: data.discountPercentage || 0,
         }),
       });
       const result = await res.json();
@@ -542,6 +789,8 @@ function UserInvoiceDialog({ data, getToken, onToast, onClose }) {
           activeTo:         data.activeTo,
           subscriptionType: data.subscriptionType,
           uploadToCloudinary: true,
+          referralDiscountApplied: data.referralDiscountApplied || false,
+          discountPercentage: data.discountPercentage || 0,
         }),
       });
       const result = await res.json();
@@ -2484,6 +2733,16 @@ function UserFormModal({ initial, onClose, onSave, saving, getToken, onToast, on
                 ))}
               </div>
             </div>
+          )}
+          
+          {/* ── Referral Code (NEW users only, hidden for trial) ── */}
+          {!isEdit && form.subscriptionType !== "trial" && (
+            <ReferralCodeInput 
+              value={form.referralCode || ""} 
+              onChange={(code) => setForm(p => ({ ...p, referralCode: code }))}
+              onReferrerFound={(referrerInfo) => setForm(p => ({ ...p, referrerInfo }))}
+              getToken={getToken}
+            />
           )}
             </>
           )}
@@ -4560,7 +4819,13 @@ export default function AdminPanel() {
         if (!res.ok) throw new Error(data.error);
         toast(`${form.name} updated successfully`);
       } else {
-        const res  = await fetch("/api/admin/create-user", { method:"POST", headers, body: JSON.stringify(form) });
+        // Clean up form before sending - remove empty referralCode
+        const cleanedForm = { ...form };
+        if (!cleanedForm.referralCode || cleanedForm.referralCode.trim() === '') {
+          delete cleanedForm.referralCode;
+        }
+        
+        const res  = await fetch("/api/admin/create-user", { method:"POST", headers, body: JSON.stringify(cleanedForm) });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error);
         toast(`${form.name} registered successfully`);
@@ -4577,6 +4842,10 @@ export default function AdminPanel() {
           activeFrom:       form.activeFrom,
           activeTo:         form.activeTo,
           subscriptionType: form.subscriptionType,
+          // Referral discount info
+          referralDiscountApplied: data.referralDiscountApplied || false,
+          referredBy: data.referredBy || null,
+          discountPercentage: data.discountPercentage || 0,
         });
         return; // skip the setShowForm below (already done)
       }
@@ -5207,6 +5476,9 @@ export default function AdminPanel() {
                                   billingPeriod: u.billingPeriod, paymentMethod: u.paymentMethod,
                                   activeFrom: u.activeFrom, activeTo: u.activeTo,
                                   subscriptionType: u.subscriptionType,
+                                  // If user has referredBy but no discountPercentage, default to 10%
+                                  referralDiscountApplied: u.referralDiscountApplied || !!u.referredBy,
+                                  discountPercentage: u.discountPercentage || (u.referredBy ? 10 : 0),
                                 }); }}
                                   className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
                                   style={{ color: "#FBBF24" }}>

@@ -98,6 +98,100 @@ export async function POST(request) {
 
     await adminDb.collection("users").doc(uid).update(update);
 
+    // ── Generate referral code if user is being activated and doesn't have one ──
+    let referralCodeGenerated = false;
+    let generatedCode = null;
+    
+    if (status === "active") {
+      try {
+        // Check if user already has a referral code
+        const userDoc = await adminDb.collection("users").doc(uid).get();
+        const userData = userDoc.exists ? userDoc.data() : {};
+        
+        if (!userData.referralCode) {
+          // User is being activated and doesn't have a referral code — generate one
+          const metadataRef = adminDb.collection("referralMetadata").doc("globalCounter");
+          const metadataDoc = await metadataRef.get();
+          
+          let serialNumber = 1;
+          if (metadataDoc.exists) {
+            serialNumber = metadataDoc.data().nextSerialNumber || 1;
+          }
+          
+          // Generate code with current date
+          const now = new Date();
+          const day = String(now.getDate()).padStart(2, '0');
+          const month = String(now.getMonth() + 1).padStart(2, '0');
+          const year = String(now.getFullYear()).slice(-2);
+          const serial = String(serialNumber).padStart(2, '0');
+          
+          generatedCode = `NOV-REF-${serial}${day}${month}${year}`;
+          
+          // Use batch for atomic operations
+          const batch = adminDb.batch();
+          
+          // Store in referralCodes collection
+          const codeRef = adminDb.collection("referralCodes").doc(generatedCode);
+          batch.set(codeRef, {
+            code: generatedCode,
+            uid,
+            userName: userData.name || name || "",
+            userEmail: userData.email || "",
+            serialNumber,
+            generatedAt: new Date().toISOString(),
+            isActive: true,
+            usageCount: 0,
+            totalCreditsEarned: 0
+          });
+          
+          // Update user document with referral code
+          batch.update(adminDb.collection("users").doc(uid), {
+            referralCode: generatedCode,
+            referralCredits: 0,
+            referralCreditsHistory: []
+          });
+          
+          // Initialize referral stats
+          const statsRef = adminDb.collection("referralStats").doc(uid);
+          batch.set(statsRef, {
+            uid,
+            totalReferrals: 0,
+            totalCreditsEarned: 0,
+            totalCreditsRedeemed: 0,
+            availableCredits: 0,
+            referredUsers: [],
+            createdAt: new Date().toISOString(),
+            lastUpdated: new Date().toISOString()
+          });
+          
+          // Update or create metadata
+          if (metadataDoc.exists) {
+            batch.update(metadataRef, {
+              nextSerialNumber: serialNumber + 1,
+              totalCodesGenerated: (metadataDoc.data().totalCodesGenerated || 0) + 1,
+              lastUpdated: new Date().toISOString()
+            });
+          } else {
+            batch.set(metadataRef, {
+              nextSerialNumber: serialNumber + 1,
+              totalCodesGenerated: 1,
+              totalReferrals: 0,
+              discountPercentage: 10,
+              commissionPercentage: 10,
+              createdAt: new Date().toISOString(),
+              lastUpdated: new Date().toISOString()
+            });
+          }
+          
+          await batch.commit();
+          referralCodeGenerated = true;
+        }
+      } catch (refErr) {
+        console.error("[update-user] Referral code generation failed:", refErr);
+        // Don't fail the entire update if referral code generation fails
+      }
+    }
+
     // Sync Auth if needed — gracefully handle missing Auth record
     const authUpdate = {};
     if (name)        authUpdate.displayName = name.trim();
@@ -113,7 +207,13 @@ export async function POST(request) {
       }
     }
 
-    return NextResponse.json({ success: true });
+    const response = { success: true };
+    if (referralCodeGenerated) {
+      response.referralCode = generatedCode;
+      response.referralCodeGenerated = true;
+    }
+
+    return NextResponse.json(response);
   } catch (err) {
     console.error("[update-user]", err);
     return NextResponse.json({ error: err.message || "Update failed" }, { status: 500 });
