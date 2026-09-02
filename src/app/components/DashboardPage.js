@@ -780,7 +780,12 @@ function DashboardContent() {
   // ── Sign out ─────────────────────────────────────────────────────────────────
   async function handleSignOut() {
     const sessionId = sessionStorage.getItem("novexa_session_id");
-    if (sessionId && auth.currentUser) {
+    // Remove session ID FIRST so the heartbeat early-exits before we
+    // even call the logout API — prevents the race where heartbeat sees
+    // active:false and redirects with ?blocked=session_evicted
+    sessionStorage.removeItem("novexa_session_id");
+    sessionStorage.removeItem("novexa_staff_context");
+    if (sessionId && sessionId !== "admin" && auth.currentUser) {
       try {
         const token = await auth.currentUser.getIdToken();
         await fetch("/api/admin/session-logout", {
@@ -788,9 +793,7 @@ function DashboardContent() {
           headers: { authorization: `Bearer ${token}`, "x-session-id": sessionId },
         });
       } catch { /* ignore */ }
-      sessionStorage.removeItem("novexa_session_id");
     }
-    sessionStorage.removeItem("novexa_staff_context");
     await signOut(auth);
     router.push("/pages/login");
   }

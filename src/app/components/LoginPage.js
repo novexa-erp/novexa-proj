@@ -56,6 +56,99 @@ function SweetAlert({ show, type, title, message, onClose }) {
   );
 }
 
+// ── Forgot Password Popup ─────────────────────────────────────────────────────
+function ForgotPasswordPopup({ show, onClose }) {
+  const [visible, setVisible] = useState(false);
+  const [leaving, setLeaving] = useState(false);
+  useEffect(() => { if (show) { setVisible(true); setLeaving(false); } }, [show]);
+  const close = () => { setLeaving(true); setTimeout(() => { setVisible(false); onClose(); }, 300); };
+  if (!show && !visible) return null;
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center p-4"
+      style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)", animation: leaving ? "fadeOut .3s ease-out" : "fadeIn .3s ease-out" }}
+      onClick={close}>
+      <style>{`
+        @keyframes fadeIn   { from{opacity:0} to{opacity:1} }
+        @keyframes fadeOut  { from{opacity:1} to{opacity:0} }
+        @keyframes slideUp  { from{transform:translateY(30px) scale(.9);opacity:0} to{transform:translateY(0) scale(1);opacity:1} }
+        @keyframes slideDown{ from{transform:translateY(0) scale(1);opacity:1} to{transform:translateY(30px) scale(.9);opacity:0} }
+        @keyframes iconPop  { 0%{transform:scale(0) rotate(-180deg)} 50%{transform:scale(1.2) rotate(10deg)} 100%{transform:scale(1) rotate(0)} }
+      `}</style>
+      <div className="relative w-full max-w-sm rounded-3xl overflow-hidden"
+        style={{
+          background: "linear-gradient(135deg,rgba(13,17,23,.98),rgba(8,13,20,.98))",
+          border: "1.5px solid rgba(37,99,235,0.3)",
+          boxShadow: "0 20px 60px rgba(0,0,0,.5)",
+          animation: leaving ? "slideDown .3s ease-out" : "slideUp .4s cubic-bezier(.34,1.56,.64,1)",
+        }}
+        onClick={e => e.stopPropagation()}>
+
+        {/* Top gradient bar */}
+        <div className="h-1 w-full" style={{ background: "linear-gradient(90deg,#2563EB,#60A5FA,#F59E0B)" }} />
+
+        <div className="p-8 flex flex-col items-center gap-5">
+          {/* Icon */}
+          <div className="relative">
+            <div className="absolute inset-0 rounded-full" style={{ background: "rgba(37,99,235,0.15)", animation: "ripple 1.5s infinite" }} />
+            <div className="relative w-20 h-20 rounded-full flex items-center justify-center text-4xl"
+              style={{ background: "rgba(37,99,235,0.12)", border: "2px solid rgba(37,99,235,0.3)", animation: "iconPop .5s cubic-bezier(.34,1.56,.64,1) .2s backwards" }}>
+              🔑
+            </div>
+          </div>
+
+          {/* Title & message */}
+          <div className="flex flex-col items-center gap-2 text-center" style={{ animation: "slideUp .5s ease-out .3s backwards" }}>
+            <h3 className="text-white font-bold text-2xl">Forgot Your Password?</h3>
+            <p className="text-gray-400 text-sm leading-relaxed max-w-xs">
+              No worries at all! Just reach out to us and we&apos;ll reset your password right away.
+            </p>
+          </div>
+
+          {/* Contact info box */}
+          <div className="w-full rounded-2xl p-4 flex flex-col gap-3"
+            style={{ background: "rgba(37,99,235,0.06)", border: "1px solid rgba(37,99,235,0.15)", animation: "slideUp .5s ease-out .4s backwards" }}>
+            <p className="text-blue-300 text-xs font-semibold text-center uppercase tracking-wider">Contact Us</p>
+
+            {/* WhatsApp */}
+            <a href="https://wa.me/923251507557?text=Hello%20Novexa%2C%20I%20forgot%20my%20password.%20Please%20help%20me%20reset%20it."
+              target="_blank" rel="noopener noreferrer"
+              className="flex items-center gap-3 p-3 rounded-xl transition-all hover:scale-[1.02]"
+              style={{ background: "rgba(37,211,102,0.08)", border: "1px solid rgba(37,211,102,0.2)" }}>
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                style={{ background: "rgba(37,211,102,0.12)" }}>💬</div>
+              <div className="flex flex-col">
+                <span className="text-white text-sm font-semibold">WhatsApp</span>
+                <span className="text-green-400 text-xs">+92 325 150 7557</span>
+              </div>
+              <span className="ml-auto text-green-500 text-xs font-semibold">Chat →</span>
+            </a>
+
+            {/* Email */}
+            <a href="mailto:novexaerp@gmail.com?subject=Forgot%20Password&body=Hello%20Novexa%2C%20I%20forgot%20my%20password%20and%20need%20help%20resetting%20it."
+              className="flex items-center gap-3 p-3 rounded-xl transition-all hover:scale-[1.02]"
+              style={{ background: "rgba(37,99,235,0.08)", border: "1px solid rgba(37,99,235,0.2)" }}>
+              <div className="w-9 h-9 rounded-xl flex items-center justify-center text-xl flex-shrink-0"
+                style={{ background: "rgba(37,99,235,0.12)" }}>✉️</div>
+              <div className="flex flex-col">
+                <span className="text-white text-sm font-semibold">Email</span>
+                <span className="text-blue-400 text-xs">novexaerp@gmail.com</span>
+              </div>
+              <span className="ml-auto text-blue-500 text-xs font-semibold">Send →</span>
+            </a>
+          </div>
+
+          {/* Close button */}
+          <button onClick={close}
+            className="w-full py-3.5 rounded-xl text-white font-semibold text-sm transition-all hover:scale-[1.02]"
+            style={{ background: "linear-gradient(135deg,#2563EB,#1d4ed8)", boxShadow: "0 4px 20px rgba(37,99,235,0.25)", animation: "slideUp .5s ease-out .5s backwards" }}>
+            Got it, thanks!
+          </button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 // ── Helpers ───────────────────────────────────────────────────────────────────
 function firebaseError(code) {
   const map = {
@@ -187,6 +280,7 @@ function LoginContent() {
   const [showPass, setShowPass]   = useState(false);
   const [loading,  setLoading]    = useState(false);
   const [alert,    setAlert]      = useState({ show: false, type: "", title: "", message: "" });
+  const [forgotOpen, setForgotOpen] = useState(false);
 
   useEffect(() => { setTimeout(() => setMounted(true), 60); }, []);
 
@@ -314,6 +408,7 @@ function LoginContent() {
     <div className="min-h-screen bg-[#0d1117] flex">
       <SweetAlert show={alert.show} type={alert.type} title={alert.title} message={alert.message}
         onClose={() => setAlert(a => ({ ...a, show: false }))} />
+      <ForgotPasswordPopup show={forgotOpen} onClose={() => setForgotOpen(false)} />
 
       {/* ── Left branding panel ── */}
       <div className="hidden lg:flex lg:w-1/2 relative overflow-hidden flex-col justify-between p-12">
@@ -398,7 +493,9 @@ function LoginContent() {
             <div>
               <div className="flex items-center justify-between mb-2">
                 <label className="text-xs font-semibold text-gray-400 tracking-wide uppercase">Password</label>
-                <Link href="#" className="text-xs font-medium" style={{ color:"#60A5FA" }}>Forgot password?</Link>
+                <button type="button" onClick={() => setForgotOpen(true)}
+                  className="text-xs font-medium transition-colors hover:text-blue-300"
+                  style={{ color:"#60A5FA" }}>Forgot password?</button>
               </div>
               <div className="relative">
                 <input type={showPass?"text":"password"} required placeholder="••••••••"
