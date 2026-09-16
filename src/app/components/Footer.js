@@ -107,22 +107,19 @@ const badges = [
   { icon: "🇵🇰", text: "Made in Pakistan" },
 ];
 
-function NewsletterBox() {
+function NewsletterBox({ onShowModal }) {
   const [email, setEmail] = useState("");
   const [focused, setFocused] = useState(false);
-  const [submitted, setSubmitted] = useState(false);
 
   function handleSubmit(e) {
     e.preventDefault();
-    if (email) setSubmitted(true);
+    if (email) {
+      onShowModal(email);
+      setEmail("");
+    }
   }
 
-  return submitted ? (
-    <div className="flex items-center gap-2 px-4 py-3 rounded-xl"
-      style={{ background: "rgba(16,185,129,0.08)", border: "1px solid rgba(16,185,129,0.25)" }}>
-      <span className="text-emerald-400 text-sm font-semibold">✓ You are subscribed!</span>
-    </div>
-  ) : (
+  return (
     <form onSubmit={handleSubmit} className="flex gap-2">
       <input
         type="email"
@@ -153,12 +150,215 @@ function NewsletterBox() {
   );
 }
 
+function NewsletterModal({ email, onClose }) {
+  const [loading, setLoading] = useState(true);
+  const [success, setSuccess] = useState(false);
+  const [alreadySubscribed, setAlreadySubscribed] = useState(false);
+  const [error, setError] = useState(null);
+
+  useEffect(() => {
+    async function subscribe() {
+      try {
+        const res = await fetch("/api/newsletter/subscribe", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email }),
+        });
+
+        const data = await res.json();
+
+        if (res.status === 409 && data.error === "already_subscribed") {
+          setAlreadySubscribed(true);
+          setLoading(false);
+          setTimeout(() => onClose(), 3000);
+          return;
+        }
+
+        if (!res.ok) {
+          throw new Error(data.error || "Failed to subscribe");
+        }
+
+        setSuccess(true);
+        setLoading(false);
+        setTimeout(() => onClose(), 3000);
+      } catch (err) {
+        console.error("Newsletter subscription error:", err);
+        setError(err.message || "Something went wrong");
+        setLoading(false);
+        setTimeout(() => onClose(), 3000);
+      }
+    }
+
+    subscribe();
+  }, [email, onClose]);
+
+  return (
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4"
+      style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)" }}
+      onClick={onClose}>
+      <div className="relative max-w-md w-full rounded-3xl p-8 overflow-hidden"
+        onClick={e => e.stopPropagation()}
+        style={{ 
+          background: "linear-gradient(135deg, rgba(13,17,23,0.98), rgba(30,58,138,0.25))",
+          border: "1.5px solid rgba(255,255,255,0.12)",
+          boxShadow: "0 25px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05)",
+          animation: "modalFadeIn 0.3s ease-out"
+        }}>
+        
+        {/* Top gradient line */}
+        <div className="absolute top-0 left-0 right-0 h-1"
+          style={{ background: "linear-gradient(90deg, #F59E0B, #FBBF24, #F59E0B)" }} />
+        
+        {loading ? (
+          // Subscribing State
+          <div className="flex flex-col items-center text-center gap-5">
+            <div className="relative">
+              <div className="w-20 h-20 rounded-full flex items-center justify-center"
+                style={{ 
+                  background: "rgba(245,158,11,0.15)",
+                  border: "2px solid rgba(245,158,11,0.4)",
+                  boxShadow: "0 0 30px rgba(245,158,11,0.3)"
+                }}>
+                <svg className="w-10 h-10 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="rgba(245,158,11,0.3)" strokeWidth="3" />
+                  <path d="M12 2a10 10 0 0 1 10 10" stroke="#F59E0B" strokeWidth="3" strokeLinecap="round" />
+                </svg>
+              </div>
+              <div className="absolute inset-0 rounded-full animate-ping"
+                style={{ background: "rgba(245,158,11,0.2)" }} />
+            </div>
+            <div>
+              <h3 className="text-white font-bold text-2xl mb-2">Subscribing...</h3>
+              <p className="text-gray-400 text-sm">Please wait a moment</p>
+            </div>
+          </div>
+        ) : alreadySubscribed ? (
+          // Already Subscribed State
+          <div className="flex flex-col items-center text-center gap-5">
+            <div className="relative">
+              <div className="w-20 h-20 rounded-full flex items-center justify-center text-4xl"
+                style={{ 
+                  background: "rgba(245,158,11,0.15)",
+                  border: "2px solid rgba(245,158,11,0.4)",
+                  boxShadow: "0 0 40px rgba(245,158,11,0.3)",
+                  animation: "successPop 0.5s cubic-bezier(0.34,1.56,0.64,1) both"
+                }}>
+                ℹ️
+              </div>
+            </div>
+            <div>
+              <h3 className="text-white font-bold text-2xl mb-2">Already Subscribed!</h3>
+              <p className="text-gray-400 text-sm max-w-xs leading-relaxed mx-auto">
+                You're already on our newsletter list. Thanks for your continued interest!
+              </p>
+              <div className="flex items-center justify-center gap-2 mt-4">
+                <span className="w-2 h-2 rounded-full bg-amber-400 animate-pulse" />
+                <span className="text-amber-400 text-xs font-semibold">You're all set!</span>
+              </div>
+            </div>
+          </div>
+        ) : success ? (
+          // Success State
+          <div className="flex flex-col items-center text-center gap-5">
+            <div className="relative">
+              <div className="w-20 h-20 rounded-full flex items-center justify-center text-4xl"
+                style={{ 
+                  background: "rgba(16,185,129,0.15)",
+                  border: "2px solid rgba(16,185,129,0.4)",
+                  boxShadow: "0 0 40px rgba(16,185,129,0.3)",
+                  animation: "successPop 0.5s cubic-bezier(0.34,1.56,0.64,1) both"
+                }}>
+                ✅
+              </div>
+            </div>
+            <div>
+              <h3 className="text-white font-bold text-2xl mb-2">Successfully Subscribed!</h3>
+              <p className="text-gray-400 text-sm max-w-xs leading-relaxed mx-auto">
+                Thank you for subscribing to our newsletter. Stay tuned for the latest updates!
+              </p>
+              <div className="flex items-center justify-center gap-2 mt-4">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-emerald-400 text-xs font-semibold">Welcome aboard!</span>
+              </div>
+            </div>
+          </div>
+        ) : error ? (
+          // Error State
+          <div className="flex flex-col items-center text-center gap-5">
+            <div className="relative">
+              <div className="w-20 h-20 rounded-full flex items-center justify-center text-4xl"
+                style={{ 
+                  background: "rgba(239,68,68,0.15)",
+                  border: "2px solid rgba(239,68,68,0.4)",
+                  boxShadow: "0 0 40px rgba(239,68,68,0.3)"
+                }}>
+                ❌
+              </div>
+            </div>
+            <div>
+              <h3 className="text-white font-bold text-2xl mb-2">Oops!</h3>
+              <p className="text-gray-400 text-sm max-w-xs leading-relaxed mx-auto">
+                {error}
+              </p>
+            </div>
+          </div>
+        ) : null}
+      </div>
+
+      {/* CSS Animations */}
+      <style jsx>{`
+        @keyframes modalFadeIn {
+          from {
+            opacity: 0;
+            transform: scale(0.9) translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+          }
+        }
+        @keyframes successPop {
+          0% {
+            transform: scale(0);
+            opacity: 0;
+          }
+          50% {
+            transform: scale(1.1);
+          }
+          100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
+      `}</style>
+    </div>
+  );
+}
+
 export default function Footer() {
   const [ref, visible] = useInView(0.05);
   const [hoveredLink, setHoveredLink] = useState(null);
   const [hoveredSocial, setHoveredSocial] = useState(null);
+  const [showNewsletterModal, setShowNewsletterModal] = useState(false);
+  const [newsletterEmail, setNewsletterEmail] = useState("");
+
+  function handleNewsletterSubmit(email) {
+    setNewsletterEmail(email);
+    setShowNewsletterModal(true);
+  }
 
   return (
+    <>
+      {showNewsletterModal && (
+        <NewsletterModal 
+          email={newsletterEmail} 
+          onClose={() => {
+            setShowNewsletterModal(false);
+            setNewsletterEmail("");
+          }} 
+        />
+      )}
+      
     <footer
       ref={ref}
       className="relative bg-[#0d1117] overflow-hidden"
@@ -263,7 +463,7 @@ export default function Footer() {
               <p className="text-xs font-semibold text-gray-200 uppercase tracking-widest mb-2">
                 Stay Updated
               </p>
-              <NewsletterBox />
+              <NewsletterBox onShowModal={handleNewsletterSubmit} />
             </div>
           </div>
 
@@ -412,5 +612,6 @@ export default function Footer() {
         </div>
       </div>
     </footer>
+    </>
   );
 }

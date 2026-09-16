@@ -246,6 +246,13 @@ service cloud.firestore {
       allow read, write: if isSignedIn();
     }
 
+    // ── Newsletter Subscriptions ──────────────────────────────────────────────
+    // API route handles validation, allows public write for subscription
+    match /newsletter/{email} {
+      allow read:  if isAdmin();
+      allow write: if true; // Allow API route to write (server-side validation)
+    }
+
     // ── Deny everything else ─────────────────────────────────────────────────
     match /{document=**} {
       allow read, write: if false;
