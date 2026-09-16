@@ -4,10 +4,12 @@ import nodemailer from "nodemailer";
 // ── Novexa system mailer ──────────────────────────────────────────────────────
 function getTransporter() {
   return nodemailer.createTransport({
-    service: "gmail",
+    host: process.env.NOVEXA_SMTP_HOST,
+    port: parseInt(process.env.NOVEXA_SMTP_PORT || "465"),
+    secure: true, // SSL/TLS
     auth: {
-      user: process.env.NOVEXA_GMAIL,
-      pass: process.env.NOVEXA_GMAIL_APP_PASSWORD,
+      user: process.env.NOVEXA_EMAIL,
+      pass: process.env.NOVEXA_EMAIL_PASSWORD,
     },
   });
 }
@@ -374,8 +376,8 @@ export async function POST(request) {
     await Promise.all([
       // 1. Notification to Novexa — with headers to avoid self-spam
       transporter.sendMail({
-        from:     `"Novexa Support System" <${process.env.NOVEXA_GMAIL}>`,
-        to:       process.env.NOVEXA_GMAIL,
+        from:     `"Novexa Support System" <${process.env.NOVEXA_EMAIL}>`,
+        to:       process.env.NOVEXA_EMAIL,
         replyTo:  email,
         subject:  `[Support] ${category ? `[${category}] ` : ""}${subject}`,
         html:     buildAdminEmailHTML({ name, email, category, subject, message }),
@@ -388,9 +390,9 @@ export async function POST(request) {
 
       // 2. Confirmation to user — anti-spam headers
       transporter.sendMail({
-        from:    `"Novexa Support" <${process.env.NOVEXA_GMAIL}>`,
+        from:    `"Novexa Support" <${process.env.NOVEXA_EMAIL}>`,
         to:      email,
-        replyTo: process.env.NOVEXA_GMAIL,
+        replyTo: process.env.NOVEXA_EMAIL,
         subject: `We received your message — Novexa Support`,
         text:    buildUserConfirmationText({ name, category, subject, message }),
         html:    buildUserConfirmationHTML({ name, category, subject, message }),
@@ -398,8 +400,8 @@ export async function POST(request) {
           "X-Priority": "3",
           "Importance": "normal",
           "X-Mailer": "Novexa Support System",
-          "List-Unsubscribe": `<mailto:${process.env.NOVEXA_GMAIL}?subject=Unsubscribe>`,
-          "Return-Path": process.env.NOVEXA_GMAIL,
+          "List-Unsubscribe": `<mailto:${process.env.NOVEXA_EMAIL}?subject=Unsubscribe>`,
+          "Return-Path": process.env.NOVEXA_EMAIL,
           "Message-ID": `<${Date.now()}.${email.replace('@', '-at-')}@novexa-support>`,
         },
       }),

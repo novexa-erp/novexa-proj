@@ -267,8 +267,8 @@ export default function FeaturesPage() {
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-4 mb-14">
-            <button className="btn-primary">Start Free Trial →</button>
-            <button className="btn-secondary">Watch Demo →</button>
+           <Link href={"/pages/contact"}> <button className="btn-primary">Start Free Trial →</button> </Link>
+            <Link href={"/pages/contact"}> <button className="btn-secondary">Watch Demo →</button> </Link>
           </div>
 
           {/* quick stats */}
@@ -468,7 +468,7 @@ function CtaSection() {
             </p>
 
             <div className="flex flex-wrap items-center justify-center gap-4 mb-8">
-              <button className="btn-primary">Start Free Trial →</button>
+             <Link href={"/pages/contact"}> <button className="btn-primary">Start Free Trial →</button> </Link>
               <Link href="/" className="btn-secondary">← Back to Home</Link>
             </div>
 

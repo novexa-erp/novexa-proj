@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 function useInView(threshold = 0.15) {
@@ -251,9 +252,11 @@ function StillHaveQuestions() {
         <p className="text-gray-500 text-sm mb-5">
           Our support team is ready to help you with anything.
         </p>
+        <Link href={"/pages/contact"}>
         <button className="btn-primary">
           Contact Support →
         </button>
+        </Link>
         {/* <a
           href="#contact"
           className="inline-flex items-center gap-2 px-6 py-3 text-sm font-semibold rounded-full transition-all duration-300 hover:scale-105"

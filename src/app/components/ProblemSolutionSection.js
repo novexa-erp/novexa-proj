@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState, useCallback } from "react";
 import styles from "./ProblemSolutionSection.module.css";
+import Link from "next/link";
 
 // ── Sequenced divider animation ──────────────────────────────────────────────
 // SEQUENCE (each step adds to lit state, nothing turns off until reset):
@@ -529,12 +530,16 @@ export default function ProblemSolutionSection() {
             Stop managing manually. Start running smarter.
           </p>
           <div className="flex flex-wrap items-center justify-center gap-4">
+            <Link href={"/pages/contact"}>
             <button className="btn-primary">
               Fix My Business Now <span className="text-sm">→</span>
             </button>
+            </Link>
+            <Link href={"/pages/contact"}>
             <button className="btn-secondary">
               See All Features <span className="text-sm">→</span>
             </button>
+            </Link>
           </div>
         </div>
 

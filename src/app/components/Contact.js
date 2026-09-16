@@ -140,23 +140,100 @@ export default function Contact() {
   const [headerRef, headerVisible] = useInView(0.2);
   const [formRef, formVisible] = useInView(0.1);
 
-  const [form, setForm] = useState({ name: "", email: "", message: "" });
+  const [form, setForm] = useState({ name: "", email: "", subject: "", message: "" });
   const [focused, setFocused] = useState(null);
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState(null);
+  const [showModal, setShowModal] = useState(false);
 
   function handleChange(e) {
     setForm({ ...form, [e.target.name]: e.target.value });
   }
 
-  function handleSubmit(e) {
+  async function handleSubmit(e) {
     e.preventDefault();
     setLoading(true);
-    setTimeout(() => {
-      setLoading(false);
+    setShowModal(true); // Show submitting modal
+    setError(null);
+    
+    try {
+      const res = await fetch("/api/contact", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          name: form.name,
+          email: form.email,
+          category: form.subject || "General Enquiry",
+          subject: form.subject || "Contact Form Submission",
+          message: form.message,
+        }),
+      });
+
+      if (!res.ok) {
+        const data = await res.json();
+        throw new Error(data.error || "Failed to send message");
+      }
+
       setSubmitted(true);
-    }, 1500);
+      setLoading(false);
+      // Keep modal open to show success state
+      // Auto-close after 3 seconds
+      setTimeout(() => {
+        setShowModal(false);
+        setSubmitted(false);
+        setForm({ name: "", email: "", subject: "", message: "" }); // Reset form
+      }, 3000);
+    } catch (err) {
+      console.error("Contact form error:", err);
+      setError(err.message || "Something went wrong. Please try again.");
+      setLoading(false);
+      setShowModal(false); // Close modal on error
+    }
   }
+
+  // Inject CSS to override autofill styles - aggressive dark mode enforcement
+  useEffect(() => {
+    const style = document.createElement('style');
+    style.textContent = `
+      /* Chrome, Safari, Edge autofill override */
+      input:-webkit-autofill,
+      input:-webkit-autofill:hover,
+      input:-webkit-autofill:focus,
+      input:-webkit-autofill:active,
+      textarea:-webkit-autofill,
+      textarea:-webkit-autofill:hover,
+      textarea:-webkit-autofill:focus,
+      textarea:-webkit-autofill:active {
+        -webkit-text-fill-color: #ffffff !important;
+        -webkit-box-shadow: 0 0 0 1000px rgba(13, 17, 23, 0.95) inset !important;
+        box-shadow: 0 0 0 1000px rgba(13, 17, 23, 0.95) inset !important;
+        background-color: transparent !important;
+        background-clip: content-box !important;
+        border-color: rgba(255,255,255,0.08) !important;
+        caret-color: #ffffff !important;
+        transition: background-color 5000s ease-in-out 0s !important;
+      }
+      
+      /* Focus state for autofilled inputs */
+      input:-webkit-autofill:focus,
+      textarea:-webkit-autofill:focus {
+        -webkit-box-shadow: 0 0 0 1000px rgba(37, 99, 235, 0.06) inset, 0 0 0 3px rgba(37,99,235,0.1) !important;
+        box-shadow: 0 0 0 1000px rgba(37, 99, 235, 0.06) inset, 0 0 0 3px rgba(37,99,235,0.1) !important;
+        border-color: rgba(37,99,235,0.45) !important;
+      }
+
+      /* Font consistency */
+      input:-webkit-autofill::first-line,
+      textarea:-webkit-autofill::first-line {
+        font-size: 14px !important;
+        font-family: 'Segoe UI', Helvetica, Arial, sans-serif !important;
+        color: #ffffff !important;
+      }
+    `;
+    document.head.appendChild(style);
+    return () => document.head.removeChild(style);
+  }, []);
 
   const inputStyle = (field) => ({
     width: "100%",
@@ -173,6 +250,10 @@ export default function Contact() {
 
   return (
     <section id="contact" className="relative py-24 md:py-32 bg-[#0d1117] overflow-hidden">
+      
+      {/* Modal */}
+      {showModal && <StatusModal loading={loading} submitted={submitted} />}
+      
       <div className="absolute inset-0 pointer-events-none">
         <div className="absolute top-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#2563EB]/35 to-transparent" />
         <div className="absolute bottom-0 left-0 right-0 h-px bg-gradient-to-r from-transparent via-[#10B981]/25 to-transparent" />
@@ -287,102 +368,95 @@ export default function Contact() {
                 }}
               />
 
-              {submitted ? (
-                <SuccessState />
-              ) : (
-                <form onSubmit={handleSubmit} className="flex flex-col gap-5">
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 mb-2 tracking-wide uppercase">
-                      Your Name
-                    </label>
-                    <input
-                      type="text"
-                      name="name"
-                      required
-                      placeholder="e.g. Ahmed Raza"
-                      value={form.name}
-                      onChange={handleChange}
-                      onFocus={() => setFocused("name")}
-                      onBlur={() => setFocused(null)}
-                      style={inputStyle("name")}
-                    />
-                  </div>
+              <form onSubmit={handleSubmit} className="flex flex-col gap-5">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 mb-2 tracking-wide uppercase">
+                    Your Name
+                  </label>
+                  <input
+                    type="text"
+                    name="name"
+                    required
+                    placeholder="e.g. Ahmed Raza"
+                    value={form.name}
+                    onChange={handleChange}
+                    onFocus={() => setFocused("name")}
+                    onBlur={() => setFocused(null)}
+                    style={inputStyle("name")}
+                  />
+                </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 mb-2 tracking-wide uppercase">
-                      Email Address
-                    </label>
-                    <input
-                      type="email"
-                      name="email"
-                      required
-                      placeholder="you@example.com"
-                      value={form.email}
-                      onChange={handleChange}
-                      onFocus={() => setFocused("email")}
-                      onBlur={() => setFocused(null)}
-                      style={inputStyle("email")}
-                    />
-                  </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 mb-2 tracking-wide uppercase">
+                    Email Address
+                  </label>
+                  <input
+                    type="email"
+                    name="email"
+                    required
+                    placeholder="you@example.com"
+                    value={form.email}
+                    onChange={handleChange}
+                    onFocus={() => setFocused("email")}
+                    onBlur={() => setFocused(null)}
+                    style={inputStyle("email")}
+                  />
+                </div>
 
-                  <div>
-                    <label className="block text-xs font-semibold text-gray-400 mb-2 tracking-wide uppercase">
-                      Message
-                    </label>
-                    <textarea
-                      name="message"
-                      required
-                      rows={5}
-                      placeholder="Tell us how we can help..."
-                      value={form.message}
-                      onChange={handleChange}
-                      onFocus={() => setFocused("message")}
-                      onBlur={() => setFocused(null)}
-                      style={{ ...inputStyle("message"), resize: "none" }}
-                    />
-                  </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 mb-2 tracking-wide uppercase">
+                    Subject (Optional)
+                  </label>
+                  <input
+                    type="text"
+                    name="subject"
+                    placeholder="e.g. Demo Request"
+                    value={form.subject}
+                    onChange={handleChange}
+                    onFocus={() => setFocused("subject")}
+                    onBlur={() => setFocused(null)}
+                    style={inputStyle("subject")}
+                  />
+                </div>
 
-                  <div className="text-center">
-                  <button className="btn-primary"
-                  style={{width: '40%'}}
-                  >
-                    Send Message →
-                  </button>
-                  </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-400 mb-2 tracking-wide uppercase">
+                    Message
+                  </label>
+                  <textarea
+                    name="message"
+                    required
+                    rows={5}
+                    placeholder="Tell us how we can help..."
+                    value={form.message}
+                    onChange={handleChange}
+                    onFocus={() => setFocused("message")}
+                    onBlur={() => setFocused(null)}
+                    style={{ ...inputStyle("message"), resize: "none" }}
+                  />
+                </div>
 
-                  {/* <button
+                {error && (
+                  <div className="rounded-xl p-4" style={{ background: "rgba(239,68,68,0.1)", border: "1px solid rgba(239,68,68,0.3)" }}>
+                    <p className="text-red-400 text-sm font-medium">❌ {error}</p>
+                  </div>
+                )}
+
+                <div className="text-center">
+                  <button 
                     type="submit"
                     disabled={loading}
-                    className="group relative w-full py-4 text-base font-semibold text-white rounded-xl overflow-hidden transition-all duration-300 hover:scale-[1.02] disabled:opacity-70 disabled:cursor-not-allowed"
-                    style={{
-                      background: "linear-gradient(135deg, #2563EB 0%, #1D4ED8 50%, #1E40AF 100%)",
-                      boxShadow: "0 6px 25px rgba(37,99,235,0.35), inset 0 1px 0 rgba(255,255,255,0.15)",
-                    }}
-                    onMouseEnter={e => !loading && (e.currentTarget.style.boxShadow = "0 8px 35px rgba(37,99,235,0.55), inset 0 1px 0 rgba(255,255,255,0.15)")}
-                    onMouseLeave={e => (e.currentTarget.style.boxShadow = "0 6px 25px rgba(37,99,235,0.35), inset 0 1px 0 rgba(255,255,255,0.15)")}
+                    className="btn-primary"
+                    style={{width: '40%', opacity: loading ? 0.7 : 1, cursor: loading ? 'not-allowed' : 'pointer'}}
                   >
-                    {loading ? (
-                      <span className="flex items-center justify-center gap-2">
-                        <svg className="w-4 h-4 animate-spin" viewBox="0 0 24 24" fill="none">
-                          <circle className="opacity-25" cx="12" cy="12" r="10" stroke="white" strokeWidth="4" />
-                          <path className="opacity-75" fill="white" d="M4 12a8 8 0 018-8v8z" />
-                        </svg>
-                        Sending...
-                      </span>
-                    ) : (
-                      <span className="flex items-center justify-center gap-2">
-                        Send Message
-                        <span className="text-sm transition-transform duration-300 group-hover:translate-x-1">→</span>
-                      </span>
-                    )}
-                    <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/10 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
-                  </button> */}
+                    {loading ? "Sending..." : "Send Message →"}
+                  </button>
+                </div>
 
-                  <p className="text-center text-gray-600 text-xs">
-                    🔒 Your information is safe. We never share your data.
-                  </p>
-                </form>
-              )}
+                <p className="text-center text-gray-600 text-xs">
+                  🔒 Your information is safe. We never share your data.
+                </p>
+              </form>
             </div>
           </div>
         </div>
@@ -391,28 +465,99 @@ export default function Contact() {
   );
 }
 
-function SuccessState() {
+function StatusModal({ loading, submitted }) {
   return (
-    <div className="flex flex-col items-center justify-center py-12 text-center gap-4">
-      <div
-        className="w-20 h-20 rounded-full flex items-center justify-center text-4xl"
-        style={{
-          background: "rgba(16,185,129,0.1)",
-          border: "1.5px solid rgba(16,185,129,0.35)",
-          boxShadow: "0 0 40px rgba(16,185,129,0.15)",
-          animation: "successPop 0.5s cubic-bezier(0.34,1.56,0.64,1) both",
-        }}
-      >
-        ✅
+    <div className="fixed inset-0 z-[9999] flex items-center justify-center px-4"
+      style={{ background: "rgba(0,0,0,0.75)", backdropFilter: "blur(8px)" }}>
+      <div className="relative max-w-md w-full rounded-3xl p-8 overflow-hidden"
+        style={{ 
+          background: "linear-gradient(135deg, rgba(13,17,23,0.98), rgba(30,58,138,0.25))",
+          border: "1.5px solid rgba(255,255,255,0.12)",
+          boxShadow: "0 25px 60px rgba(0,0,0,0.5), 0 0 0 1px rgba(255,255,255,0.05)",
+          animation: "modalFadeIn 0.3s ease-out"
+        }}>
+        
+        {/* Top gradient line */}
+        <div className="absolute top-0 left-0 right-0 h-1"
+          style={{ background: "linear-gradient(90deg, #2563EB, #60A5FA, #F59E0B)" }} />
+        
+        {loading ? (
+          // Submitting State
+          <div className="flex flex-col items-center text-center gap-5">
+            <div className="relative">
+              <div className="w-20 h-20 rounded-full flex items-center justify-center"
+                style={{ 
+                  background: "rgba(37,99,235,0.15)",
+                  border: "2px solid rgba(37,99,235,0.4)",
+                  boxShadow: "0 0 30px rgba(37,99,235,0.3)"
+                }}>
+                <svg className="w-10 h-10 animate-spin" viewBox="0 0 24 24" fill="none">
+                  <circle cx="12" cy="12" r="10" stroke="rgba(37,99,235,0.3)" strokeWidth="3" />
+                  <path d="M12 2a10 10 0 0 1 10 10" stroke="#2563EB" strokeWidth="3" strokeLinecap="round" />
+                </svg>
+              </div>
+              <div className="absolute inset-0 rounded-full animate-ping"
+                style={{ background: "rgba(37,99,235,0.2)" }} />
+            </div>
+            <div>
+              <h3 className="text-white font-bold text-2xl mb-2">Sending Message...</h3>
+              <p className="text-gray-400 text-sm">Please wait while we process your request</p>
+            </div>
+          </div>
+        ) : submitted ? (
+          // Success State
+          <div className="flex flex-col items-center text-center gap-5">
+            <div className="relative">
+              <div className="w-20 h-20 rounded-full flex items-center justify-center text-4xl"
+                style={{ 
+                  background: "rgba(16,185,129,0.15)",
+                  border: "2px solid rgba(16,185,129,0.4)",
+                  boxShadow: "0 0 40px rgba(16,185,129,0.3)",
+                  animation: "successPop 0.5s cubic-bezier(0.34,1.56,0.64,1) both"
+                }}>
+                ✅
+              </div>
+            </div>
+            <div>
+              <h3 className="text-white font-bold text-2xl mb-2">Message Sent!</h3>
+              <p className="text-gray-400 text-sm max-w-xs leading-relaxed mx-auto">
+                Thank you for reaching out. Our team will get back to you within 24 hours.
+              </p>
+              <div className="flex items-center justify-center gap-2 mt-4">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="text-emerald-400 text-xs font-semibold">We'll be in touch soon</span>
+              </div>
+            </div>
+          </div>
+        ) : null}
       </div>
-      <h3 className="text-white font-bold text-xl">Message Sent!</h3>
-      <p className="text-gray-500 text-sm max-w-xs leading-relaxed">
-        Thanks for reaching out. Our team will get back to you within 24 hours.
-      </p>
-      <div className="flex items-center gap-2 mt-2">
-        <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
-        <span className="text-emerald-400 text-xs font-semibold">We will be in touch soon</span>
-      </div>
+
+      {/* CSS Animations */}
+      <style jsx>{`
+        @keyframes modalFadeIn {
+          from {
+            opacity: 0;
+            transform: scale(0.9) translateY(20px);
+          }
+          to {
+            opacity: 1;
+            transform: scale(1) translateY(0);
+          }
+        }
+        @keyframes successPop {
+          0% {
+            transform: scale(0);
+            opacity: 0;
+          }
+          50% {
+            transform: scale(1.1);
+          }
+          100% {
+            transform: scale(1);
+            opacity: 1;
+          }
+        }
+      `}</style>
     </div>
   );
 }

@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from "react";
 import styles from "./HeroSlider.module.css";
+import Link from "next/link";
 
 const slides = [
   {
@@ -192,18 +193,22 @@ export default function HeroSlider() {
               style={{ transitionTimingFunction: "ease-out" }}
             >
               {/* Primary Button */}
+              <Link href={"/pages/contact"}>
               <button
                 className="btn-primary group"
               >
                 <span className="relative z-10">{slide.cta}</span>
                 <span className="relative z-10 text-sm">→</span>
               </button>
+              </Link>
 
               {/* Secondary Button */}
+              <Link href={"/pages/contact"}>
               <button className="btn-secondary">
                 {slide.ctaSecondary}
                 <span className="text-sm">→</span>
               </button>
+              </Link>
             </div>
 
             {/* Stats Row */}

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 const features = [
@@ -429,6 +430,7 @@ export default function AboutSection() {
             Ready to transform the way you run your business?
           </p>
           <div className="flex flex-wrap items-center justify-center gap-4">
+            <Link href={"/pages/contact"}>
             <button
               className="group relative inline-flex items-center gap-2 px-8 py-4 text-base font-semibold text-white rounded-full overflow-hidden transition-all duration-300 hover:scale-105"
               style={{
@@ -442,6 +444,8 @@ export default function AboutSection() {
               <span className="text-sm transition-transform duration-300 group-hover:translate-x-1">→</span>
               <div className="absolute inset-0 bg-gradient-to-r from-white/0 via-white/15 to-white/0 -translate-x-full group-hover:translate-x-full transition-transform duration-700" />
             </button>
+            </Link>
+            <Link href={"/pages/contact"}>
             <button
               className="inline-flex items-center gap-2 px-8 py-4 text-base font-semibold rounded-full transition-all duration-300 hover:scale-105"
               style={{
@@ -464,6 +468,7 @@ export default function AboutSection() {
             >
               View All Features <span className="text-sm">→</span>
             </button>
+            </Link>
           </div>
         </div>
 

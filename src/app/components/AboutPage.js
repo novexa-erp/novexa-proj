@@ -78,8 +78,8 @@ export default function AboutPage() {
           </p>
 
           <div className="flex flex-wrap items-center justify-center gap-4">
-            <button className="btn-primary">Start Free Trial →</button>
-            <Link href="/contact" className="btn-secondary">Talk to Us →</Link>
+           <Link href={"/pages/contact"}> <button className="btn-primary">Start Free Trial →</button> </Link>
+            <Link href="/pages/contact" className="btn-secondary">Talk to Us →</Link>
           </div>
         </div>
       </section>
@@ -694,8 +694,8 @@ function AboutCta() {
               500+ businesses already trust Novexa to run their operations. Start your free trial today — no credit card needed.
             </p>
             <div className="flex flex-wrap items-center justify-center gap-4 mb-8">
-              <button className="btn-primary">Start Free Trial →</button>
-              <Link href="/contact" className="btn-secondary">Contact Us →</Link>
+             <Link href={"/pages/contact"}> <button className="btn-primary">Start Free Trial →</button> </Link>
+              <Link href="/pages/contact" className="btn-secondary">Contact Us →</Link>
             </div>
             <div className="flex flex-wrap items-center justify-center gap-6 text-sm text-gray-500">
               {["✓ Free to start", "✓ No credit card", "✓ Setup in 5 minutes", "✓ 24/7 support"].map(t => <span key={t}>{t}</span>)}

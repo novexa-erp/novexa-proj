@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useRef, useState } from "react";
 
 function useInView(threshold = 0.15) {
@@ -321,8 +322,8 @@ function BottomBar() {
           That is all it takes. Start your first invoice today — free.
         </p>
         <div className="flex flex-wrap items-center justify-center gap-4">
-          <button className="btn-primary">Get Started Free →</button>
-          <button className="btn-secondary">Watch Demo →</button>
+         <Link href={"/pages/contact"}> <button className="btn-primary">Get Started Free →</button></Link>
+         <Link href={"/pages/contact"}> <button className="btn-secondary">Watch Demo →</button> </Link>
         </div>
       </div>
     </div>

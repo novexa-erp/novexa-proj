@@ -20,25 +20,25 @@ function useInView(threshold = 0.1) {
 
 const footerLinks = {
   Product: [
-    { label: "Features", href: "#features" },
-    { label: "How It Works", href: "#" },
+    { label: "Features", href: "/pages/features" },
+    { label: "About us", href: "/pages/about" },
     { label: "Pricing", href: "/pages/pricing" },
-    { label: "Modules", href: "#modules" },
-    { label: "Changelog", href: "#" },
+    { label: "Modules", href: "/pages/modules" },
+    // { label: "Changelog", href: "#" },
   ],
   Company: [
-    { label: "About Us", href: "#about" },
-    { label: "Blog", href: "#" },
-    { label: "Careers", href: "#" },
-    { label: "Press Kit", href: "#" },
-    { label: "Contact", href: "#contact" },
+    { label: "About Us", href: "/pages/about" },
+    // { label: "Blog", href: "#" },
+    { label: "Careers", href: "https://www.codeverza.com/career-page" },
+    // { label: "Press Kit", href: "#" },
+    { label: "Contact", href: "/pages/contact" },
   ],
   Support: [
-    { label: "Help Center", href: "#" },
-    { label: "Documentation", href: "#" },
-    { label: "API Reference", href: "#" },
-    { label: "Status Page", href: "#" },
-    { label: "Community", href: "#" },
+    { label: "Help Center", href: "/pages/contact" },
+    // { label: "Documentation", href: "#" },
+    // { label: "API Reference", href: "#" },
+    // { label: "Status Page", href: "#" },
+    // { label: "Community", href: "#" },
   ],
   Legal: [
     { label: "Privacy Policy",  href: "/pages/privacy-policy" },
@@ -292,10 +292,12 @@ export default function Footer() {
                 <ul className="flex flex-col gap-2.5">
                   {links.map((link) => {
                     const key = `${category}-${link.label}`;
+                    const isExternal = link.href.startsWith("http");
                     return (
                       <li key={link.label}>
                         <Link
                           href={link.href}
+                          {...(isExternal ? { target: "_blank", rel: "noopener noreferrer" } : {})}
                           className="text-sm transition-all duration-200 flex items-center gap-1.5 group"
                           style={{
                             color: hoveredLink === key ? "#F59E0B" : "#fff",
@@ -364,10 +366,10 @@ export default function Footer() {
           <p className="text-gray-200 text-xs text-center md:text-left">
             © {new Date().getFullYear()} Novexa ERP. All rights reserved.{" "}
             <span className="text-gray-200">·</span>{" "}
-            <a href="https://codecoves.com" target="_blank" rel="noopener noreferrer"
+            <a href="https://codeverza.com" target="_blank" rel="noopener noreferrer"
               className="transition-colors duration-200 hover:text-gray-200"
               style={{ color: "#4b5563" }}>
-              A Project of <span style={{ color: "#F59E0B" }}>Codecoves</span>
+              A Project of <span style={{ color: "#F59E0B" }}>codeverza</span>
             </a>
           </p>
 
