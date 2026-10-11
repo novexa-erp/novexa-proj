@@ -44,7 +44,37 @@ function HistoryTemplate({ customer, invoices, payments, userDoc }) {
     const date = pay.createdAt?.toDate ? pay.createdAt.toDate() : new Date(pay.createdAt || 0);
     timeline.push({ type: "payment", date, data: pay });
   });
-  timeline.sort((a, b) => b.date - a.date);
+
+  // Sort oldest-first to compute running balance
+  timeline.sort((a, b) => a.date - b.date);
+
+  const isPrevBalItem = (desc) => (desc || "").startsWith("Previous Balance · INV-");
+
+  // Single-pass running balance — each row gets amountBefore + balanceAfter
+  let runningBal = 0;
+  timeline.forEach(item => {
+    const d = item.data;
+    item.amountBefore = runningBal;
+    if (item.type === "invoice") {
+      const invActual = d.actualAmount != null
+        ? Number(d.actualAmount)
+        : (d.items || []).filter(it => !isPrevBalItem(it.description))
+            .reduce((s, it) => s + (Number(it.qty) || 0) * (Number(it.unitPrice) || 0), 0)
+          || Number(d.amount) || 0;
+      const paid = Number(d.originalAmountPaid) || 0;
+      runningBal = Math.max(0, runningBal + invActual - paid);
+    } else if (d.type === "return") {
+      runningBal = Math.max(0, runningBal - (Number(d.returnAmount) || 0));
+    } else if (d.type === "received") {
+      runningBal = Math.max(0, runningBal - (Number(d.paid) || Number(d.amount) || 0));
+    } else if (d.type === "purchase") {
+      runningBal = Math.max(0, runningBal + (Number(d.purchaseAmount) || 0));
+    }
+    item.balanceAfter = runningBal;
+  });
+
+  // Reverse for display (newest first)
+  timeline.reverse();
 
   // Helper: exclude "Previous Balance · INV-" carry-forward items from invoice amount
   function actualInvAmount(inv) {
@@ -218,30 +248,18 @@ function HistoryTemplate({ customer, invoices, payments, userDoc }) {
                   ? (d.invoiceNumber || ("INV-" + (d.id || "").slice(-4).toUpperCase()))
                   : (d.invoiceNumber || ("INV-" + (d.invoiceId || "").slice(-4).toUpperCase()) || "—");
 
+                // ── Use pre-computed running balance ──
+                // amount = balance BEFORE this transaction (for invoice row: show invoice actual amount)
+                // balVal = balance AFTER this transaction
                 const isPrevBal = (desc) => (desc || "").startsWith("Previous Balance · INV-");
-
-                // ── Amount column (prev balance before this transaction) ──
-                let amount = null;
-                if (isInv) {
-                  amount = d.originalAmount != null
-                    ? Number(d.originalAmount)
-                    : (d.actualAmount != null
-                        ? Number(d.actualAmount)
-                        : (d.items || [])
-                            .filter(it => !isPrevBal(it.description))
-                            .reduce((s, it) => s + (Number(it.qty)||0)*(Number(it.unitPrice)||0), 0)
-                          || Number(d.amount) || 0);
-                } else if (isPurchase) {
-                  amount = d.amount != null ? Number(d.amount) : null;
-                } else if (isReturn) {
-                  // Amount = balance BEFORE return
-                  amount = d.balanceBefore != null ? Number(d.balanceBefore) : null;
-                } else {
-                  // Payment: balance before = historyBalance + paid
-                  amount = d.historyBalance != null
-                    ? Number(d.historyBalance) + Number(d.paid || 0)
-                    : (d.balance != null ? Number(d.balance) + Number(d.paid || 0) : Number(d.amount) || 0);
-                }
+                const amount = isInv
+                  ? (d.actualAmount != null
+                      ? Number(d.actualAmount)
+                      : (d.items || []).filter(it => !isPrevBal(it.description))
+                          .reduce((s, it) => s + (Number(it.qty)||0)*(Number(it.unitPrice)||0), 0)
+                        || Number(d.amount) || 0)
+                  : item.amountBefore;
+                const balVal = item.balanceAfter;
 
                 // ── Purchase column ──
                 const purchaseVal = isPurchase ? Number(d.purchaseAmount || 0) : null;
@@ -256,14 +274,9 @@ function HistoryTemplate({ customer, invoices, payments, userDoc }) {
                     ? null
                     : (d.paid != null ? Number(d.paid) : null);
 
-                // ── Balance column ──
-                const balVal = isInv
-                  ? Math.max(0, (amount || 0) - (d.originalAmountPaid != null ? Number(d.originalAmountPaid) : 0))
-                  : (d.historyBalance != null ? Number(d.historyBalance) : (d.balance != null ? Number(d.balance) : null));
-
                 // ── Status column ──
                 const rowStatus = isInv
-                  ? (d.originalStatus || (paidVal === 0 ? "Unpaid" : paidVal >= (amount||0) ? "Paid" : "Partial"))
+                  ? (d.originalStatus || (balVal === 0 && amount > 0 ? "Paid" : paidVal > 0 ? "Partial" : "Unpaid"))
                   : (d.status && d.status !== "completed" ? d.status : null);
                 const sBg    = rowStatus ? (STATUS_BG[rowStatus]    || "#f3f4f6") : null;
                 const sColor = rowStatus ? (STATUS_COLOR[rowStatus] || "#374151") : null;

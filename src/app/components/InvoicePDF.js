@@ -97,9 +97,33 @@ function InvoiceTemplate({ inv, userDoc, payments = [], customerTotalBalance = n
     ? Number(inv.actualAmount)
     : Math.max(actualSubtotal - actualDiscount, 0);
   const amountPaid    = Number(inv.amountPaid) || 0;
-  // goodsReturn — always from _pastReturns for accuracy (payments collection may be missing old records)
-  const goodsReturn   = (inv._pastReturns || []).reduce((s, r) => s + (Number(r.returnAmount) || 0), 0);
-  const actualBalance = Math.max(actualAmount - amountPaid - goodsReturn, 0);
+  // goodsReturn — _pastReturns for direct invoices, payments collection for customer invoices
+  const goodsReturn   = (inv._pastReturns || []).length > 0
+    ? (inv._pastReturns || []).reduce((s, r) => s + (Number(r.returnAmount) || 0), 0)
+    : payments.filter(p => p.type === "return").reduce((s, p) => s + (Number(p.returnAmount) || 0), 0);
+  // totalPaid — payments collection sum + check against inv.amountPaid
+  // Invoice creation pe paid amount sirf inv.amountPaid mein save hoti thi (no payments record)
+  // Baad ke quick-pay se payments records bante hain
+  // Correct total = max(inv.amountPaid, sum of received payments)
+  const totalPaidFromPayments = payments
+    .filter(p => p.type === "received")
+    .reduce((s, p) => s + (Number(p.paid) || Number(p.amount) || 0), 0);
+  const effectiveAmountPaid = Math.max(amountPaid, totalPaidFromPayments);
+  const actualBalance = Math.max(actualAmount - effectiveAmountPaid - goodsReturn, 0);
+
+  // If invoice was created with an initial payment (inv.amountPaid > sum of payment records),
+  // add a synthetic row for that initial payment so it shows in Payment History
+  const recordsSum = paymentRecords.reduce((s, p) => s + (Number(p.paid) || Number(p.amount) || 0), 0);
+  const initialPaid = recordsSum < amountPaid ? amountPaid - recordsSum : 0;
+  const initialPaymentRow = initialPaid > 0 ? [{
+    _synthetic: true,
+    createdAt:  inv.createdAt || null,
+    payerName:  inv.customerName || inv.customer || "",
+    receiverName: "",
+    method:     inv.paymentMethod || "cash",
+    paid:       initialPaid,
+  }] : [];
+  const allPaymentRecords = [...initialPaymentRow, ...paymentRecords];
 
   return (
     <div style={{
@@ -153,9 +177,9 @@ function InvoiceTemplate({ inv, userDoc, payments = [], customerTotalBalance = n
           <div style={{ marginTop: 10, display: "inline-flex", alignItems: "center",
             gap: 6, padding: "4px 12px", borderRadius: 20, fontSize: 11, fontWeight: 700,
             letterSpacing: "0.05em", textTransform: "uppercase",
-            background: (inv.deleted || inv.adminTrash) ? "#f3f4f6" : actualBalance === 0 ? "#dcfce7" : amountPaid > 0 ? "#fef3c7" : "#fee2e2",
-            color:      (inv.deleted || inv.adminTrash) ? "#6b7280" : actualBalance === 0 ? "#16a34a" : amountPaid > 0 ? "#d97706" : "#dc2626" }}>
-            ● {(inv.deleted || inv.adminTrash) ? "Deleted" : actualBalance === 0 && actualAmount > 0 ? "Paid" : amountPaid > 0 ? "Partial" : "Unpaid"}
+            background: (inv.deleted || inv.adminTrash) ? "#f3f4f6" : actualBalance === 0 ? "#dcfce7" : effectiveAmountPaid > 0 ? "#fef3c7" : "#fee2e2",
+            color:      (inv.deleted || inv.adminTrash) ? "#6b7280" : actualBalance === 0 ? "#16a34a" : effectiveAmountPaid > 0 ? "#d97706" : "#dc2626" }}>
+            ● {(inv.deleted || inv.adminTrash) ? "Deleted" : actualBalance === 0 && actualAmount > 0 ? "Paid" : effectiveAmountPaid > 0 ? "Partial" : "Unpaid"}
           </div>
         </div>
       </div>
@@ -332,7 +356,7 @@ function InvoiceTemplate({ inv, userDoc, payments = [], customerTotalBalance = n
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", gap: 24, padding: "6px 0" }}>
             <span style={{ color: "#16a34a", fontWeight: 600, fontSize: 12 }}>Amount Paid</span>
-            <span style={{ color: "#16a34a", fontWeight: 700, fontSize: 13 }}>{formatRs(amountPaid)}</span>
+            <span style={{ color: "#16a34a", fontWeight: 700, fontSize: 13 }}>{formatRs(effectiveAmountPaid)}</span>
           </div>
           {goodsReturn > 0 && (
            <div style={{ display: "flex", justifyContent: "space-between", gap: 24, padding: "6px 0" }}>
@@ -397,7 +421,7 @@ function InvoiceTemplate({ inv, userDoc, payments = [], customerTotalBalance = n
       )}
 
       {/* ── Payment History ── */}
-      {paymentRecords.length > 0 && (
+      {allPaymentRecords.length > 0 && (
         <div style={{ marginBottom: 24 }}>
           <div style={{ fontSize: 10, fontWeight: 700, textTransform: "uppercase",
             letterSpacing: "0.08em", color: "#16a34a", marginBottom: 8 }}>
@@ -406,34 +430,31 @@ function InvoiceTemplate({ inv, userDoc, payments = [], customerTotalBalance = n
           <table style={{ width: "100%", borderCollapse: "collapse" }}>
             <thead>
               <tr style={{ background: "#16a34a", color: "#fff" }}>
-                {["Date & Time", "Method", "Amount Paid", "Balance After"].map((h, i) => (
-                  <th key={h} style={{ padding: "7px 10px", textAlign: i >= 2 ? "right" : "left",
+                {["Date & Time", "Payer", "Receiver", "Method", "Amount Paid"].map((h, i) => (
+                  <th key={h} style={{ padding: "7px 10px", textAlign: i >= 4 ? "right" : "left",
                     fontSize: 10, fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.04em" }}>
                     {h}
                   </th>
                 ))}
               </tr>
-              
             </thead>
             <tbody>
-              {paymentRecords.map((p, idx) => (
+              {allPaymentRecords.map((p, idx) => (
                 <tr key={idx} style={{ background: idx % 2 === 0 ? "#f0fdf4" : "#fff" }}>
                   <td style={{ padding: "7px 10px", fontSize: 11, color: "#374151", whiteSpace: "nowrap" }}>
                     {fmtDateTime(p.createdAt)}
+                  </td>
+                  <td style={{ padding: "7px 10px", fontSize: 11, color: "#374151" }}>
+                    {p.payerName || "—"}
+                  </td>
+                  <td style={{ padding: "7px 10px", fontSize: 11, color: "#374151" }}>
+                    {p.receiverName || "—"}
                   </td>
                   <td style={{ padding: "7px 10px", fontSize: 11, color: "#374151", textTransform: "capitalize" }}>
                     {p.method || "cash"}
                   </td>
                   <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 12, fontWeight: 700, color: "#16a34a", whiteSpace: "nowrap" }}>
                     {formatRs(p.paid ?? p.amount)}
-                  </td>
-                  <td style={{ padding: "7px 10px", textAlign: "right", fontSize: 12, fontWeight: 700, whiteSpace: "nowrap",
-                    color: Number(p.historyBalance ?? p.balance) > 0 ? "#dc2626" : "#16a34a" }}>
-                    {p.historyBalance != null || p.balance != null
-                      ? (Number(p.historyBalance ?? p.balance) > 0
-                          ? formatRs(p.historyBalance ?? p.balance)
-                          : "Cleared ✓")
-                      : "—"}
                   </td>
                 </tr>
               ))}

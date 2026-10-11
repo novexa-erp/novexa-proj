@@ -283,8 +283,19 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
   const [savingInv,    setSavingInv]    = useState(false);
   const [deleteInvId,  setDeleteInvId]  = useState(null);
   const [pdfInv,       setPdfInv]       = useState(null);
+  // ── Quick Pay Modal State ────────────────────────────────────────────────────
+  const [payTarget,    setPayTarget]    = useState(null);
+  const [payForm,      setPayForm]      = useState({ amount: "", method: "cash", payerName: "", payerContact: "", receiverName: "", receiverContact: "" });
+  const [savingPay,    setSavingPay]    = useState(false);
+
+  // ── Quick Return Modal State ─────────────────────────────────────────────────
+  const [returnTarget, setReturnTarget] = useState(null);
+  const [returnForm,   setReturnForm]   = useState({ description: "", qty: "", rate: "", productId: "", variantId: "", variantLabel: "", variantUnit: "", maxQty: 0 });
+  const [savingReturn, setSavingReturn] = useState(false);
+
   // ── Invoice Actions dropdown ─────────────────────────────────────────────────
   const [openMenuId,   setOpenMenuId]   = useState(null);
+  const [menuPos,      setMenuPos]      = useState({ top: 0, left: 0 });
   const invMenuRef = useRef(null);
   useEffect(() => {
     function handler(e) { if (invMenuRef.current && !invMenuRef.current.contains(e.target)) setOpenMenuId(null); }
@@ -462,6 +473,180 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
     };
     setEditInv(null);
     setShowInvModal({ prefilled });
+  }
+
+  // ── Quick Pay handler (customer invoices) ────────────────────────────────
+  async function handleQuickPayCustomer() {
+    if (!payTarget || savingPay) return;
+    const paymentAmount = Number(payForm.amount) || 0;
+    if (paymentAmount <= 0) return;
+
+    const inv = payTarget;
+    const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+    const invActualAmt  = inv.actualAmount != null
+      ? Number(inv.actualAmount)
+      : (inv.items || []).filter(it => !isPrevBalItem(it))
+          .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0)
+        || Number(inv.amount) || 0;
+    const currentPaid     = Number(inv.amountPaid) || 0;
+    const previousBalance = Math.max(0, invActualAmt - currentPaid);
+    const newTotalPaid    = currentPaid + paymentAmount;
+    const newBalance      = Math.max(0, invActualAmt - newTotalPaid);
+    const newStatus       = newBalance === 0 ? "Paid" : newTotalPaid > 0 ? "Partial" : "Unpaid";
+
+    setSavingPay(true);
+    try {
+      const updatePayload = {
+        amountPaid:    newTotalPaid,
+        balance:       newBalance,
+        status:        newStatus,
+        lastPaymentAt: serverTimestamp(),
+        updatedAt:     serverTimestamp(),
+      };
+      // Update customer subcollection invoice
+      await updateDoc(
+        doc(db, "users", uid, "customers", customer.id, "invoices", inv.id),
+        updatePayload
+      );
+      // Mirror to global invoices
+      await updateDoc(
+        doc(db, "users", uid, "invoices", inv.id),
+        updatePayload
+      ).catch(() => {});
+
+      // Create payment record
+      await addDoc(collection(db, "users", uid, "payments"), {
+        type:            "received",
+        amount:          previousBalance,
+        paid:            paymentAmount,
+        balance:         newBalance,
+        historyBalance:  newBalance,
+        invoiceActualAmount: invActualAmt,
+        invoiceId:       inv.id,
+        invoiceNumber:   inv.invoiceNumber || `INV-${inv.id.slice(-4).toUpperCase()}`,
+        customerId:      customer.id,
+        customer:        customer.name,
+        payerName:       payForm.payerName || customer.name,
+        payerContact:    payForm.payerContact || customer.phone || "",
+        receiverName:    payForm.receiverName || "",
+        receiverContact: payForm.receiverContact || "",
+        description:     `Payment for invoice ${inv.invoiceNumber || inv.id.slice(-4).toUpperCase()} from ${customer.name}`,
+        method:          payForm.method || "cash",
+        status:          newStatus,
+        createdAt:       serverTimestamp(),
+      });
+
+      setAlert({
+        show: true, type: "success",
+        title: "Payment Collected! 💰",
+        message: `${formatRs(paymentAmount)} collect ho gaya. New status: ${newStatus}.`,
+      });
+      setPayTarget(null);
+      setPayForm({ amount: "", method: "cash", payerName: "", payerContact: "", receiverName: "", receiverContact: "" });
+    } catch (err) {
+      setAlert({ show: true, type: "error", title: "Payment Failed", message: err.message || "Kuch masla hua." });
+    }
+    setSavingPay(false);
+  }
+
+  // ── Quick Return handler (customer invoices) ──────────────────────────────
+  async function handleQuickReturnCustomer() {
+    if (!returnTarget || savingReturn) return;
+    const { description, qty, rate, productId, variantId, variantLabel, variantUnit } = returnForm;
+    if (!description || !Number(qty) || !Number(rate)) return;
+
+    const inv = returnTarget;
+    const retVarMult   = (!productId && variantLabel && parseFloat(variantLabel) > 0)
+      ? parseFloat(variantLabel) : 1;
+    const returnAmount = (Number(qty) || 0) * retVarMult * (Number(rate) || 0);
+
+    setSavingReturn(true);
+    try {
+      // Restore stock
+      if (productId) {
+        const product = products.find(p => p.id === productId);
+        if (product) {
+          const productRef = doc(db, "users", uid, "products", productId);
+          const qtyToRestore = Number(qty) || 0;
+          if (variantId && product.variants?.length > 0) {
+            const updatedVariants = product.variants.map((v, vIdx) => {
+              const varId = v.id || `var_${vIdx}`;
+              if (varId === variantId) return { ...v, stock: (Number(v.stock) || 0) + qtyToRestore };
+              return v;
+            });
+            await updateDoc(productRef, { variants: updatedVariants, updatedAt: serverTimestamp() });
+          } else {
+            await updateDoc(productRef, { stock: (Number(product.stock) || 0) + qtyToRestore, updatedAt: serverTimestamp() });
+          }
+        }
+      }
+
+      // Recalculate invoice amounts
+      const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+      const invReturnsTotal = customerPayments
+        .filter(p => p.type === "return" && p.invoiceId === inv.id)
+        .reduce((s, p) => s + (Number(p.returnAmount) || 0), 0);
+      const currentActual = inv.actualAmount != null
+        ? Number(inv.actualAmount)
+        : (inv.items || []).filter(it => !isPrevBalItem(it))
+            .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0)
+          || Number(inv.amount) || 0;
+      const newActual     = Math.max(0, currentActual - returnAmount);
+      const newFullAmount = Math.max(0, (Number(inv.amount) || currentActual) - returnAmount);
+      const currentPaid   = Number(inv.amountPaid) || 0;
+      const newBalance    = Math.max(0, newActual - currentPaid);
+      const newStatus     = newBalance === 0 && newActual > 0 ? "Paid" : currentPaid > 0 ? "Partial" : "Unpaid";
+
+      const returnPayload = {
+        amount:       newFullAmount,
+        actualAmount: newActual,
+        balance:      newBalance,
+        status:       newStatus,
+        updatedAt:    serverTimestamp(),
+      };
+      // Update customer subcollection invoice
+      await updateDoc(
+        doc(db, "users", uid, "customers", customer.id, "invoices", inv.id),
+        returnPayload
+      );
+      // Mirror to global invoices
+      await updateDoc(
+        doc(db, "users", uid, "invoices", inv.id),
+        returnPayload
+      ).catch(() => {});
+
+      // Create return record in payments collection
+      await addDoc(collection(db, "users", uid, "payments"), {
+        type:          "return",
+        returnAmount,
+        qty:           Number(qty),
+        rate:          Number(rate),
+        variantLabel:  variantLabel || "",
+        variantUnit:   variantUnit  || "",
+        variantMult:   retVarMult,
+        description,
+        balanceBefore: Math.max(0, currentActual - currentPaid),
+        historyBalance: newBalance,
+        balance:        newBalance,
+        invoiceId:      inv.id,
+        invoiceNumber:  inv.invoiceNumber || `INV-${inv.id.slice(-4).toUpperCase()}`,
+        customerId:     customer.id,
+        customer:       customer.name,
+        status:         newStatus,
+        createdAt:      serverTimestamp(),
+      });
+
+      setAlert({
+        show: true, type: "success",
+        title: "Goods Return Recorded! ↩️",
+        message: `${description} — ${formatRs(returnAmount)} balance se minus ho gaya. New balance: ${formatRs(newBalance)}.`,
+      });
+      setReturnTarget(null);
+      setReturnForm({ description: "", qty: "", rate: "", productId: "", variantId: "", variantLabel: "", variantUnit: "", maxQty: 0 });
+    } catch (err) {
+      setAlert({ show: true, type: "error", title: "Return Failed", message: err.message || "Kuch masla hua." });
+    }
+    setSavingReturn(false);
   }
 
   // ── save invoice to customer subcollection + global invoices ─────────────
@@ -1414,7 +1599,18 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
             </button>
           </div>
         ) : (
-          <div className="divide-y divide-white/[0.04]">
+          <div>
+            {/* Desktop column header */}
+            <div className="hidden md:flex px-5 py-3 text-[10px] font-bold uppercase tracking-widest border-b border-white/[0.05]" style={{ color: "#6b7280" }}>
+              <span className="flex-1 min-w-0">Invoice</span>
+              <span style={{ width: 120, textAlign: "right", flexShrink: 0 }}>Amount</span>
+              <span style={{ width: 110, textAlign: "right", flexShrink: 0 }}>Paid</span>
+              <span style={{ width: 110, textAlign: "right", flexShrink: 0 }}>Return</span>
+              <span style={{ width: 110, textAlign: "right", flexShrink: 0 }}>Balance</span>
+              <span style={{ width: 90, textAlign: "center", flexShrink: 0 }}>Status</span>
+              <span style={{ width: 150, textAlign: "right", flexShrink: 0 }}>Actions</span>
+            </div>
+
             {custInvoices.map(inv => {
               // Actual purchase amount — exclude "Previous Balance · INV-" carry-forward items
               const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
@@ -1451,106 +1647,249 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
 
               // Only show real product items (no prev balance entries)
               const realItems = (inv.items || []).filter(it => it.description && !isPrevBalItem(it));
-              return (
-                <div key={inv.id} className="flex flex-col px-4 py-3 gap-2 hover:bg-white/[0.02] transition-colors border-b border-white/[0.04] last:border-0">
-                  {/* Row 1: avatar + invoice ID + date + status */}
-                  <div className="flex items-center gap-3 min-w-0">
-                    <div className="w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black flex-shrink-0"
-                      style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>
-                      {badgeNum}
-                    </div>
-                    <div className="flex-1 min-w-0">
-                      <div className="flex items-center gap-2 flex-wrap">
-                        <p className="text-white text-sm font-medium whitespace-nowrap">{invNum}</p>
-                        {isOverdue && (
-                          <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
-                            style={{ background: "rgba(248,113,113,0.12)", color: "#f87171" }}>OVERDUE</span>
-                        )}
-                      </div>
-                      <p className="text-gray-300 text-xs whitespace-nowrap">{dateStr}{inv.dueDate ? ` · Due ${inv.dueDate}` : ""}</p>
-                      {realItems.length > 0 && (
-                        <p className="text-gray-300 text-[10px] mt-0.5 truncate">
-                          📦 {realItems.map(it => it.description).join(", ")}
-                        </p>
-                      )}
-                    </div>
-                    <span className="text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0"
-                      style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
-                      {effectiveStatus}
-                    </span>
-                  </div>
 
-                  {/* Row 2: amounts */}
-                  <div className="pl-12">
-                    <p className="text-white text-sm font-bold">{formatRs(displayAmount)}</p>
-                    <div className="flex flex-wrap gap-x-3">
-                      {amtPaid > 0 && (
-                        <p className="text-[10px]" style={{ color: "#34d399" }}>Paid: {formatRs(amtPaid)}</p>
-                      )}
-                      {invReturnsTotal > 0 && (
-                        <p className="text-[10px]" style={{ color: "#f87171" }}>Return: -{formatRs(invReturnsTotal)}</p>
-                      )}
-                      {displayBalance > 0 && (
-                        <p className="text-[10px] font-semibold" style={{ color: "#f87171" }}>Bal: {formatRs(displayBalance)}</p>
-                      )}
-                    </div>
-                  </div>
-
-                  {/* Row 3: inline action buttons — no dropdown (avoids overflow-hidden clip + mobile tap issues) */}
-                  <div className="flex flex-wrap gap-1.5 pl-12">
-                    {/* View */}
-                    <button onClick={() => setPdfInv(inv)}
-                      className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
-                      style={{ background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.25)", color: "#34d399" }}>
-                      👁 View
-                    </button>
-                    {/* History */}
-                    <button onClick={() => setShowHistoryModal(inv.id)}
-                      className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
-                      style={{ background: "rgba(139,92,246,0.08)", border: "1px solid rgba(139,92,246,0.25)", color: "#a78bfa" }}>
-                      📊 History
-                    </button>
-                    {/* Edit */}
+              // Shared dropdown menu content
+              const dropdownMenu = (
+                <div ref={invMenuRef}
+                  className="rounded-xl overflow-hidden"
+                  style={{ position: "fixed", top: menuPos.top, left: menuPos.left, zIndex: 9999, background: "#0d1117", border: "1px solid rgba(255,255,255,0.12)", boxShadow: "0 8px 32px rgba(0,0,0,0.6)", minWidth: 160 }}>
+                  {/* History */}
+                  <button onClick={() => { setOpenMenuId(null); setShowHistoryModal(inv.id); }}
+                    className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                    style={{ color: "#a78bfa" }}>
+                    📊 History
+                  </button>
+                  {/* Edit */}
+                  {canEdit ? (
                     <button onClick={() => {
+                        setOpenMenuId(null);
                         const invReturns = customerPayments.filter(p => p.type === "return" && p.invoiceId === inv.id);
                         setEditInv({ id: inv.id, form: docToForm(inv, invReturns) });
                         setShowInvModal(true);
                       }}
-                      className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
-                      style={{ background: "rgba(96,165,250,0.08)", border: "1px solid rgba(96,165,250,0.25)", color: "#60A5FA" }}>
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                      style={{ color: "#60A5FA" }}>
                       ✏️ Edit
                     </button>
-                    {/* Pay — only when balance > 0 */}
-                    {displayBalance > 0 && (
-                      <button onClick={() => {
-                          const invReturns = customerPayments.filter(p => p.type === "return" && p.invoiceId === inv.id);
-                          setEditInv({ id: inv.id, form: docToForm(inv, invReturns) });
-                          setShowInvModal(true);
-                        }}
-                        className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
-                        style={{ background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.25)", color: "#34d399" }}>
-                        💰 Pay
-                      </button>
-                    )}
-                    {/* Return — only when real items exist */}
-                    {realItems.length > 0 && (
-                      <button onClick={() => {
-                          const invReturns = customerPayments.filter(p => p.type === "return" && p.invoiceId === inv.id);
-                          setEditInv({ id: inv.id, form: docToForm(inv, invReturns) });
-                          setShowInvModal(true);
-                        }}
-                        className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95 whitespace-nowrap"
-                        style={{ background: "rgba(248,113,113,0.08)", border: "1px solid rgba(248,113,113,0.25)", color: "#f87171" }}>
-                        ↩️ Return
-                      </button>
-                    )}
-                    {/* Delete */}
-                    <button onClick={() => setDeleteInvId(inv.id)}
-                      className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all active:scale-95"
-                      style={{ background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.2)", color: "#f87171" }}>
-                      🗑️
+                  ) : (
+                    <div className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold opacity-40 cursor-not-allowed"
+                      style={{ color: "#6b7280" }} title="You don't have permission to edit invoices">
+                      🔒 Edit
+                    </div>
+                  )}
+                  {/* Pay — only when balance > 0 */}
+                  {displayBalance > 0 && (
+                    <button onClick={() => {
+                        setOpenMenuId(null);
+                        setPayForm({ amount: "", method: "cash", payerName: customer.name || "", payerContact: customer.phone || "", receiverName: "", receiverContact: "" });
+                        setPayTarget(inv);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                      style={{ color: "#34d399" }}>
+                      💰 Pay
                     </button>
+                  )}
+                  {/* Return — only when real items exist */}
+                  {realItems.length > 0 && (
+                    <button onClick={() => {
+                        setOpenMenuId(null);
+                        const firstItem = realItems[0];
+                        const invReturnsForItem = customerPayments
+                          .filter(p => p.type === "return" && p.invoiceId === inv.id && p.description === firstItem.description)
+                          .reduce((s, p) => s + (Number(p.qty) || 0), 0);
+                        const maxQty = Math.max(0, (Number(firstItem.qty) || 0) - invReturnsForItem);
+                        setReturnForm({
+                          description: firstItem.description,
+                          qty: maxQty > 0 ? String(maxQty) : "",
+                          rate: firstItem.unitPrice || "",
+                          productId: firstItem.productId || "",
+                          variantId: firstItem.variantId || "",
+                          variantLabel: firstItem.variantLabel || "",
+                          variantUnit: firstItem.variantUnit || "",
+                          maxQty,
+                        });
+                        setReturnTarget(inv);
+                      }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                      style={{ color: "#f87171" }}>
+                      ↩️ Return
+                    </button>
+                  )}
+                  {/* Divider */}
+                  <div style={{ borderTop: "1px solid rgba(255,255,255,0.07)" }} />
+                  {/* Delete */}
+                  {canDelete ? (
+                    <button onClick={() => { setOpenMenuId(null); setDeleteInvId(inv.id); }}
+                      className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold transition-colors hover:bg-white/[0.05]"
+                      style={{ color: "#f87171" }}>
+                      🗑️ Delete
+                    </button>
+                  ) : (
+                    <div className="w-full flex items-center gap-2.5 px-4 py-2.5 text-left text-sm font-semibold opacity-40 cursor-not-allowed"
+                      style={{ color: "#6b7280" }} title="You don't have permission to delete invoices">
+                      🔒 Delete
+                    </div>
+                  )}
+                </div>
+              );
+
+              return (
+                <div key={inv.id} className="border-b border-white/[0.04] last:border-0 hover:bg-white/[0.02] transition-colors">
+
+                  {/* ── Mobile (< md) ── stacked card */}
+                  <div className="flex flex-col px-4 py-3 gap-2 md:hidden">
+                    {/* Row 1: avatar + invoice ID + date + status */}
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className="w-9 h-9 rounded-xl flex items-center justify-center text-[10px] font-black flex-shrink-0"
+                        style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>
+                        {badgeNum}
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-white text-sm font-medium whitespace-nowrap">{invNum}</p>
+                          {isOverdue && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                              style={{ background: "rgba(248,113,113,0.12)", color: "#f87171" }}>OVERDUE</span>
+                          )}
+                        </div>
+                        <p className="text-gray-400 text-[10px] whitespace-nowrap">{dateStr}{inv.dueDate ? ` · Due ${inv.dueDate}` : ""}</p>
+                        {realItems.length > 0 && (
+                          <p className="text-gray-400 text-[10px] mt-0.5 truncate">
+                            📦 {realItems.map(it => it.description).join(", ")}
+                          </p>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-full flex-shrink-0"
+                        style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
+                        {effectiveStatus}
+                      </span>
+                    </div>
+                    {/* Row 2: amounts */}
+                    <div className="flex items-center gap-4 pl-12">
+                      <div>
+                        <p className="text-white text-sm font-bold">{formatRs(displayAmount)}</p>
+                        {displayBalance > 0 && (
+                          <p className="text-[10px] font-semibold" style={{ color: "#f87171" }}>Bal: {formatRs(displayBalance)}</p>
+                        )}
+                      </div>
+                      {amtPaid > 0 && (
+                        <p className="text-[10px]" style={{ color: "#34d399" }}>Paid: {formatRs(amtPaid)}</p>
+                      )}
+                      {invReturnsTotal > 0 && (
+                        <p className="text-[10px]" style={{ color: "#fb923c" }}>Return: {formatRs(invReturnsTotal)}</p>
+                      )}
+                    </div>
+                    {/* Row 3: buttons */}
+                    <div className="flex items-center gap-1.5 pl-12">
+                      <button onClick={() => setPdfInv(inv)}
+                        title="View Invoice"
+                        className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all hover:scale-105 whitespace-nowrap"
+                        style={{ background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.25)", color: "#34d399" }}>
+                        👁 View
+                      </button>
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            if (openMenuId === inv.id) { setOpenMenuId(null); return; }
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const spaceBelow = window.innerHeight - rect.bottom;
+                            const dropdownH = 220;
+                            const top = spaceBelow >= dropdownH ? rect.bottom + 4 : rect.top - dropdownH - 4;
+                            setMenuPos({ top, left: rect.left });
+                            setOpenMenuId(inv.id);
+                          }}
+                          title="More Actions"
+                          className="flex items-center gap-0.5 px-2 h-7 rounded-lg text-[11px] font-bold transition-all hover:scale-105 whitespace-nowrap"
+                          style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)" }}>
+                          ⚡ Actions ▾
+                        </button>
+                        {openMenuId === inv.id && dropdownMenu}
+                      </div>
+                    </div>
                   </div>
+
+                  {/* ── Desktop (≥ md) ── horizontal aligned row */}
+                  <div className="hidden md:flex items-center px-5 py-3.5">
+                    {/* Invoice info — flex-1 */}
+                    <div className="flex items-center gap-3 min-w-0 flex-1 pr-3">
+                      <div className="w-8 h-8 rounded-xl flex items-center justify-center text-[10px] font-black flex-shrink-0"
+                        style={{ background: "rgba(37,99,235,0.1)", border: "1px solid rgba(37,99,235,0.2)", color: "#60A5FA" }}>
+                        {badgeNum}
+                      </div>
+                      <div className="min-w-0">
+                        <div className="flex items-center gap-2 flex-wrap">
+                          <p className="text-white text-sm font-semibold whitespace-nowrap">{invNum}</p>
+                          {isOverdue && (
+                            <span className="text-[9px] font-bold px-1.5 py-0.5 rounded-full"
+                              style={{ background: "rgba(248,113,113,0.12)", color: "#f87171" }}>OVERDUE</span>
+                          )}
+                        </div>
+                        <p className="text-gray-500 text-[10px]">{dateStr}{inv.dueDate ? ` · Due ${inv.dueDate}` : ""}</p>
+                        {realItems.length > 0 && (
+                          <p className="text-gray-500 text-[10px] truncate">
+                            📦 {realItems.map(it => it.description).join(", ")}
+                          </p>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Amount */}
+                    <p className="text-white text-sm font-bold text-right flex-shrink-0" style={{ width: 120 }}>
+                      {formatRs(displayAmount)}
+                    </p>
+
+                    {/* Paid */}
+                    <p className="text-right text-sm font-semibold flex-shrink-0" style={{ width: 110, color: amtPaid > 0 ? "#34d399" : "#6b7280" }}>
+                      {amtPaid > 0 ? formatRs(amtPaid) : "—"}
+                    </p>
+
+                    {/* Return */}
+                    <p className="text-right text-sm font-semibold flex-shrink-0" style={{ width: 110, color: invReturnsTotal > 0 ? "#fb923c" : "#6b7280" }}>
+                      {invReturnsTotal > 0 ? formatRs(invReturnsTotal) : "—"}
+                    </p>
+
+                    {/* Balance */}
+                    <p className="text-right text-sm font-semibold flex-shrink-0" style={{ width: 110, color: displayBalance > 0 ? "#f87171" : "#34d399" }}>
+                      {formatRs(displayBalance)}
+                    </p>
+
+                    {/* Status */}
+                    <div className="flex items-center justify-center flex-shrink-0" style={{ width: 90 }}>
+                      <span className="text-[10px] font-bold px-2.5 py-1 rounded-full whitespace-nowrap"
+                        style={{ background: st.bg, color: st.color, border: `1px solid ${st.border}` }}>
+                        {effectiveStatus}
+                      </span>
+                    </div>
+
+                    {/* Actions */}
+                    <div className="flex items-center justify-end gap-1.5 flex-shrink-0" style={{ width: 150 }}>
+                      <button onClick={() => setPdfInv(inv)}
+                        title="View Invoice"
+                        className="flex items-center gap-1 px-2.5 h-7 rounded-lg text-[11px] font-bold transition-all hover:scale-105 whitespace-nowrap"
+                        style={{ background: "rgba(52,211,153,0.08)", border: "1px solid rgba(52,211,153,0.25)", color: "#34d399" }}>
+                        👁 View
+                      </button>
+                      <div className="relative">
+                        <button
+                          onClick={(e) => {
+                            if (openMenuId === inv.id) { setOpenMenuId(null); return; }
+                            const rect = e.currentTarget.getBoundingClientRect();
+                            const spaceBelow = window.innerHeight - rect.bottom;
+                            const dropdownH = 220;
+                            const top = spaceBelow >= dropdownH ? rect.bottom + 4 : rect.top - dropdownH - 4;
+                            setMenuPos({ top, left: rect.left });
+                            setOpenMenuId(inv.id);
+                          }}
+                          title="More Actions"
+                          className="flex items-center gap-0.5 px-2 h-7 rounded-lg text-[11px] font-bold transition-all hover:scale-105 whitespace-nowrap"
+                          style={{ background: "rgba(245,158,11,0.1)", color: "#f59e0b", border: "1px solid rgba(245,158,11,0.3)" }}>
+                          ⚡ Actions ▾
+                        </button>
+                        {openMenuId === inv.id && dropdownMenu}
+                      </div>
+                    </div>
+                  </div>
+
                 </div>
               );
             })}
@@ -1608,6 +1947,294 @@ function CustomerDetail({ customer, uid, products, userDoc, onBack, onEdit, onDe
         </div>
       </div>
     )}
+
+    {/* ── Quick Pay Modal ── */}
+    {payTarget && (() => {
+      const inv = payTarget;
+      const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+      const invActualAmt  = inv.actualAmount != null
+        ? Number(inv.actualAmount)
+        : (inv.items || []).filter(it => !isPrevBalItem(it))
+            .reduce((s, it) => s + (Number(it.qty) || 0) * getVarMult(it) * (Number(it.unitPrice) || 0), 0)
+          || Number(inv.amount) || 0;
+      const currentPaid = Number(inv.amountPaid) || 0;
+      const maxPayable  = Math.max(0, invActualAmt - currentPaid);
+      const payAmt      = Number(payForm.amount) || 0;
+      const newBal      = Math.max(0, maxPayable - payAmt);
+      const num         = inv.id.slice(-4).toUpperCase();
+
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)" }}>
+          <div className="w-full max-w-md rounded-2xl overflow-hidden"
+            style={{ background: "#0d1117", border: "1px solid rgba(52,211,153,0.3)", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4"
+              style={{ borderBottom: "1px solid rgba(52,211,153,0.12)", background: "linear-gradient(135deg, rgba(52,211,153,0.08), rgba(16,185,129,0.04))" }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+                  style={{ background: "rgba(52,211,153,0.15)", border: "1px solid rgba(52,211,153,0.3)" }}>💰</div>
+                <div>
+                  <h3 className="text-white font-black text-base">Collect Payment</h3>
+                  <p className="text-gray-500 text-xs">{inv.invoiceNumber || `INV-${num}`} · {customer.name}</p>
+                </div>
+              </div>
+              <button onClick={() => setPayTarget(null)}
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 transition-colors">✕</button>
+            </div>
+
+            <div className="p-5 flex flex-col gap-4">
+              {/* Balance info */}
+              <div className="rounded-xl px-4 py-3 flex items-center justify-between"
+                style={{ background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.2)" }}>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500">Outstanding Balance</p>
+                  <p className="text-white font-black text-lg">{formatRs(maxPayable)}</p>
+                </div>
+                <span className="text-[10px] font-bold px-2.5 py-1 rounded-full"
+                  style={{ background: "rgba(248,113,113,0.12)", color: "#f87171", border: "1px solid rgba(248,113,113,0.3)" }}>
+                  {inv.status || "Unpaid"}
+                </span>
+              </div>
+
+              {/* Payer name */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Payer Name</label>
+                <input type="text" placeholder="e.g. Ali Ahmed" value={payForm.payerName}
+                  onChange={e => setPayForm(p => ({ ...p, payerName: e.target.value }))}
+                  className="w-full rounded-xl text-white text-sm outline-none px-3 py-2.5"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1.5px solid rgba(255,255,255,0.1)" }} />
+              </div>
+
+              {/* Receiver name */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Receiver Name</label>
+                <input type="text" placeholder="e.g. Muhammad Salman" value={payForm.receiverName}
+                  onChange={e => setPayForm(p => ({ ...p, receiverName: e.target.value }))}
+                  className="w-full rounded-xl text-white text-sm outline-none px-3 py-2.5"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1.5px solid rgba(255,255,255,0.1)" }} />
+              </div>
+
+              {/* Amount */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1.5">
+                  Payment Amount (Max: {formatRs(maxPayable)})
+                </label>
+                <input type="number" inputMode="decimal" min="0" max={maxPayable} placeholder="0"
+                  value={payForm.amount}
+                  onChange={e => {
+                    const v = Number(e.target.value) || 0;
+                    if (v <= maxPayable) setPayForm(p => ({ ...p, amount: e.target.value }));
+                  }}
+                  className="w-full rounded-xl text-white text-sm outline-none px-3 py-2.5 text-right font-bold"
+                  style={{ background: "rgba(52,211,153,0.05)", border: `1.5px solid ${payAmt > 0 ? "rgba(52,211,153,0.4)" : "rgba(255,255,255,0.1)"}` }} />
+              </div>
+
+              {/* Payment Method */}
+              <div>
+                <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Payment Method</label>
+                <div className="flex gap-2">
+                  {[{ id: "cash", label: "💵 Cash" }, { id: "online", label: "📱 Online" }, { id: "cheque", label: "🏦 Cheque" }].map(m => (
+                    <button key={m.id} type="button"
+                      onClick={() => setPayForm(p => ({ ...p, method: m.id }))}
+                      className="flex-1 py-2 rounded-xl text-xs font-bold transition-all"
+                      style={{
+                        background: payForm.method === m.id ? "rgba(52,211,153,0.2)" : "rgba(255,255,255,0.04)",
+                        border: `1.5px solid ${payForm.method === m.id ? "rgba(52,211,153,0.5)" : "rgba(255,255,255,0.08)"}`,
+                        color: payForm.method === m.id ? "#34d399" : "#6b7280",
+                      }}>
+                      {m.label}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Preview */}
+              {payAmt > 0 && (
+                <div className="rounded-xl px-4 py-3"
+                  style={{ background: "rgba(52,211,153,0.06)", border: "1px solid rgba(52,211,153,0.2)" }}>
+                  <p className="text-xs text-green-300 font-semibold mb-1">✓ Payment Preview</p>
+                  <p className="text-xs text-gray-400">
+                    Amount: <span className="text-white font-bold">{formatRs(payAmt)}</span>
+                    &nbsp;·&nbsp; New Balance: <span className="font-bold" style={{ color: newBal > 0 ? "#f87171" : "#34d399" }}>{formatRs(newBal)}</span>
+                  </p>
+                </div>
+              )}
+
+              {/* Buttons */}
+              <div className="flex gap-3 mt-1">
+                <button onClick={() => setPayTarget(null)}
+                  className="flex-1 py-3 rounded-2xl text-sm font-semibold"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+                  Cancel
+                </button>
+                <button onClick={handleQuickPayCustomer} disabled={savingPay || payAmt <= 0}
+                  className="flex-1 py-3 rounded-2xl text-sm font-black transition-all hover:scale-[1.02]"
+                  style={{
+                    background: payAmt > 0 ? "linear-gradient(135deg,#34d399,#10b981)" : "rgba(52,211,153,0.2)",
+                    color: payAmt > 0 ? "#000" : "#6b7280",
+                    opacity: savingPay ? 0.7 : 1,
+                    cursor: (savingPay || payAmt <= 0) ? "not-allowed" : "pointer",
+                  }}>
+                  {savingPay ? "Saving..." : "💰 Collect Payment →"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
+
+    {/* ── Quick Return Modal ── */}
+    {returnTarget && (() => {
+      const inv = returnTarget;
+      const num = inv.id.slice(-4).toUpperCase();
+      const isPrevBalItem = it => (it.description || "").startsWith("Previous Balance · INV-");
+      const realItemsList = (inv.items || []).filter(it => it.description && !isPrevBalItem(it));
+
+      function getMaxQtyForItem(it) {
+        const alreadyReturned = customerPayments
+          .filter(p => p.type === "return" && p.invoiceId === inv.id && p.description === it.description)
+          .reduce((s, p) => s + (Number(p.qty) || 0), 0);
+        return Math.max(0, (Number(it.qty) || 0) - alreadyReturned);
+      }
+
+      const retVarMult  = (!returnForm.productId && returnForm.variantLabel && parseFloat(returnForm.variantLabel) > 0)
+        ? parseFloat(returnForm.variantLabel) : 1;
+      const returnTotal = (Number(returnForm.qty) || 0) * retVarMult * (Number(returnForm.rate) || 0);
+      const canSave     = returnForm.description && Number(returnForm.qty) > 0 && Number(returnForm.rate) > 0;
+
+      return (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4"
+          style={{ background: "rgba(0,0,0,0.8)", backdropFilter: "blur(8px)" }}>
+          <div className="w-full max-w-md rounded-2xl overflow-hidden"
+            style={{ background: "#0d1117", border: "1px solid rgba(248,113,113,0.3)", boxShadow: "0 24px 64px rgba(0,0,0,0.6)" }}>
+
+            {/* Header */}
+            <div className="flex items-center justify-between px-5 py-4"
+              style={{ borderBottom: "1px solid rgba(248,113,113,0.12)", background: "linear-gradient(135deg, rgba(248,113,113,0.08), rgba(239,68,68,0.04))" }}>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-xl flex items-center justify-center text-xl"
+                  style={{ background: "rgba(248,113,113,0.15)", border: "1px solid rgba(248,113,113,0.3)" }}>↩️</div>
+                <div>
+                  <h3 className="text-white font-black text-base">Goods Return</h3>
+                  <p className="text-gray-500 text-xs">{inv.invoiceNumber || `INV-${num}`} · {customer.name}</p>
+                </div>
+              </div>
+              <button onClick={() => setReturnTarget(null)}
+                className="w-8 h-8 rounded-xl flex items-center justify-center text-gray-500 hover:text-white hover:bg-white/10 transition-colors">✕</button>
+            </div>
+
+            <div className="p-5 flex flex-col gap-4">
+              {/* Product selector pills */}
+              {realItemsList.length > 1 && (
+                <div>
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-2">Select Item</label>
+                  <div className="flex flex-wrap gap-2">
+                    {realItemsList.map((it, idx) => {
+                      const mq = getMaxQtyForItem(it);
+                      const sel = returnForm.description === it.description;
+                      return (
+                        <button key={idx} type="button"
+                          disabled={mq === 0}
+                          onClick={() => setReturnForm(f => ({
+                            ...f,
+                            description: it.description,
+                            qty: mq > 0 ? String(mq) : "",
+                            rate: it.unitPrice || "",
+                            productId: it.productId || "",
+                            variantId: it.variantId || "",
+                            variantLabel: it.variantLabel || "",
+                            variantUnit: it.variantUnit || "",
+                            maxQty: mq,
+                          }))}
+                          className="px-3 py-1.5 rounded-xl text-xs font-semibold transition-all"
+                          style={{
+                            background: sel ? "rgba(248,113,113,0.15)" : "rgba(255,255,255,0.04)",
+                            border: `1px solid ${sel ? "rgba(248,113,113,0.4)" : "rgba(255,255,255,0.08)"}`,
+                            color: mq === 0 ? "#4b5563" : sel ? "#f87171" : "#9ca3af",
+                            cursor: mq === 0 ? "not-allowed" : "pointer",
+                          }}>
+                          {it.description} {mq === 0 ? "(fully returned)" : `(max ${mq})`}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {/* Selected item info */}
+              {returnForm.description && (
+                <div className="rounded-xl px-4 py-3"
+                  style={{ background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.08)" }}>
+                  <p className="text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1">Selected Item</p>
+                  <p className="text-white text-sm font-semibold">{returnForm.description}</p>
+                  {returnForm.variantLabel && (
+                    <p className="text-gray-400 text-xs">Variant: {returnForm.variantLabel} {returnForm.variantUnit}</p>
+                  )}
+                </div>
+              )}
+
+              {/* Qty + Rate */}
+              <div className="flex gap-3">
+                <div className="flex-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1.5">
+                    Qty (Max: {returnForm.maxQty})
+                  </label>
+                  <input type="number" inputMode="decimal" min="1" max={returnForm.maxQty} placeholder="0"
+                    value={returnForm.qty}
+                    onChange={e => {
+                      const v = Number(e.target.value) || 0;
+                      if (v <= returnForm.maxQty) setReturnForm(f => ({ ...f, qty: e.target.value }));
+                    }}
+                    className="w-full rounded-xl text-white text-sm outline-none px-3 py-2.5 text-right font-bold"
+                    style={{ background: "rgba(248,113,113,0.05)", border: "1.5px solid rgba(248,113,113,0.2)" }} />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-[10px] font-bold uppercase tracking-widest text-gray-500 mb-1.5">Rate (Rs.)</label>
+                  <input type="number" inputMode="decimal" min="0" placeholder="0"
+                    value={returnForm.rate}
+                    onChange={e => setReturnForm(f => ({ ...f, rate: e.target.value }))}
+                    className="w-full rounded-xl text-white text-sm outline-none px-3 py-2.5 text-right font-bold"
+                    style={{ background: "rgba(248,113,113,0.05)", border: "1.5px solid rgba(248,113,113,0.2)" }} />
+                </div>
+              </div>
+
+              {/* Return preview */}
+              {returnTotal > 0 && (
+                <div className="rounded-xl px-4 py-3"
+                  style={{ background: "rgba(248,113,113,0.06)", border: "1px solid rgba(248,113,113,0.2)" }}>
+                  <p className="text-xs font-semibold mb-1" style={{ color: "#f87171" }}>↩️ Return Preview</p>
+                  <p className="text-xs text-gray-400">
+                    Return Amount: <span className="text-white font-bold">{formatRs(returnTotal)}</span>
+                  </p>
+                </div>
+              )}
+
+              {/* Buttons */}
+              <div className="flex gap-3 mt-1">
+                <button onClick={() => setReturnTarget(null)}
+                  className="flex-1 py-3 rounded-2xl text-sm font-semibold"
+                  style={{ background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.1)", color: "#9ca3af" }}>
+                  Cancel
+                </button>
+                <button onClick={handleQuickReturnCustomer} disabled={savingReturn || !canSave}
+                  className="flex-1 py-3 rounded-2xl text-sm font-black transition-all hover:scale-[1.02]"
+                  style={{
+                    background: canSave ? "linear-gradient(135deg,#f87171,#ef4444)" : "rgba(248,113,113,0.2)",
+                    color: canSave ? "#fff" : "#6b7280",
+                    opacity: savingReturn ? 0.7 : 1,
+                    cursor: (savingReturn || !canSave) ? "not-allowed" : "pointer",
+                  }}>
+                  {savingReturn ? "Saving..." : "↩️ Record Return →"}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      );
+    })()}
 
     {/* ★ Customer Activity History Modal */}
     {showHistoryModal && (
@@ -1814,6 +2441,27 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose, userDoc, 
   const totalPaid      = invoices.reduce((sum, inv) => sum + (Number(inv.amountPaid) || 0), 0);
   const totalBalance   = invoices.reduce((sum, inv) => sum + (Number(inv.balance) || 0), 0);
   
+  // Pre-compute running balance for return rows per invoice (stored historyBalance may be stale)
+  const returnRunningBalances = {};
+  invoices.forEach(inv => {
+    const isPrevBal = (desc) => (desc || "").startsWith("Previous Balance · INV-");
+    const invActual = getActualAmount(inv);
+    const invReturns = payments
+      .filter(p => p.type === "return" && p.invoiceId === inv.id)
+      .slice()
+      .sort((a, b) => {
+        const aT = a.createdAt?.toDate ? a.createdAt.toDate().getTime() : new Date(a.createdAt || 0).getTime();
+        const bT = b.createdAt?.toDate ? b.createdAt.toDate().getTime() : new Date(b.createdAt || 0).getTime();
+        return aT - bT;
+      });
+    let runningBal = Math.max(0, invActual - (Number(inv.originalAmountPaid) || 0));
+    invReturns.forEach(r => {
+      runningBal = Math.max(0, runningBal - (Number(r.returnAmount) || 0));
+      if (!returnRunningBalances[inv.id]) returnRunningBalances[inv.id] = {};
+      returnRunningBalances[inv.id][r.id] = runningBal;
+    });
+  });
+
   function formatDate(date) {
     return date.toLocaleDateString("en-PK", { 
       day: "2-digit", 
@@ -2072,8 +2720,12 @@ function CustomerHistoryModal({ customer, invoices, payments, onClose, userDoc, 
                                   Returned: <span className="text-red-400">- {formatRs(item.data.returnAmount)}</span>
                                 </span>
                                 <span className="text-white font-semibold">
-                                  New Balance: <span style={{ color: Number(item.data.historyBalance ?? item.data.balance) > 0 ? "#f87171" : "#34d399" }}>
-                                    {formatRs(item.data.historyBalance ?? item.data.balance)}
+                                  New Balance: <span style={{ color: (() => { const computed = item.data.invoiceId && returnRunningBalances[item.data.invoiceId]?.[item.data.id]; const bal = computed != null ? computed : (item.data.historyBalance ?? item.data.balance); return Number(bal) > 0 ? "#f87171" : "#34d399"; })() }}>
+                                    {(() => {
+                                      const computed = item.data.invoiceId && returnRunningBalances[item.data.invoiceId]?.[item.data.id];
+                                      const bal = computed != null ? computed : (item.data.historyBalance ?? item.data.balance);
+                                      return Number(bal) > 0 ? formatRs(bal) : "Cleared ✓";
+                                    })()}
                                   </span>
                                 </span>
                               </div>
